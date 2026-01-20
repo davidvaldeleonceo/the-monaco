@@ -91,14 +91,17 @@ export default function Lavadas() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+
+    // Convertir strings vacíos a null para Supabase
+    const cleanData = Object.fromEntries(
+      Object.entries(formData).map(([key, value]) => [key, value === '' ? null : value])
+    )
+
     const dataToSend = {
-      ...formData,
-      lavador_id: formData.lavador_id || null,
-      metodo_pago_id: formData.metodo_pago_id || null,
+      ...cleanData,
       fecha: new Date().toISOString()
     }
-    
+
     const { data, error } = await supabase
       .from('lavadas')
       .insert([dataToSend])

@@ -40,12 +40,17 @@ export default function Clientes() {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
+    // Convertir strings vacíos a null para Supabase
+    const cleanData = Object.fromEntries(
+      Object.entries(formData).map(([key, value]) => [key, value === '' ? null : value])
+    )
+
     if (editando) {
       const { error } = await supabase
         .from('clientes')
-        .update(formData)
+        .update(cleanData)
         .eq('id', editando)
-      
+
       if (!error) {
         const membresia = tiposMembresia.find(m => m.id === formData.membresia_id)
         updateClienteLocal(editando, { ...formData, membresia })
@@ -53,10 +58,10 @@ export default function Clientes() {
     } else {
       const { data, error } = await supabase
         .from('clientes')
-        .insert([formData])
+        .insert([cleanData])
         .select('*, membresia:tipos_membresia(nombre)')
         .single()
-      
+
       if (!error && data) {
         addClienteLocal(data)
       }
