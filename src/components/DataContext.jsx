@@ -23,33 +23,46 @@ export function DataProvider({ children }) {
       setLoading(false)
       return
     }
-    
+
     setLoading(true)
 
-    const [
-      { data: clientesData },
-      { data: lavadasData },
-      { data: tiposLavadoData },
-      { data: lavadoresData },
-      { data: metodosPagoData },
-      { data: tiposMembresiaData }
-    ] = await Promise.all([
-      supabase.from('clientes').select('*, membresia:tipos_membresia(nombre)').order('nombre'),
-      supabase.from('lavadas').select('*, cliente:clientes(nombre), tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre)').order('fecha', { ascending: false }),
-      supabase.from('tipos_lavado').select('*').eq('activo', true),
-      supabase.from('lavadores').select('*').eq('activo', true),
-      supabase.from('metodos_pago').select('*').eq('activo', true),
-      supabase.from('tipos_membresia').select('*').eq('activo', true)
-    ])
+    try {
+      const [
+        clientesRes,
+        lavadasRes,
+        tiposLavadoRes,
+        lavadoresRes,
+        metodosPagoRes,
+        tiposMembresiaRes
+      ] = await Promise.all([
+        supabase.from('clientes').select('*, membresia:tipos_membresia(nombre)').order('nombre'),
+        supabase.from('lavadas').select('*, cliente:clientes(nombre), tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre)').order('fecha', { ascending: false }),
+        supabase.from('tipos_lavado').select('*').eq('activo', true),
+        supabase.from('lavadores').select('*').eq('activo', true),
+        supabase.from('metodos_pago').select('*').eq('activo', true),
+        supabase.from('tipos_membresia').select('*').eq('activo', true)
+      ])
 
-    setClientes(clientesData || [])
-    setLavadas(lavadasData || [])
-    setTiposLavado(tiposLavadoData || [])
-    setLavadores(lavadoresData || [])
-    setMetodosPago(metodosPagoData || [])
-    setTiposMembresia(tiposMembresiaData || [])
-    setInitialized(true)
-    setLoading(false)
+      // Log errors if any
+      if (clientesRes.error) console.error('Error clientes:', clientesRes.error)
+      if (lavadasRes.error) console.error('Error lavadas:', lavadasRes.error)
+      if (tiposLavadoRes.error) console.error('Error tipos_lavado:', tiposLavadoRes.error)
+      if (lavadoresRes.error) console.error('Error lavadores:', lavadoresRes.error)
+      if (metodosPagoRes.error) console.error('Error metodos_pago:', metodosPagoRes.error)
+      if (tiposMembresiaRes.error) console.error('Error tipos_membresia:', tiposMembresiaRes.error)
+
+      setClientes(clientesRes.data || [])
+      setLavadas(lavadasRes.data || [])
+      setTiposLavado(tiposLavadoRes.data || [])
+      setLavadores(lavadoresRes.data || [])
+      setMetodosPago(metodosPagoRes.data || [])
+      setTiposMembresia(tiposMembresiaRes.data || [])
+      setInitialized(true)
+    } catch (error) {
+      console.error('Error fetching data:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const refreshLavadas = async () => {
