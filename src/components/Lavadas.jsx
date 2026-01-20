@@ -33,20 +33,6 @@ export default function Lavadas() {
     notas: ''
   })
 
-  const totalHoy = lavadas
-    .filter(l => {
-      const fechaLavada = new Date(l.fecha)
-      const hoy = new Date()
-      return fechaLavada.toDateString() === hoy.toDateString()
-    })
-    .reduce((sum, l) => sum + (l.valor || 0), 0)
-
-  const cantidadHoy = lavadas.filter(l => {
-    const fechaLavada = new Date(l.fecha)
-    const hoy = new Date()
-    return fechaLavada.toDateString() === hoy.toDateString()
-  }).length
-
   const handlePlacaSearch = (placa) => {
     setFormData({ ...formData, placa })
     const cliente = clientes.find(c => c.placa.toLowerCase() === placa.toLowerCase())
@@ -306,6 +292,9 @@ export default function Lavadas() {
     return matchPlaca && matchEstado && matchLavador && matchFechaDesde && matchFechaHasta
   })
 
+  const totalFiltrado = lavadasFiltradas.reduce((sum, l) => sum + (l.valor || 0), 0)
+  const cantidadFiltrada = lavadasFiltradas.length
+
   if (loading) {
     return <div className="loading">Cargando...</div>
   }
@@ -313,7 +302,7 @@ export default function Lavadas() {
   return (
     <div className="lavadas-page">
       <div className="page-header">
-        <h1 className="page-title">Lavadas <span className="total-hoy">({cantidadHoy} hoy - {formatMoney(totalHoy)})</span></h1>
+        <h1 className="page-title">Lavadas <span className="total-hoy">({cantidadFiltrada} - {formatMoney(totalFiltrado)})</span></h1>
         <button className="btn-primary" onClick={() => setShowModal(true)}>
           <Plus size={20} />
           Nueva Lavada
