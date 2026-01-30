@@ -10,8 +10,8 @@ import es from 'date-fns/locale/es'
 registerLocale('es', es)
 
 export default function Lavadas() {
-  const { lavadas, clientes, tiposLavado, lavadores, metodosPago, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal } = useData()
-  
+  const { lavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal } = useData()
+
   const [showModal, setShowModal] = useState(false)
   const [searchPlaca, setSearchPlaca] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('')
@@ -19,7 +19,7 @@ export default function Lavadas() {
   const [fechaDesde, setFechaDesde] = useState(null)
   const [fechaHasta, setFechaHasta] = useState(null)
   const [filtroRapido, setFiltroRapido] = useState('')
-  
+
   const [formData, setFormData] = useState({
     cliente_id: '',
     placa: '',
@@ -27,64 +27,102 @@ export default function Lavadas() {
     lavador_id: '',
     metodo_pago_id: '',
     valor: 0,
-    cera_restaurador: false,
-    kit_completo: false,
+    adicionales: [],
+    pagos: [],
     estado: 'EN ESPERA',
     notas: ''
   })
+
+  const clienteTieneMembresia = (cliente) => {
+    if (!cliente.membresia_id) return false
+    const nombreMembresia = cliente.membresia?.nombre?.toLowerCase() || ''
+    return !nombreMembresia.includes('sin ')
+  }
+
+  const detectarTipoLavado = (cliente) => {
+    if (clienteTieneMembresia(cliente)) {
+      return tiposLavado.find(t => {
+        const n = t.nombre.toLowerCase()
+        return (n.includes('membresia') || n.includes('membresía')) && !n.includes('sin ')
+      })
+    }
+    return tiposLavado.find(t => {
+      const n = t.nombre.toLowerCase()
+      return n.includes('sin membresia') || n.includes('sin membresía')
+    })
+  }
+
+  const calcularValor = (tipoId, adicionales) => {
+    const tipo = tiposLavado.find(t => t.id == tipoId)
+    let total = tipo?.precio || 0
+    if (adicionales && adicionales.length > 0) {
+      total += adicionales.reduce((sum, a) => sum + (a.precio || 0), 0)
+    }
+    return total
+  }
+
+  const handleClienteChange = (clienteId) => {
+    const cliente = clientes.find(c => c.id == clienteId)
+    if (cliente) {
+      const tipo = detectarTipoLavado(cliente)
+      const tipoId = tipo?.id || ''
+      const valor = calcularValor(tipoId, formData.adicionales)
+
+      setFormData(prev => ({
+        ...prev,
+        cliente_id: clienteId,
+        placa: cliente.placa || '',
+        tipo_lavado_id: tipoId,
+        valor
+      }))
+    } else {
+      setFormData(prev => ({ ...prev, cliente_id: clienteId, placa: '', tipo_lavado_id: '', valor: 0 }))
+    }
+  }
 
   const handlePlacaSearch = (placa) => {
     setFormData({ ...formData, placa })
     const cliente = clientes.find(c => c.placa.toLowerCase() === placa.toLowerCase())
     if (cliente) {
-      setFormData(prev => ({ ...prev, placa, cliente_id: cliente.id }))
+      handleClienteChange(cliente.id)
     }
   }
 
   const handleTipoLavadoChange = (tipoId) => {
-    const tipo = tiposLavado.find(t => t.id === tipoId)
-    const precioBase = tipo?.precio || 0
-    setFormData(prev => {
-      let nuevoValor = precioBase
-      if (prev.cera_restaurador) nuevoValor += 5000
-      if (prev.kit_completo) nuevoValor += 10000
-      return {
-        ...prev,
-        tipo_lavado_id: tipoId,
-        valor: nuevoValor
-      }
-    })
+    const valor = calcularValor(tipoId, formData.adicionales)
+    setFormData(prev => ({
+      ...prev,
+      tipo_lavado_id: tipoId,
+      valor
+    }))
   }
 
-  const handleFormAdicionalChange = (campo, checked) => {
+  const handleFormAdicionalChange = (servicio, checked) => {
     setFormData(prev => {
-      const tipo = tiposLavado.find(t => t.id === prev.tipo_lavado_id)
-      const precioBase = tipo?.precio || 0
-      const nuevaCera = campo === 'cera_restaurador' ? checked : prev.cera_restaurador
-      const nuevoKit = campo === 'kit_completo' ? checked : prev.kit_completo
-
-      let nuevoValor = precioBase
-      if (nuevaCera) nuevoValor += 5000
-      if (nuevoKit) nuevoValor += 10000
-
-      return {
-        ...prev,
-        [campo]: checked,
-        valor: nuevoValor
+      let nuevosAdicionales
+      if (checked) {
+        nuevosAdicionales = [...prev.adicionales, { id: servicio.id, nombre: servicio.nombre, precio: servicio.precio }]
+      } else {
+        nuevosAdicionales = prev.adicionales.filter(a => a.id !== servicio.id)
       }
+      const valor = calcularValor(prev.tipo_lavado_id, nuevosAdicionales)
+      return { ...prev, adicionales: nuevosAdicionales, valor }
     })
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    // Convertir strings vacíos a null para Supabase
+    const { adicionales, pagos, ...rest } = formData
     const cleanData = Object.fromEntries(
-      Object.entries(formData).map(([key, value]) => [key, value === '' ? null : value])
+      Object.entries(rest).map(([key, value]) => [key, value === '' ? null : value])
     )
 
     const dataToSend = {
       ...cleanData,
+      adicionales: adicionales,
+      pagos: [],
+      metodo_pago_id: null,
       fecha: new Date().toISOString()
     }
 
@@ -104,8 +142,8 @@ export default function Lavadas() {
         lavador_id: '',
         metodo_pago_id: '',
         valor: 0,
-        cera_restaurador: false,
-        kit_completo: false,
+        adicionales: [],
+        pagos: [],
         estado: 'EN ESPERA',
         notas: ''
       })
@@ -115,20 +153,20 @@ export default function Lavadas() {
   const handleEstadoChange = async (lavadaId, nuevoEstado) => {
     const lavada = lavadas.find(l => l.id === lavadaId)
     let updates = { estado: nuevoEstado }
-    
+
     if (nuevoEstado === 'EN LAVADO') {
       updates.hora_inicio_lavado = new Date().toISOString()
     }
-    
-    if (nuevoEstado === 'TERMINADO' && lavada.hora_inicio_lavado) {
+
+    if (['TERMINADO', 'NOTIFICADO', 'ENTREGADO'].includes(nuevoEstado) && lavada.hora_inicio_lavado && !lavada.tiempo_lavado) {
       const inicio = new Date(lavada.hora_inicio_lavado)
       const fin = new Date()
       const minutos = Math.max(1, Math.round((fin - inicio) / 60000))
       updates.tiempo_lavado = minutos
     }
-    
+
     updateLavadaLocal(lavadaId, updates)
-    
+
     await supabase
       .from('lavadas')
       .update(updates)
@@ -136,9 +174,9 @@ export default function Lavadas() {
   }
 
   const handleLavadorChange = async (lavadaId, lavadorId) => {
-    const lavador = lavadores.find(l => l.id === lavadorId)
+    const lavador = lavadores.find(l => l.id == lavadorId)
     updateLavadaLocal(lavadaId, { lavador_id: lavadorId, lavador })
-    
+
     await supabase
       .from('lavadas')
       .update({ lavador_id: lavadorId || null })
@@ -146,45 +184,55 @@ export default function Lavadas() {
   }
 
   const handleTipoLavadoChangeInline = async (lavadaId, tipoId) => {
-    const tipo = tiposLavado.find(t => t.id === tipoId)
+    const tipo = tiposLavado.find(t => t.id == tipoId)
     const lavada = lavadas.find(l => l.id === lavadaId)
-    
-    let nuevoValor = tipo?.precio || 0
-    if (lavada.cera_restaurador) nuevoValor += 5000
-    if (lavada.kit_completo) nuevoValor += 10000
-    
-    updateLavadaLocal(lavadaId, { 
-      tipo_lavado_id: tipoId, 
+    const adicionalesLavada = lavada.adicionales || []
+
+    const nuevoValor = calcularValor(tipoId, adicionalesLavada)
+
+    updateLavadaLocal(lavadaId, {
+      tipo_lavado_id: tipoId,
       tipo_lavado: tipo,
       valor: nuevoValor
     })
-    
+
     await supabase
       .from('lavadas')
       .update({ tipo_lavado_id: tipoId, valor: nuevoValor })
       .eq('id', lavadaId)
   }
 
-  const handleAdicionalChange = async (lavadaId, campo, valor) => {
-    const lavada = lavadas.find(l => l.id === lavadaId)
-    const tipoActual = tiposLavado.find(t => t.id === lavada.tipo_lavado_id)
-    
-    let nuevoValor = tipoActual?.precio || 0
-    
-    const nuevaCera = campo === 'cera_restaurador' ? valor : lavada.cera_restaurador
-    const nuevoKit = campo === 'kit_completo' ? valor : lavada.kit_completo
-    
-    if (nuevaCera) nuevoValor += 5000
-    if (nuevoKit) nuevoValor += 10000
-    
-    updateLavadaLocal(lavadaId, { 
-      [campo]: valor,
-      valor: nuevoValor
-    })
-    
+  const handlePagosChange = async (lavadaId, nuevosPagos) => {
+    const metodoCompatible = nuevosPagos.length > 0 ? nuevosPagos[0].metodo_pago_id : null
+    updateLavadaLocal(lavadaId, { pagos: nuevosPagos, metodo_pago_id: metodoCompatible })
+
     await supabase
       .from('lavadas')
-      .update({ [campo]: valor, valor: nuevoValor })
+      .update({ pagos: nuevosPagos, metodo_pago_id: metodoCompatible })
+      .eq('id', lavadaId)
+  }
+
+  const handleAdicionalChange = async (lavadaId, servicio, checked) => {
+    const lavada = lavadas.find(l => l.id === lavadaId)
+    const adicionalesActuales = lavada.adicionales || []
+
+    let nuevosAdicionales
+    if (checked) {
+      nuevosAdicionales = [...adicionalesActuales, { id: servicio.id, nombre: servicio.nombre, precio: servicio.precio }]
+    } else {
+      nuevosAdicionales = adicionalesActuales.filter(a => a.id !== servicio.id)
+    }
+
+    const nuevoValor = calcularValor(lavada.tipo_lavado_id, nuevosAdicionales)
+
+    updateLavadaLocal(lavadaId, {
+      adicionales: nuevosAdicionales,
+      valor: nuevoValor
+    })
+
+    await supabase
+      .from('lavadas')
+      .update({ adicionales: nuevosAdicionales, valor: nuevoValor })
       .eq('id', lavadaId)
   }
 
@@ -192,7 +240,7 @@ export default function Lavadas() {
   setFiltroRapido(tipo)
   const hoy = new Date()
   hoy.setHours(0, 0, 0, 0)
-  
+
   switch (tipo) {
     case 'hoy':
       setFechaDesde(hoy)
@@ -235,16 +283,16 @@ export default function Lavadas() {
   }
 
   const enviarWhatsApp = (lavada) => {
-  const cliente = clientes.find(c => c.id === lavada.cliente_id)
+  const cliente = clientes.find(c => c.id == lavada.cliente_id)
   if (!cliente?.telefono) {
     alert('El cliente no tiene número de teléfono registrado')
     return
   }
-  
+
   const telefono = cliente.telefono.replace(/\D/g, '')
   const mensaje = `Hola ${cliente.nombre}, tu moto de placa *${lavada.placa}* ya está lista. ¡Puedes venir a recogerla! 🏍️`
   const url = `https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(mensaje)}`
-  
+
   window.open(url, '_blank')
 }
 
@@ -270,30 +318,36 @@ export default function Lavadas() {
   const lavadasFiltradas = lavadas.filter(l => {
     const matchPlaca = l.placa.toLowerCase().includes(searchPlaca.toLowerCase())
     const matchEstado = !filtroEstado || l.estado === filtroEstado
-    const matchLavador = !filtroLavador || l.lavador_id === filtroLavador
-    
+    const matchLavador = !filtroLavador || l.lavador_id == filtroLavador
+
     const fechaLavada = new Date(l.fecha)
     fechaLavada.setHours(0, 0, 0, 0)
-    
+
     let matchFechaDesde = true
     if (fechaDesde) {
       const desde = new Date(fechaDesde)
       desde.setHours(0, 0, 0, 0)
       matchFechaDesde = fechaLavada >= desde
     }
-    
+
     let matchFechaHasta = true
     if (fechaHasta) {
       const hasta = new Date(fechaHasta)
       hasta.setHours(23, 59, 59, 999)
       matchFechaHasta = fechaLavada <= hasta
     }
-    
+
     return matchPlaca && matchEstado && matchLavador && matchFechaDesde && matchFechaHasta
   })
 
   const totalFiltrado = lavadasFiltradas.reduce((sum, l) => sum + (l.valor || 0), 0)
   const cantidadFiltrada = lavadasFiltradas.length
+
+  const getTipoLavadoLabel = () => {
+    if (!formData.tipo_lavado_id) return 'Seleccione un cliente'
+    const tipo = tiposLavado.find(t => t.id === formData.tipo_lavado_id)
+    return tipo ? `${tipo.nombre} - ${formatMoney(tipo.precio)}` : ''
+  }
 
   if (loading) {
     return <div className="loading">Cargando...</div>
@@ -343,37 +397,37 @@ export default function Lavadas() {
         </select>
 
          <div className="filter-rapido">
-          <button 
+          <button
             className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`}
             onClick={() => aplicarFiltroRapido('hoy')}
           >
             Hoy
           </button>
-          <button 
+          <button
             className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`}
             onClick={() => aplicarFiltroRapido('semana')}
           >
             Semana
           </button>
-          <button 
+          <button
             className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`}
             onClick={() => aplicarFiltroRapido('mes')}
           >
             Mes
           </button>
-          <button 
+          <button
             className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`}
             onClick={() => aplicarFiltroRapido('año')}
           >
             Año
           </button>
-          <button 
+          <button
             className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`}
             onClick={() => aplicarFiltroRapido('todas')}
           >
             Todas
           </button>
-        </div> 
+        </div>
 
         <div className="filter-fechas">
           <DatePicker
@@ -418,6 +472,7 @@ export default function Lavadas() {
               <th>Tiempo</th>
               <th>Adicionales</th>
               <th>Valor</th>
+              <th>Pago</th>
               <th>Lavador</th>
               <th>Acciones</th>
             </tr>
@@ -477,25 +532,86 @@ export default function Lavadas() {
 
                 <td>
                   <div className="adicionales-cell">
-                    <label className="adicional-check">
-                      <input
-                        type="checkbox"
-                        checked={lavada.cera_restaurador || false}
-                        onChange={(e) => handleAdicionalChange(lavada.id, 'cera_restaurador', e.target.checked)}
-                      />
-                      <span>Cera</span>
-                    </label>
-                    <label className="adicional-check">
-                      <input
-                        type="checkbox"
-                        checked={lavada.kit_completo || false}
-                        onChange={(e) => handleAdicionalChange(lavada.id, 'kit_completo', e.target.checked)}
-                      />
-                      <span>Kit</span>
-                    </label>
+                    {serviciosAdicionales.map(s => {
+                      const adicionalesLavada = lavada.adicionales || []
+                      const checked = adicionalesLavada.some(a => a.id === s.id)
+                      return (
+                        <label key={s.id} className="adicional-check">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => handleAdicionalChange(lavada.id, s, e.target.checked)}
+                          />
+                          <span>{s.nombre}</span>
+                        </label>
+                      )
+                    })}
                   </div>
                 </td>
                 <td className="valor-cell">{formatMoney(lavada.valor)}</td>
+                <td className="pagos-cell">
+                  {(() => {
+                    const pagos = lavada.pagos || []
+                    return (
+                      <div className="pagos-inline">
+                        {pagos.length === 0 && lavada.metodo_pago?.nombre && (
+                          <span className="pago-legacy">{lavada.metodo_pago.nombre}</span>
+                        )}
+                        {pagos.map((p, idx) => (
+                          <div key={idx} className="pago-inline-row">
+                            <select
+                              value={p.metodo_pago_id || ''}
+                              onChange={(e) => {
+                                const metodo = metodosPago.find(m => m.id == e.target.value)
+                                const nuevosPagos = pagos.map((pg, i) =>
+                                  i === idx ? { ...pg, metodo_pago_id: e.target.value, nombre: metodo?.nombre || '' } : pg
+                                )
+                                handlePagosChange(lavada.id, nuevosPagos)
+                              }}
+                              className="pago-inline-select"
+                            >
+                              <option value="">Método</option>
+                              {metodosPago.map(m => (
+                                <option key={m.id} value={m.id}>{m.nombre}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={p.valor === 0 ? '' : p.valor}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '')
+                                const nuevosPagos = pagos.map((pg, i) =>
+                                  i === idx ? { ...pg, valor: val === '' ? 0 : Number(val) } : pg
+                                )
+                                handlePagosChange(lavada.id, nuevosPagos)
+                              }}
+                              className="pago-inline-input"
+                            />
+                            <button
+                              className="btn-remove-pago-inline"
+                              onClick={() => {
+                                const nuevosPagos = pagos.filter((_, i) => i !== idx)
+                                handlePagosChange(lavada.id, nuevosPagos)
+                              }}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          className="btn-add-pago-inline"
+                          onClick={() => {
+                            const nuevosPagos = [...pagos, { metodo_pago_id: '', nombre: '', valor: lavada.valor || 0 }]
+                            handlePagosChange(lavada.id, nuevosPagos)
+                          }}
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </div>
+                    )
+                  })()}
+                </td>
                 <td>
                   <select
                     value={lavada.lavador_id || ''}
@@ -521,7 +637,7 @@ export default function Lavadas() {
             ))}
             {lavadasFiltradas.length === 0 && (
               <tr>
-                <td colSpan="7" className="empty">No hay lavadas registradas</td>
+                <td colSpan="11" className="empty">No hay lavadas registradas</td>
               </tr>
             )}
           </tbody>
@@ -555,27 +671,25 @@ export default function Lavadas() {
                   <label>Cliente</label>
                   <select
                     value={formData.cliente_id}
-                    onChange={(e) => setFormData({ ...formData, cliente_id: e.target.value })}
+                    onChange={(e) => handleClienteChange(e.target.value)}
                   >
                     <option value="">Seleccionar cliente</option>
                     {clientes.map(c => (
-                      <option key={c.id} value={c.id}>{c.nombre} - {c.placa}</option>
+                      <option key={c.id} value={c.id}>
+                        {c.nombre} - {c.placa} {!clienteTieneMembresia(c) ? '(Sin membresia)' : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="form-group">
                   <label>Tipo de Lavado</label>
-                  <select
-                    value={formData.tipo_lavado_id}
-                    onChange={(e) => handleTipoLavadoChange(e.target.value)}
-                    required
-                  >
-                    <option value="">Seleccionar tipo</option>
-                    {tiposLavado.map(t => (
-                      <option key={t.id} value={t.id}>{t.nombre} - {formatMoney(t.precio)}</option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    value={getTipoLavadoLabel()}
+                    readOnly
+                    className="input-readonly"
+                  />
                 </div>
 
                 <div className="form-group">
@@ -592,19 +706,6 @@ export default function Lavadas() {
                 </div>
 
                 <div className="form-group">
-                  <label>Método de Pago</label>
-                  <select
-                    value={formData.metodo_pago_id}
-                    onChange={(e) => setFormData({ ...formData, metodo_pago_id: e.target.value })}
-                  >
-                    <option value="">Seleccionar método</option>
-                    {metodosPago.map(m => (
-                      <option key={m.id} value={m.id}>{m.nombre}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
                   <label>Valor</label>
                   <input
                     type="text"
@@ -614,31 +715,21 @@ export default function Lavadas() {
                       const val = e.target.value.replace(/\D/g, '')
                       setFormData({ ...formData, valor: val === '' ? 0 : Number(val) })
                     }}
-                    required
                   />
                 </div>
 
-                <div className="form-group checkbox-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={formData.cera_restaurador}
-                      onChange={(e) => handleFormAdicionalChange('cera_restaurador', e.target.checked)}
-                    />
-                    Cera y Restaurador (+$5.000)
-                  </label>
-                </div>
-
-                <div className="form-group checkbox-group">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={formData.kit_completo}
-                      onChange={(e) => handleFormAdicionalChange('kit_completo', e.target.checked)}
-                    />
-                    Kit Completo (+$10.000)
-                  </label>
-                </div>
+                {serviciosAdicionales.map(s => (
+                  <div key={s.id} className="form-group checkbox-group">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={formData.adicionales.some(a => a.id === s.id)}
+                        onChange={(e) => handleFormAdicionalChange(s, e.target.checked)}
+                      />
+                      {s.nombre} (+{formatMoney(s.precio)})
+                    </label>
+                  </div>
+                ))}
               </div>
 
               <div className="form-group">
