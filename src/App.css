@@ -1592,6 +1592,57 @@ body {
   font-weight: 600;
 }
 
+/* Pago Trabajadores - Stats Cards */
+.pagos-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.pago-stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pago-stat-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.pago-stat-valor {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.pago-stat-card.egresos { border-left: 4px solid var(--accent-red); }
+.pago-stat-card.egresos svg { color: var(--accent-red); }
+.pago-stat-card.egresos .pago-stat-valor { color: var(--accent-red); }
+
+.pago-stat-card.balance.positivo { border-left: 4px solid var(--accent-blue); }
+.pago-stat-card.balance.positivo svg { color: var(--accent-blue); }
+.pago-stat-card.balance.positivo .pago-stat-valor { color: var(--accent-blue); }
+
+.pago-stat-card.ingresos { border-left: 4px solid var(--accent-green); }
+.pago-stat-card.ingresos svg { color: var(--accent-green); }
+.pago-stat-card.ingresos .pago-stat-valor { color: var(--accent-green); }
+
+@media (max-width: 768px) {
+  .pagos-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Pago Trabajadores - líneas de totales */
 .pago-linea-total {
   display: flex;

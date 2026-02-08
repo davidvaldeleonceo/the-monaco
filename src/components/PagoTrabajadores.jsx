@@ -682,27 +682,27 @@ export default function PagoTrabajadores() {
         />
       </div>
 
-      <div className="balance-resumen">
-        <div className="resumen-card egresos">
-          <DollarSign size={24} />
-          <div>
-            <span className="label">Total Pagado</span>
-            <span className="valor">{formatMoney(totalPagadoMes)}</span>
+      <div className="pagos-stats">
+        <div className="pago-stat-card egresos">
+          <div className="pago-stat-left">
+            <DollarSign size={20} />
+            <span>Total Pagado</span>
           </div>
+          <span className="pago-stat-valor">{formatMoney(totalPagadoMes)}</span>
         </div>
-        <div className="resumen-card balance positivo">
-          <Hash size={24} />
-          <div>
-            <span className="label">Pagos Realizados</span>
-            <span className="valor">{pagosRealizados}</span>
+        <div className="pago-stat-card balance positivo">
+          <div className="pago-stat-left">
+            <Hash size={20} />
+            <span>Pagos Realizados</span>
           </div>
+          <span className="pago-stat-valor">{pagosRealizados}</span>
         </div>
-        <div className="resumen-card ingresos">
-          <Users size={24} />
-          <div>
-            <span className="label">Trabajadores Pagados</span>
-            <span className="valor">{trabajadoresUnicos}</span>
+        <div className="pago-stat-card ingresos">
+          <div className="pago-stat-left">
+            <Users size={20} />
+            <span>Trabajadores Pagados</span>
           </div>
+          <span className="pago-stat-valor">{trabajadoresUnicos}</span>
         </div>
       </div>
 
