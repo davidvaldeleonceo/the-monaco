@@ -451,6 +451,13 @@ export default function PagoTrabajadores() {
     fetchData()
   }
 
+  const formatFechaLocal = (fechaStr) => {
+    if (!fechaStr) return '-'
+    const f = fechaStr.split('T')[0]
+    const [y, m, d] = f.split('-')
+    return `${d}/${m}/${y}`
+  }
+
   const formatMoney = (value) => {
     return new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -715,11 +722,11 @@ export default function PagoTrabajadores() {
               const esAnulado = !!pago.anulado
               return (
                 <tr key={pago.id} className={esAnulado ? 'fila-anulada' : ''}>
-                  <td>{new Date(pago.fecha).toLocaleDateString('es-CO')}</td>
+                  <td>{formatFechaLocal(pago.fecha)}</td>
                   <td>{pago.lavador?.nombre}</td>
                   <td>{esAuto ? tipoPagoLabel(pago.detalle?.tipo_pago) : 'Manual'}</td>
                   <td>{pago.fecha_desde && pago.fecha_hasta
-                    ? `${new Date(pago.fecha_desde).toLocaleDateString('es-CO')} - ${new Date(pago.fecha_hasta).toLocaleDateString('es-CO')}`
+                    ? `${formatFechaLocal(pago.fecha_desde)} - ${formatFechaLocal(pago.fecha_hasta)}`
                     : '-'}</td>
                   <td>{pago.lavadas_cantidad || 0}</td>
                   <td>{formatMoney(pago.total)}</td>
