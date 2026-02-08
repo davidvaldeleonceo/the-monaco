@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
-import { Plus, X, Trash2, DollarSign, Users, Hash } from 'lucide-react'
+import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash } from 'lucide-react'
 
 export default function PagoTrabajadores() {
   const { metodosPago } = useData()
@@ -12,6 +12,7 @@ export default function PagoTrabajadores() {
   const [filtroMes, setFiltroMes] = useState(new Date().toISOString().slice(0, 7))
   const [lavadasPeriodo, setLavadasPeriodo] = useState([])
   const [calculando, setCalculando] = useState(false)
+  const [editandoId, setEditandoId] = useState(null)
 
   const [formData, setFormData] = useState({
     lavador_id: '',
@@ -198,6 +199,28 @@ export default function PagoTrabajadores() {
     setLavadasPeriodo([])
   }
 
+  // Abrir modal en modo edición
+  const handleEditar = (pago) => {
+    setEditandoId(pago.id)
+    setFormData({
+      lavador_id: pago.lavador_id || '',
+      fecha: pago.fecha?.split('T')[0] || new Date().toISOString().split('T')[0],
+      fecha_desde: pago.fecha_desde || '',
+      fecha_hasta: pago.fecha_hasta || '',
+      lavadas_cantidad: pago.lavadas_cantidad || 0,
+      kit_cantidad: pago.kit_cantidad || 0,
+      cera_cantidad: pago.cera_cantidad || 0,
+      basico: pago.basico || 0,
+      total: pago.total || 0,
+      descuentos: pago.descuentos || 0,
+      total_pagar: pago.total_pagar || 0,
+      adicionales_cantidad: pago.adicionales_cantidad || 0,
+      detalle: pago.detalle || null,
+      metodo_pago_id: pago.metodo_pago_id || ''
+    })
+    setShowModal(true)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
 
@@ -213,53 +236,110 @@ export default function PagoTrabajadores() {
       return
     }
 
-    // Validar duplicados (mismo lavador, períodos cruzados)
-    if (formData.fecha_desde && formData.fecha_hasta) {
-      const { data: existentes } = await supabase
-        .from('pago_trabajadores')
-        .select('id, fecha_desde, fecha_hasta')
-        .eq('lavador_id', formData.lavador_id)
-        .or(`anulado.is.null,anulado.eq.false`)
-
-      const duplicado = (existentes || []).some(p => {
-        if (!p.fecha_desde || !p.fecha_hasta) return false
-        return p.fecha_desde <= formData.fecha_hasta && p.fecha_hasta >= formData.fecha_desde
-      })
-
-      if (duplicado) {
-        const continuar = confirm('Ya existe un pago para este trabajador con un período que se cruza. ¿Deseas continuar de todas formas?')
-        if (!continuar) return
-      }
-    }
-
     const lavador = getSelectedLavador()
     const periodo = formData.fecha_desde && formData.fecha_hasta
       ? `${formData.fecha_desde} a ${formData.fecha_hasta}`
       : formData.fecha
 
-    // Insertar pago
-    const { error: pagoError } = await supabase.from('pago_trabajadores').insert([{
-      ...formData,
-      metodo_pago_id: formData.metodo_pago_id
-    }])
+    if (editandoId) {
+      // --- MODO EDICIÓN ---
+      const pagoAnterior = pagos.find(p => p.id === editandoId)
+      const periodoAnterior = pagoAnterior?.fecha_desde && pagoAnterior?.fecha_hasta
+        ? `${pagoAnterior.fecha_desde} a ${pagoAnterior.fecha_hasta}`
+        : pagoAnterior?.fecha?.split('T')[0]
+      const nombreAnterior = pagoAnterior?.lavador?.nombre || ''
 
-    if (pagoError) {
-      alert('Error al guardar el pago: ' + pagoError.message)
-      return
+      // Actualizar pago
+      const { error: pagoError } = await supabase
+        .from('pago_trabajadores')
+        .update({
+          lavador_id: formData.lavador_id,
+          fecha: formData.fecha,
+          fecha_desde: formData.fecha_desde || null,
+          fecha_hasta: formData.fecha_hasta || null,
+          lavadas_cantidad: formData.lavadas_cantidad,
+          kit_cantidad: formData.kit_cantidad,
+          cera_cantidad: formData.cera_cantidad,
+          basico: formData.basico,
+          total: formData.total,
+          descuentos: formData.descuentos,
+          total_pagar: formData.total_pagar,
+          adicionales_cantidad: formData.adicionales_cantidad,
+          detalle: formData.detalle,
+          metodo_pago_id: formData.metodo_pago_id
+        })
+        .eq('id', editandoId)
+
+      if (pagoError) {
+        alert('Error al actualizar el pago: ' + pagoError.message)
+        return
+      }
+
+      // Eliminar transacción anterior y crear nueva
+      const descripcionAnterior = `Pago trabajador - ${periodoAnterior}`
+      await supabase
+        .from('transacciones')
+        .delete()
+        .eq('categoria', 'PAGO TRABAJADOR')
+        .ilike('placa_o_persona', nombreAnterior)
+        .ilike('descripcion', `%${descripcionAnterior}%`)
+
+      await supabase.from('transacciones').insert([{
+        tipo: 'EGRESO',
+        categoria: 'PAGO TRABAJADOR',
+        valor: formData.total_pagar,
+        metodo_pago_id: formData.metodo_pago_id,
+        placa_o_persona: lavador?.nombre || '',
+        descripcion: `Pago trabajador - ${periodo}`,
+        fecha: formData.fecha + 'T12:00:00-05:00'
+      }])
+
+    } else {
+      // --- MODO CREAR ---
+      // Validar duplicados (mismo lavador, períodos cruzados)
+      if (formData.fecha_desde && formData.fecha_hasta) {
+        const { data: existentes } = await supabase
+          .from('pago_trabajadores')
+          .select('id, fecha_desde, fecha_hasta')
+          .eq('lavador_id', formData.lavador_id)
+          .or(`anulado.is.null,anulado.eq.false`)
+
+        const duplicado = (existentes || []).some(p => {
+          if (!p.fecha_desde || !p.fecha_hasta) return false
+          return p.fecha_desde <= formData.fecha_hasta && p.fecha_hasta >= formData.fecha_desde
+        })
+
+        if (duplicado) {
+          const continuar = confirm('Ya existe un pago para este trabajador con un período que se cruza. ¿Deseas continuar de todas formas?')
+          if (!continuar) return
+        }
+      }
+
+      // Insertar pago
+      const { error: pagoError } = await supabase.from('pago_trabajadores').insert([{
+        ...formData,
+        metodo_pago_id: formData.metodo_pago_id
+      }])
+
+      if (pagoError) {
+        alert('Error al guardar el pago: ' + pagoError.message)
+        return
+      }
+
+      // Auto-crear transacción EGRESO en Balance
+      await supabase.from('transacciones').insert([{
+        tipo: 'EGRESO',
+        categoria: 'PAGO TRABAJADOR',
+        valor: formData.total_pagar,
+        metodo_pago_id: formData.metodo_pago_id,
+        placa_o_persona: lavador?.nombre || '',
+        descripcion: `Pago trabajador - ${periodo}`,
+        fecha: formData.fecha + 'T12:00:00-05:00'
+      }])
     }
 
-    // Auto-crear transacción EGRESO en Balance
-    await supabase.from('transacciones').insert([{
-      tipo: 'EGRESO',
-      categoria: 'PAGO TRABAJADOR',
-      valor: formData.total_pagar,
-      metodo_pago_id: formData.metodo_pago_id,
-      placa_o_persona: lavador?.nombre || '',
-      descripcion: `Pago trabajador - ${periodo}`,
-      fecha: formData.fecha + 'T12:00:00-05:00'
-    }])
-
     setShowModal(false)
+    setEditandoId(null)
     resetForm()
     fetchData()
   }
@@ -487,7 +567,7 @@ export default function PagoTrabajadores() {
     <div className="pagos-page">
       <div className="page-header">
         <h1 className="page-title">Pago Trabajadores</h1>
-        <button className="btn-primary" onClick={() => { resetForm(); setShowModal(true) }}>
+        <button className="btn-primary" onClick={() => { resetForm(); setEditandoId(null); setShowModal(true) }}>
           <Plus size={20} />
           Nuevo Pago
         </button>
@@ -563,13 +643,22 @@ export default function PagoTrabajadores() {
                     {esAnulado ? (
                       <span className="estado-badge inactivo">Anulado</span>
                     ) : (
-                      <button
-                        className="btn-icon delete"
-                        onClick={() => handleAnular(pago)}
-                        title="Anular pago"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="acciones">
+                        <button
+                          className="btn-icon"
+                          onClick={() => handleEditar(pago)}
+                          title="Editar pago"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          className="btn-icon delete"
+                          onClick={() => handleAnular(pago)}
+                          title="Anular pago"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -589,8 +678,8 @@ export default function PagoTrabajadores() {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h2>Nuevo Pago</h2>
-              <button className="btn-close" onClick={() => setShowModal(false)}>
+              <h2>{editandoId ? 'Editar Pago' : 'Nuevo Pago'}</h2>
+              <button className="btn-close" onClick={() => { setShowModal(false); setEditandoId(null) }}>
                 <X size={24} />
               </button>
             </div>
@@ -614,11 +703,11 @@ export default function PagoTrabajadores() {
               </div>
 
               <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
+                <button type="button" className="btn-secondary" onClick={() => { setShowModal(false); setEditandoId(null) }}>
                   Cancelar
                 </button>
                 <button type="submit" className="btn-primary">
-                  Guardar
+                  {editandoId ? 'Actualizar' : 'Guardar'}
                 </button>
               </div>
             </form>
