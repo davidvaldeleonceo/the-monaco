@@ -6,7 +6,6 @@ export default function Tareas() {
   const [tareas, setTareas] = useState([])
   const [lavadores, setLavadores] = useState([])
   const [tareasAsignadas, setTareasAsignadas] = useState([])
-  const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [semanaActual, setSemanaActual] = useState(getInicioSemana())
 
@@ -19,8 +18,10 @@ export default function Tareas() {
   function getInicioSemana() {
     const hoy = new Date()
     const dia = hoy.getDay()
-    const diff = hoy.getDate() - dia + (dia === 0 ? -6 : 1)
-    return new Date(hoy.setDate(diff)).toISOString().split('T')[0]
+    const diff = hoy.getDate() - (dia === 0 ? 6 : dia - 1)
+    const lunes = new Date(hoy)
+    lunes.setDate(diff)
+    return lunes.toISOString().split('T')[0]
   }
 
   function getDiasSemana() {
@@ -42,8 +43,6 @@ export default function Tareas() {
   }, [semanaActual])
 
   const fetchData = async () => {
-    setLoading(true)
-
     const finSemana = new Date(semanaActual)
     finSemana.setDate(finSemana.getDate() + 7)
 
@@ -71,7 +70,6 @@ export default function Tareas() {
     setTareas(tareasData || [])
     setLavadores(lavadoresData || [])
     setTareasAsignadas(asignadasData || [])
-    setLoading(false)
   }
 
   const handleSubmit = async (e) => {
@@ -104,10 +102,6 @@ export default function Tareas() {
 
   const getTareasDelDia = (fecha) => {
     return tareasAsignadas.filter(t => t.fecha === fecha)
-  }
-
-  if (loading) {
-    return <div className="loading">Cargando...</div>
   }
 
   const diasSemana = getDiasSemana()

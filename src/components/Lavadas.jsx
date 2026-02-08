@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
-import { Plus, Search, X, MessageCircle, Calendar, Trash2 } from 'lucide-react'
+import { Plus, Search, X, MessageCircle, Calendar, Trash2, ChevronDown, SlidersHorizontal } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -12,13 +12,90 @@ registerLocale('es', es)
 export default function Lavadas() {
   const { lavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal } = useData()
 
+  const loadSavedFilters = () => {
+    try {
+      const saved = localStorage.getItem('monaco_lavadas_filters')
+      if (saved) {
+        const f = JSON.parse(saved)
+        return {
+          estado: f.estado || '',
+          lavador: f.lavador || '',
+          desde: f.desde ? new Date(f.desde) : null,
+          hasta: f.hasta ? new Date(f.hasta) : null,
+          rapido: f.rapido || '',
+        }
+      }
+    } catch {}
+    // Default: filtro de mes actual
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+    return { estado: '', lavador: '', desde: inicioMes, hasta: hoy, rapido: 'mes' }
+  }
+
+  const filtrosIniciales = useRef(loadSavedFilters()).current
+
   const [showModal, setShowModal] = useState(false)
   const [searchPlaca, setSearchPlaca] = useState('')
-  const [filtroEstado, setFiltroEstado] = useState('')
-  const [filtroLavador, setFiltroLavador] = useState('')
-  const [fechaDesde, setFechaDesde] = useState(null)
-  const [fechaHasta, setFechaHasta] = useState(null)
-  const [filtroRapido, setFiltroRapido] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState(filtrosIniciales.estado)
+  const [filtroLavador, setFiltroLavador] = useState(filtrosIniciales.lavador)
+  const [fechaDesde, setFechaDesde] = useState(filtrosIniciales.desde)
+  const [fechaHasta, setFechaHasta] = useState(filtrosIniciales.hasta)
+  const [filtroRapido, setFiltroRapido] = useState(filtrosIniciales.rapido)
+  const [expandedCards, setExpandedCards] = useState({})
+  const [showFilters, setShowFilters] = useState(false)
+  const [now, setNow] = useState(new Date())
+
+  // Guardar filtros en localStorage cuando cambien
+  useEffect(() => {
+    localStorage.setItem('monaco_lavadas_filters', JSON.stringify({
+      estado: filtroEstado,
+      lavador: filtroLavador,
+      desde: fechaDesde ? fechaDesde.toISOString() : null,
+      hasta: fechaHasta ? fechaHasta.toISOString() : null,
+      rapido: filtroRapido,
+    }))
+  }, [filtroEstado, filtroLavador, fechaDesde, fechaHasta, filtroRapido])
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const formatSeg = (totalSeg) => {
+    const seg = Math.max(0, Math.floor(totalSeg))
+    const h = Math.floor(seg / 3600)
+    const m = Math.floor((seg % 3600) / 60)
+    const s = seg % 60
+    if (h > 0) return `${h}h ${m}m ${s}s`
+    if (m > 0) return `${m}m ${s}s`
+    return `${s}s`
+  }
+
+  const getTiempoEspera = (lavada) => {
+    if (lavada.duracion_espera != null) return formatSeg(lavada.duracion_espera)
+    if (lavada.estado === 'EN ESPERA' && lavada.tiempo_espera_inicio) return formatSeg((now - new Date(lavada.tiempo_espera_inicio)) / 1000)
+    return '0s'
+  }
+
+  const getTiempoLavado = (lavada) => {
+    if (lavada.duracion_lavado != null) return formatSeg(lavada.duracion_lavado)
+    if (lavada.estado === 'EN LAVADO' && lavada.tiempo_lavado_inicio) return formatSeg((now - new Date(lavada.tiempo_lavado_inicio)) / 1000)
+    return '0s'
+  }
+
+  const getTiempoTerminado = (lavada) => {
+    if (lavada.duracion_terminado != null) return formatSeg(lavada.duracion_terminado)
+    if (lavada.estado === 'TERMINADO' && lavada.tiempo_terminado_inicio) return formatSeg((now - new Date(lavada.tiempo_terminado_inicio)) / 1000)
+    return '0s'
+  }
+
+  const getTimerActivo = (lavada) => {
+    if (lavada.estado === 'EN ESPERA') return getTiempoEspera(lavada)
+    if (lavada.estado === 'EN LAVADO') return getTiempoLavado(lavada)
+    if (lavada.estado === 'TERMINADO') return getTiempoTerminado(lavada)
+    return null
+  }
 
   const [formData, setFormData] = useState({
     cliente_id: '',
@@ -118,12 +195,14 @@ export default function Lavadas() {
       Object.entries(rest).map(([key, value]) => [key, value === '' ? null : value])
     )
 
+    const ahora = new Date().toISOString()
     const dataToSend = {
       ...cleanData,
       adicionales: adicionales,
       pagos: [],
       metodo_pago_id: null,
-      fecha: new Date().toISOString()
+      fecha: ahora,
+      tiempo_espera_inicio: ahora
     }
 
     const { data, error } = await supabase
@@ -152,17 +231,41 @@ export default function Lavadas() {
 
   const handleEstadoChange = async (lavadaId, nuevoEstado) => {
     const lavada = lavadas.find(l => l.id === lavadaId)
+    if (lavada.estado === nuevoEstado) return
+    const estadoAnterior = lavada.estado
+    const ahora = new Date()
+    const ahoraISO = ahora.toISOString()
     let updates = { estado: nuevoEstado }
 
-    if (nuevoEstado === 'EN LAVADO') {
-      updates.hora_inicio_lavado = new Date().toISOString()
-    }
+    // Si vuelve a ESPERA: reset total
+    if (nuevoEstado === 'EN ESPERA') {
+      updates.tiempo_espera_inicio = ahoraISO
+      updates.duracion_espera = null
+      updates.tiempo_lavado_inicio = null
+      updates.duracion_lavado = null
+      updates.tiempo_terminado_inicio = null
+      updates.duracion_terminado = null
+    } else {
+      // Cerrar duración del estado anterior
+      if (estadoAnterior === 'EN ESPERA' && lavada.tiempo_espera_inicio) {
+        updates.duracion_espera = Math.round((ahora - new Date(lavada.tiempo_espera_inicio)) / 1000)
+      }
+      if (estadoAnterior === 'EN LAVADO' && lavada.tiempo_lavado_inicio) {
+        updates.duracion_lavado = Math.round((ahora - new Date(lavada.tiempo_lavado_inicio)) / 1000)
+      }
+      if (estadoAnterior === 'TERMINADO' && lavada.tiempo_terminado_inicio) {
+        updates.duracion_terminado = Math.round((ahora - new Date(lavada.tiempo_terminado_inicio)) / 1000)
+      }
 
-    if (['TERMINADO', 'NOTIFICADO', 'ENTREGADO'].includes(nuevoEstado) && lavada.hora_inicio_lavado && !lavada.tiempo_lavado) {
-      const inicio = new Date(lavada.hora_inicio_lavado)
-      const fin = new Date()
-      const minutos = Math.max(1, Math.round((fin - inicio) / 60000))
-      updates.tiempo_lavado = minutos
+      // Abrir timestamp del nuevo estado
+      if (nuevoEstado === 'EN LAVADO') {
+        updates.tiempo_lavado_inicio = ahoraISO
+        updates.duracion_lavado = null
+      }
+      if (nuevoEstado === 'TERMINADO') {
+        updates.tiempo_terminado_inicio = ahoraISO
+        updates.duracion_terminado = null
+      }
     }
 
     updateLavadaLocal(lavadaId, updates)
@@ -248,7 +351,8 @@ export default function Lavadas() {
       break
     case 'semana':
       const inicioSemana = new Date(hoy)
-      inicioSemana.setDate(hoy.getDate() - hoy.getDay() + 1)
+      const dia = hoy.getDay()
+      inicioSemana.setDate(hoy.getDate() - (dia === 0 ? 6 : dia - 1))
       setFechaDesde(inicioSemana)
       setFechaHasta(hoy)
       break
@@ -309,7 +413,6 @@ export default function Lavadas() {
     'EN ESPERA': 'estado-espera',
     'EN LAVADO': 'estado-lavado',
     'TERMINADO': 'estado-terminado',
-    'NOTIFICADO': 'estado-notificado',
     'ENTREGADO': 'estado-entregado'
   }
   return clases[estado] || ''
@@ -364,285 +467,298 @@ export default function Lavadas() {
       </div>
 
       <div className="filters">
-        <div className="search-box">
-          <Search size={20} />
-          <input
-            type="text"
-            placeholder="Buscar por placa..."
-            value={searchPlaca}
-            onChange={(e) => setSearchPlaca(e.target.value)}
-          />
-        </div>
-        <select
-          value={filtroEstado}
-          onChange={(e) => setFiltroEstado(e.target.value)}
-          className="filter-select"
-        >
-          <option value="">Todos los estados</option>
-          <option value="EN ESPERA">En Espera</option>
-          <option value="EN LAVADO">En Lavado</option>
-          <option value="TERMINADO">Terminado</option>
-          <option value="NOTIFICADO">Notificado</option>
-          <option value="ENTREGADO">Entregado</option>
-        </select>
-        <select
-          value={filtroLavador}
-          onChange={(e) => setFiltroLavador(e.target.value)}
-          className="filter-select"
-        >
-          <option value="">Todos los lavadores</option>
-          {lavadores.map(l => (
-            <option key={l.id} value={l.id}>{l.nombre}</option>
-          ))}
-        </select>
-
-         <div className="filter-rapido">
-          <button
-            className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`}
-            onClick={() => aplicarFiltroRapido('hoy')}
+        <div className="filters-row-main">
+          <div className="search-box">
+            <Search size={18} />
+            <input
+              type="text"
+              placeholder="Buscar placa..."
+              value={searchPlaca}
+              onChange={(e) => setSearchPlaca(e.target.value)}
+            />
+          </div>
+          <select
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value)}
+            className="filter-select"
           >
-            Hoy
-          </button>
-          <button
-            className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`}
-            onClick={() => aplicarFiltroRapido('semana')}
+            <option value="">Estado</option>
+            <option value="EN ESPERA">En Espera</option>
+            <option value="EN LAVADO">En Lavado</option>
+            <option value="TERMINADO">Terminado</option>
+            <option value="ENTREGADO">Entregado</option>
+          </select>
+          <select
+            value={filtroLavador}
+            onChange={(e) => setFiltroLavador(e.target.value)}
+            className="filter-select"
           >
-            Semana
-          </button>
+            <option value="">Lavador</option>
+            {lavadores.map(l => (
+              <option key={l.id} value={l.id}>{l.nombre}</option>
+            ))}
+          </select>
           <button
-            className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`}
-            onClick={() => aplicarFiltroRapido('mes')}
+            className={`filter-toggle-btn ${showFilters ? 'active' : ''}`}
+            onClick={() => setShowFilters(prev => !prev)}
+            title="Más filtros"
           >
-            Mes
-          </button>
-          <button
-            className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`}
-            onClick={() => aplicarFiltroRapido('año')}
-          >
-            Año
-          </button>
-          <button
-            className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`}
-            onClick={() => aplicarFiltroRapido('todas')}
-          >
-            Todas
+            <SlidersHorizontal size={18} />
           </button>
         </div>
 
-        <div className="filter-fechas">
-          <DatePicker
-            selected={fechaDesde}
-            onChange={(date) => setFechaDesde(date)}
-            selectsStart
-            startDate={fechaDesde}
-            endDate={fechaHasta}
-            placeholderText="Desde"
-            className="filter-date"
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            isClearable
-          />
-          <span className="filter-separator">→</span>
-          <DatePicker
-            selected={fechaHasta}
-            onChange={(date) => setFechaHasta(date)}
-            selectsEnd
-            startDate={fechaDesde}
-            endDate={fechaHasta}
-            minDate={fechaDesde}
-            placeholderText="Hasta"
-            className="filter-date"
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            isClearable
-          />
-        </div>
+        <div className={`filters-row-extra ${showFilters ? 'open' : ''}`}>
+            <div className="filter-rapido">
+              <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
+              <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
+              <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
+              <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
+              <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
+            </div>
+            <div className="filter-fechas">
+              <DatePicker
+                selected={fechaDesde}
+                onChange={(date) => setFechaDesde(date)}
+                selectsStart
+                startDate={fechaDesde}
+                endDate={fechaHasta}
+                placeholderText="Desde"
+                className="filter-date"
+                dateFormat="dd/MM/yyyy"
+                locale="es"
+                isClearable
+              />
+              <span className="filter-separator">→</span>
+              <DatePicker
+                selected={fechaHasta}
+                onChange={(date) => setFechaHasta(date)}
+                selectsEnd
+                startDate={fechaDesde}
+                endDate={fechaHasta}
+                minDate={fechaDesde}
+                placeholderText="Hasta"
+                className="filter-date"
+                dateFormat="dd/MM/yyyy"
+                locale="es"
+                isClearable
+              />
+            </div>
+          </div>
       </div>
 
-      <div className="card">
-        <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th className="th-eliminar"></th>
-              <th>Cliente</th>
-              <th>Tipo</th>
-              <th>Placa</th>
-              <th>Estado</th>
-              <th>Tiempo</th>
-              <th>Adicionales</th>
-              <th>Valor</th>
-              <th>Pago</th>
-              <th>Lavador</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lavadasFiltradas.map((lavada) => (
-              <tr key={lavada.id} className="fila-lavada">
-                <td className="celda-eliminar">
-                  <button
-                    className="btn-eliminar"
-                    onClick={() => handleEliminarLavada(lavada.id)}
-                    title="Eliminar lavada"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-                <td>
-                  <div className="cliente-cell">
-                    <span className="cliente-nombre">
-                      {lavada.cliente?.nombre || 'No encontrado'}
-                    </span>
-                    <span className="cliente-fecha">
-                      {new Date(lavada.fecha).toLocaleDateString('es-CO')}
-                    </span>
-                  </div>
-                </td>
-                <td>
-                  <select
-                    value={lavada.tipo_lavado_id || ''}
-                    onChange={(e) => handleTipoLavadoChangeInline(lavada.id, e.target.value)}
-                    className="tipo-lavado-select"
-                  >
-                    <option value="">Seleccionar</option>
-                    {tiposLavado.map(t => (
-                      <option key={t.id} value={t.id}>{t.nombre}</option>
-                    ))}
-                  </select>
-                </td>
-                <td>{lavada.placa}</td>
-                <td>
-                  <select
-                    value={lavada.estado}
-                    onChange={(e) => handleEstadoChange(lavada.id, e.target.value)}
-                    className={`estado-select ${getEstadoClass(lavada.estado)}`}
-                  >
-                    <option value="EN ESPERA">En Espera</option>
-                    <option value="EN LAVADO">En Lavado</option>
-                    <option value="TERMINADO">Terminado</option>
-                    <option value="NOTIFICADO">Notificado</option>
-                    <option value="ENTREGADO">Entregado</option>
-                  </select>
-                </td>
+      <div className="lavadas-cards">
+        {lavadasFiltradas.length === 0 && (
+          <div className="empty-card">No hay lavadas registradas</div>
+        )}
+        {lavadasFiltradas.map((lavada) => {
+          const pagos = lavada.pagos || []
+          const isExpanded = expandedCards[lavada.id]
+          const estadoLabels = { 'EN ESPERA': 'Espera', 'EN LAVADO': 'Lavando', 'TERMINADO': 'Terminado', 'ENTREGADO': 'Entregado' }
+          return (
+            <div key={lavada.id} className={`lavada-card ${getEstadoClass(lavada.estado)}-border ${isExpanded ? 'expanded' : ''}`}>
+              <div
+                className="lavada-card-header"
+                onClick={() => setExpandedCards(prev => ({ ...prev, [lavada.id]: !prev[lavada.id] }))}
+              >
+                <div className="lavada-card-cliente">
+                  <span className="lavada-card-nombre">{lavada.cliente?.nombre || 'No encontrado'}</span>
+                  <span className="lavada-card-placa">{lavada.placa}</span>
+                </div>
+                <div className="lavada-card-summary">
+                  <span className={`estado-badge-mini ${getEstadoClass(lavada.estado)}`}>{estadoLabels[lavada.estado] || lavada.estado}</span>
+                  {getTimerActivo(lavada) && (
+                    <span className={`lavada-card-timer ${getEstadoClass(lavada.estado)}`}>{getTimerActivo(lavada)}</span>
+                  )}
+                  <span className="lavada-card-valor-mini">{formatMoney(lavada.valor)}</span>
+                  <ChevronDown size={16} className={`lavada-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
 
-                <td className="tiempo-cell">
-                  {lavada.tiempo_lavado ? `${lavada.tiempo_lavado} min` : '-'}
-                </td>
-
-                <td>
-                  <div className="adicionales-cell">
-                    {serviciosAdicionales.map(s => {
-                      const adicionalesLavada = lavada.adicionales || []
-                      const checked = adicionalesLavada.some(a => a.id === s.id)
-                      return (
-                        <label key={s.id} className="adicional-check">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => handleAdicionalChange(lavada.id, s, e.target.checked)}
-                          />
-                          <span>{s.nombre}</span>
-                        </label>
-                      )
-                    })}
+              {isExpanded && (
+                <div className="lavada-card-body">
+                  <div className="estado-flow">
+                    <button
+                      className={`estado-step-btn estado-espera-bg ${lavada.estado === 'EN ESPERA' ? 'active' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); handleEstadoChange(lavada.id, 'EN ESPERA') }}
+                    >
+                      <span className="estado-step-label">Espera</span>
+                      <span className="estado-step-time">{getTiempoEspera(lavada)}</span>
+                    </button>
+                    <button
+                      className={`estado-step-btn estado-lavado-bg ${lavada.estado === 'EN LAVADO' ? 'active' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); handleEstadoChange(lavada.id, 'EN LAVADO') }}
+                    >
+                      <span className="estado-step-label">Lavado</span>
+                      <span className="estado-step-time">{getTiempoLavado(lavada)}</span>
+                    </button>
+                    <button
+                      className={`estado-step-btn estado-terminado-bg ${lavada.estado === 'TERMINADO' ? 'active' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); handleEstadoChange(lavada.id, 'TERMINADO') }}
+                    >
+                      <span className="estado-step-label">Terminado</span>
+                      <span className="estado-step-time">{getTiempoTerminado(lavada)}</span>
+                    </button>
+                    <button
+                      className={`estado-step-btn estado-entregado-bg ${lavada.estado === 'ENTREGADO' ? 'active' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); handleEstadoChange(lavada.id, 'ENTREGADO') }}
+                    >
+                      <span className="estado-step-label">Entregado</span>
+                    </button>
                   </div>
-                </td>
-                <td className="valor-cell">{formatMoney(lavada.valor)}</td>
-                <td className="pagos-cell">
-                  {(() => {
-                    const pagos = lavada.pagos || []
-                    return (
-                      <div className="pagos-inline">
-                        {pagos.length === 0 && lavada.metodo_pago?.nombre && (
-                          <span className="pago-legacy">{lavada.metodo_pago.nombre}</span>
-                        )}
-                        {pagos.map((p, idx) => (
-                          <div key={idx} className="pago-inline-row">
-                            <select
-                              value={p.metodo_pago_id || ''}
-                              onChange={(e) => {
-                                const metodo = metodosPago.find(m => m.id == e.target.value)
-                                const nuevosPagos = pagos.map((pg, i) =>
-                                  i === idx ? { ...pg, metodo_pago_id: e.target.value, nombre: metodo?.nombre || '' } : pg
-                                )
-                                handlePagosChange(lavada.id, nuevosPagos)
-                              }}
-                              className="pago-inline-select"
-                            >
-                              <option value="">Método</option>
-                              {metodosPago.map(m => (
-                                <option key={m.id} value={m.id}>{m.nombre}</option>
-                              ))}
-                            </select>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              value={p.valor === 0 ? '' : p.valor}
-                              onChange={(e) => {
-                                const val = e.target.value.replace(/\D/g, '')
-                                const nuevosPagos = pagos.map((pg, i) =>
-                                  i === idx ? { ...pg, valor: val === '' ? 0 : Number(val) } : pg
-                                )
-                                handlePagosChange(lavada.id, nuevosPagos)
-                              }}
-                              className="pago-inline-input"
-                            />
-                            <button
-                              className="btn-remove-pago-inline"
-                              onClick={() => {
-                                const nuevosPagos = pagos.filter((_, i) => i !== idx)
-                                handlePagosChange(lavada.id, nuevosPagos)
-                              }}
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
+
+                  <div className="lavada-card-tipo-adic">
+                    <div className="lavada-card-field">
+                      <label>Tipo</label>
+                      <select
+                        value={lavada.tipo_lavado_id || ''}
+                        onChange={(e) => handleTipoLavadoChangeInline(lavada.id, e.target.value)}
+                        className="tipo-lavado-select"
+                      >
+                        <option value="">Seleccionar</option>
+                        {tiposLavado.map(t => (
+                          <option key={t.id} value={t.id}>{t.nombre}</option>
                         ))}
-                        <button
-                          className="btn-add-pago-inline"
-                          onClick={() => {
-                            const nuevosPagos = [...pagos, { metodo_pago_id: '', nombre: '', valor: lavada.valor || 0 }]
-                            handlePagosChange(lavada.id, nuevosPagos)
-                          }}
-                        >
-                          <Plus size={14} />
-                        </button>
+                      </select>
+                    </div>
+
+                    {serviciosAdicionales.length > 0 && (
+                      <div className="lavada-card-adicionales">
+                        <label>Adicionales</label>
+                        <div className="lavada-card-checks">
+                          {serviciosAdicionales.map(s => {
+                            const adicionalesLavada = lavada.adicionales || []
+                            const checked = adicionalesLavada.some(a => a.id === s.id)
+                            return (
+                              <label key={s.id} className="adicional-check">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => handleAdicionalChange(lavada.id, s, e.target.checked)}
+                                />
+                                <span>{s.nombre}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="lavada-card-row">
+                    <div className="lavada-card-field full">
+                      <label>Lavador</label>
+                      <select
+                        value={lavada.lavador_id || ''}
+                        onChange={(e) => handleLavadorChange(lavada.id, e.target.value)}
+                        className="lavador-select"
+                      >
+                        <option value="">Sin asignar</option>
+                        {lavadores.map(l => (
+                          <option key={l.id} value={l.id}>{l.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const sumaPagos = pagos.reduce((s, p) => s + (Number(p.valor) || 0), 0)
+                    const total = lavada.valor || 0
+                    const diff = sumaPagos - total
+                    const pagosOk = pagos.length === 0 || sumaPagos === total
+                    return (
+                      <div className="lavada-card-footer">
+                        <div className={`lavada-card-valor ${pagos.length > 0 ? (pagosOk ? 'pago-ok' : 'pago-error') : ''}`}>
+                          {formatMoney(total)}
+                        </div>
+                        <div className="lavada-card-pagos">
+                          {pagos.length === 0 && lavada.metodo_pago?.nombre && (
+                            <span className="pago-legacy">{lavada.metodo_pago.nombre}</span>
+                          )}
+                          {pagos.map((p, idx) => (
+                            <div key={idx} className="pago-inline-row">
+                              <select
+                                value={p.metodo_pago_id || ''}
+                                onChange={(e) => {
+                                  const metodo = metodosPago.find(m => m.id == e.target.value)
+                                  const nuevosPagos = pagos.map((pg, i) =>
+                                    i === idx ? { ...pg, metodo_pago_id: e.target.value, nombre: metodo?.nombre || '' } : pg
+                                  )
+                                  handlePagosChange(lavada.id, nuevosPagos)
+                                }}
+                                className="pago-inline-select"
+                              >
+                                <option value="">Método</option>
+                                {metodosPago.map(m => (
+                                  <option key={m.id} value={m.id}>{m.nombre}</option>
+                                ))}
+                              </select>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={p.valor === 0 ? '' : Number(p.valor).toLocaleString('es-CO')}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/\D/g, '')
+                                  const nuevosPagos = pagos.map((pg, i) =>
+                                    i === idx ? { ...pg, valor: val === '' ? 0 : Number(val) } : pg
+                                  )
+                                  handlePagosChange(lavada.id, nuevosPagos)
+                                }}
+                                className="pago-inline-input"
+                              />
+                              <button
+                                className="btn-remove-pago-inline"
+                                onClick={() => {
+                                  const nuevosPagos = pagos.filter((_, i) => i !== idx)
+                                  handlePagosChange(lavada.id, nuevosPagos)
+                                }}
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            className="btn-add-pago-inline"
+                            onClick={() => {
+                              const restante = total - sumaPagos
+                              const nuevosPagos = [...pagos, { metodo_pago_id: '', nombre: '', valor: restante > 0 ? restante : 0 }]
+                              handlePagosChange(lavada.id, nuevosPagos)
+                            }}
+                          >
+                            <Plus size={14} /> Pago
+                          </button>
+                          {pagos.length > 0 && !pagosOk && (
+                            <span className="pago-diff-msg">
+                              {diff > 0
+                                ? `Excede ${formatMoney(diff)}`
+                                : `Falta ${formatMoney(Math.abs(diff))}`}
+                            </span>
+                          )}
+                        </div>
+                        <div className="lavada-card-actions">
+                          <button
+                            className="btn-whatsapp"
+                            onClick={() => enviarWhatsApp(lavada)}
+                            title="Enviar WhatsApp"
+                            disabled={!pagosOk}
+                          >
+                            <MessageCircle size={18} />
+                          </button>
+                          <button
+                            className="btn-eliminar-card"
+                            onClick={() => handleEliminarLavada(lavada.id)}
+                            title="Eliminar"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </div>
                     )
                   })()}
-                </td>
-                <td>
-                  <select
-                    value={lavada.lavador_id || ''}
-                    onChange={(e) => handleLavadorChange(lavada.id, e.target.value)}
-                    className="lavador-select"
-                  >
-                    <option value="">Sin asignar</option>
-                    {lavadores.map(l => (
-                      <option key={l.id} value={l.id}>{l.nombre}</option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <button
-                    className="btn-whatsapp"
-                    onClick={() => enviarWhatsApp(lavada)}
-                    title="Enviar WhatsApp"
-                  >
-                    <MessageCircle size={18} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {lavadasFiltradas.length === 0 && (
-              <tr>
-                <td colSpan="11" className="empty">No hay lavadas registradas</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {showModal && (

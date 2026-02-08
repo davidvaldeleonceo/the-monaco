@@ -11,6 +11,7 @@ import Reportes from './components/Reportes'
 import Tareas from './components/Tareas'
 import PagoTrabajadores from './components/PagoTrabajadores'
 import Configuracion from './components/Configuracion'
+import Membresias from './components/Membresias'
 import { DataProvider } from './components/DataContext'
 import './App.css'
 
@@ -55,6 +56,7 @@ function App() {
                 <Route path="/reportes" element={<Reportes />} />
                 <Route path="/tareas" element={<Tareas />} />
                 <Route path="/pagos" element={<PagoTrabajadores />} />
+                <Route path="/membresias" element={<Membresias />} />
                 <Route path="/configuracion" element={<Configuracion />} />
               </Route>
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
