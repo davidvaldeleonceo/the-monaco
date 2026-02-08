@@ -1592,6 +1592,58 @@ body {
   font-weight: 600;
 }
 
+/* Pago Trabajadores - líneas de totales */
+.pago-linea-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.95rem;
+}
+
+.pago-linea-total:last-child {
+  border-bottom: none;
+}
+
+.pago-linea-total span {
+  color: var(--text-secondary);
+}
+
+.pago-linea-total strong {
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.pago-linea-final {
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
+  border-top: 2px solid var(--border-color);
+  border-bottom: none;
+}
+
+.pago-linea-final strong {
+  color: var(--accent-green);
+  font-size: 1.15rem;
+}
+
+.pago-descuento-input {
+  width: 120px;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--accent-red);
+  font-size: 0.9rem;
+  text-align: right;
+  font-weight: 600;
+}
+
+.pago-descuento-input:focus {
+  outline: none;
+  border-color: var(--accent-green);
+}
+
 /* Días ya pagados en DatePicker */
 .react-datepicker__day--pagado {
   background: rgba(239, 68, 68, 0.25) !important;

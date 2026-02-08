@@ -561,22 +561,27 @@ export default function PagoTrabajadores() {
                 <p style={{ margin: '4px 0' }}>+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_adicional_fijo || 0)}</p>
               </>
             )}
-            <p style={{ margin: '8px 0 0', fontSize: '1.1em' }}>Subtotal: <strong>{formatMoney(formData.total)}</strong></p>
+            <div className="pago-linea-total" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+              <span>Subtotal</span>
+              <strong>{formatMoney(formData.total)}</strong>
+            </div>
           </div>
         )}
 
-        <div className="form-group">
-          <label>Descuentos</label>
-          <input
-            type="number"
-            value={formData.descuentos}
-            onChange={(e) => handleChange('descuentos', Number(e.target.value))}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Total a Pagar</label>
-          <input type="text" value={formatMoney(formData.total_pagar)} disabled className="total-pagar" />
+        <div style={{ gridColumn: '1 / -1' }}>
+          <div className="pago-linea-total">
+            <span>Descuentos</span>
+            <input
+              type="number"
+              value={formData.descuentos}
+              onChange={(e) => handleChange('descuentos', Number(e.target.value))}
+              className="pago-descuento-input"
+            />
+          </div>
+          <div className="pago-linea-total pago-linea-final">
+            <span>Total a Pagar</span>
+            <strong>{formatMoney(formData.total_pagar)}</strong>
+          </div>
         </div>
       </>
     )
@@ -635,23 +640,24 @@ export default function PagoTrabajadores() {
           />
         </div>
 
-        <div className="form-group">
-          <label>Descuentos</label>
-          <input
-            type="number"
-            value={formData.descuentos}
-            onChange={(e) => handleChange('descuentos', Number(e.target.value))}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Total</label>
-          <input type="text" value={formatMoney(formData.total)} disabled />
-        </div>
-
-        <div className="form-group">
-          <label>Total a Pagar</label>
-          <input type="text" value={formatMoney(formData.total_pagar)} disabled className="total-pagar" />
+        <div style={{ gridColumn: '1 / -1' }}>
+          <div className="pago-linea-total">
+            <span>Total</span>
+            <strong>{formatMoney(formData.total)}</strong>
+          </div>
+          <div className="pago-linea-total">
+            <span>Descuentos</span>
+            <input
+              type="number"
+              value={formData.descuentos}
+              onChange={(e) => handleChange('descuentos', Number(e.target.value))}
+              className="pago-descuento-input"
+            />
+          </div>
+          <div className="pago-linea-total pago-linea-final">
+            <span>Total a Pagar</span>
+            <strong>{formatMoney(formData.total_pagar)}</strong>
+          </div>
         </div>
       </>
     )
