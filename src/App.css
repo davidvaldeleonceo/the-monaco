@@ -1592,6 +1592,18 @@ body {
   font-weight: 600;
 }
 
+/* Días ya pagados en DatePicker */
+.react-datepicker__day--pagado {
+  background: rgba(239, 68, 68, 0.25) !important;
+  color: var(--accent-red) !important;
+  border-radius: 8px;
+  position: relative;
+}
+
+.react-datepicker__day--pagado:hover {
+  background: rgba(239, 68, 68, 0.4) !important;
+}
+
 /* Fila anulada */
 .fila-anulada td {
   opacity: 0.5;

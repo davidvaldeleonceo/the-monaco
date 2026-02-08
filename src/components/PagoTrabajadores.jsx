@@ -2,6 +2,40 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash } from 'lucide-react'
+import DatePicker from 'react-datepicker'
+import 'react-datepicker/dist/react-datepicker.css'
+import { registerLocale } from 'react-datepicker'
+import es from 'date-fns/locale/es'
+
+registerLocale('es', es)
+
+function fechaLocalStr(date) {
+  if (!date) return ''
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function parseDateStr(str) {
+  if (!str) return null
+  const [y, m, d] = str.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+// Generar array de Date entre dos fechas (inclusive)
+function generarRangoDias(desdeStr, hastaStr) {
+  const desde = parseDateStr(desdeStr)
+  const hasta = parseDateStr(hastaStr)
+  if (!desde || !hasta || desde > hasta) return []
+  const dias = []
+  const curr = new Date(desde)
+  while (curr <= hasta) {
+    dias.push(new Date(curr))
+    curr.setDate(curr.getDate() + 1)
+  }
+  return dias
+}
 
 export default function PagoTrabajadores() {
   const { metodosPago } = useData()
@@ -13,6 +47,8 @@ export default function PagoTrabajadores() {
   const [lavadasPeriodo, setLavadasPeriodo] = useState([])
   const [calculando, setCalculando] = useState(false)
   const [editandoId, setEditandoId] = useState(null)
+  const [diasYaPagados, setDiasYaPagados] = useState([])
+  const [lavadasExcluidas, setLavadasExcluidas] = useState(0)
 
   const [formData, setFormData] = useState({
     lavador_id: '',
@@ -69,6 +105,54 @@ export default function PagoTrabajadores() {
     return lavador && lavador.tipo_pago
   }
 
+  // Fetch pagos existentes del trabajador para saber días ya pagados
+  const fetchDiasYaPagados = async (lavadorId) => {
+    if (!lavadorId) {
+      setDiasYaPagados([])
+      return []
+    }
+    const { data } = await supabase
+      .from('pago_trabajadores')
+      .select('id, fecha_desde, fecha_hasta')
+      .eq('lavador_id', lavadorId)
+      .or('anulado.is.null,anulado.eq.false')
+
+    const pagosExistentes = (data || []).filter(p => {
+      // Si estamos editando, excluir el pago que estamos editando
+      if (editandoId && p.id === editandoId) return false
+      return p.fecha_desde && p.fecha_hasta
+    })
+
+    const dias = []
+    pagosExistentes.forEach(p => {
+      const rango = generarRangoDias(p.fecha_desde, p.fecha_hasta)
+      dias.push(...rango)
+    })
+
+    setDiasYaPagados(dias)
+    return dias
+  }
+
+  // Cuando cambia el trabajador, actualizar días ya pagados
+  useEffect(() => {
+    if (formData.lavador_id) {
+      fetchDiasYaPagados(formData.lavador_id)
+    } else {
+      setDiasYaPagados([])
+    }
+  }, [formData.lavador_id, editandoId])
+
+  // Verificar si una fecha cae dentro de días ya pagados
+  const esDiaYaPagado = (fechaStr) => {
+    const fecha = parseDateStr(fechaStr?.split('T')[0])
+    if (!fecha) return false
+    return diasYaPagados.some(d =>
+      d.getFullYear() === fecha.getFullYear() &&
+      d.getMonth() === fecha.getMonth() &&
+      d.getDate() === fecha.getDate()
+    )
+  }
+
   // Fetch lavadas for a worker in a date range
   const fetchLavadasTrabajador = async (lavadorId, desde, hasta) => {
     if (!lavadorId || !desde || !hasta) {
@@ -115,7 +199,6 @@ export default function PagoTrabajadores() {
       }, 0)
       let sumaAdicionales = 0
       if (lavador.pago_adicionales_detalle) {
-        // Valor diferente por servicio
         lavadas.forEach(l => {
           (l.adicionales || []).forEach(a => {
             sumaAdicionales += Number(lavador.pago_adicionales_detalle[a.id] || 0)
@@ -140,8 +223,14 @@ export default function PagoTrabajadores() {
       if (!lavador || !lavador.tipo_pago || !formData.fecha_desde || !formData.fecha_hasta) return
 
       setCalculando(true)
-      const lavadas = await fetchLavadasTrabajador(lavador.id, formData.fecha_desde, formData.fecha_hasta)
-      const result = calcularPagoAutomatico(lavador, lavadas)
+      const todasLavadas = await fetchLavadasTrabajador(lavador.id, formData.fecha_desde, formData.fecha_hasta)
+
+      // Filtrar lavadas de días ya pagados
+      const lavadasFiltradas = todasLavadas.filter(l => !esDiaYaPagado(l.fecha))
+      const excluidas = todasLavadas.length - lavadasFiltradas.length
+      setLavadasExcluidas(excluidas)
+
+      const result = calcularPagoAutomatico(lavador, lavadasFiltradas)
       const totalPagar = result.total - Number(formData.descuentos)
       setFormData(prev => ({
         ...prev,
@@ -154,7 +243,7 @@ export default function PagoTrabajadores() {
       setCalculando(false)
     }
     doCalc()
-  }, [formData.lavador_id, formData.fecha_desde, formData.fecha_hasta])
+  }, [formData.lavador_id, formData.fecha_desde, formData.fecha_hasta, diasYaPagados])
 
   // Recalc total_pagar when descuentos change (auto mode)
   useEffect(() => {
@@ -197,6 +286,7 @@ export default function PagoTrabajadores() {
       metodo_pago_id: ''
     })
     setLavadasPeriodo([])
+    setLavadasExcluidas(0)
   }
 
   // Abrir modal en modo edición
@@ -224,13 +314,11 @@ export default function PagoTrabajadores() {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    // Validar método de pago
     if (!formData.metodo_pago_id) {
       alert('Debes seleccionar un método de pago.')
       return
     }
 
-    // Validar monto > 0
     if (formData.total_pagar <= 0) {
       alert('El total a pagar debe ser mayor a cero.')
       return
@@ -242,14 +330,12 @@ export default function PagoTrabajadores() {
       : formData.fecha
 
     if (editandoId) {
-      // --- MODO EDICIÓN ---
       const pagoAnterior = pagos.find(p => p.id === editandoId)
       const periodoAnterior = pagoAnterior?.fecha_desde && pagoAnterior?.fecha_hasta
         ? `${pagoAnterior.fecha_desde} a ${pagoAnterior.fecha_hasta}`
         : pagoAnterior?.fecha?.split('T')[0]
       const nombreAnterior = pagoAnterior?.lavador?.nombre || ''
 
-      // Actualizar pago
       const { error: pagoError } = await supabase
         .from('pago_trabajadores')
         .update({
@@ -275,7 +361,6 @@ export default function PagoTrabajadores() {
         return
       }
 
-      // Eliminar transacción anterior y crear nueva
       const descripcionAnterior = `Pago trabajador - ${periodoAnterior}`
       await supabase
         .from('transacciones')
@@ -295,8 +380,6 @@ export default function PagoTrabajadores() {
       }])
 
     } else {
-      // --- MODO CREAR ---
-      // Validar duplicados (mismo lavador, períodos cruzados)
       if (formData.fecha_desde && formData.fecha_hasta) {
         const { data: existentes } = await supabase
           .from('pago_trabajadores')
@@ -315,7 +398,6 @@ export default function PagoTrabajadores() {
         }
       }
 
-      // Insertar pago
       const { error: pagoError } = await supabase.from('pago_trabajadores').insert([{
         ...formData,
         metodo_pago_id: formData.metodo_pago_id
@@ -326,7 +408,6 @@ export default function PagoTrabajadores() {
         return
       }
 
-      // Auto-crear transacción EGRESO en Balance
       await supabase.from('transacciones').insert([{
         tipo: 'EGRESO',
         categoria: 'PAGO TRABAJADOR',
@@ -344,18 +425,15 @@ export default function PagoTrabajadores() {
     fetchData()
   }
 
-  // Anular pago
   const handleAnular = async (pago) => {
     const confirmado = confirm(`¿Estás seguro de anular el pago de ${pago.lavador?.nombre || 'este trabajador'}?`)
     if (!confirmado) return
 
-    // Soft delete: marcar como anulado
     await supabase
       .from('pago_trabajadores')
       .update({ anulado: true })
       .eq('id', pago.id)
 
-    // Eliminar transacción correspondiente
     const periodo = pago.fecha_desde && pago.fecha_hasta
       ? `${pago.fecha_desde} a ${pago.fecha_hasta}`
       : pago.fecha?.split('T')[0]
@@ -381,7 +459,6 @@ export default function PagoTrabajadores() {
     }).format(value)
   }
 
-  // Stats cards data
   const pagosActivos = pagos.filter(p => !p.anulado)
   const totalPagadoMes = pagosActivos.reduce((sum, p) => sum + Number(p.total_pagar), 0)
   const pagosRealizados = pagosActivos.length
@@ -393,6 +470,11 @@ export default function PagoTrabajadores() {
     if (tipo === 'porcentaje_lavada') return '% de lavada + adic.'
     return '-'
   }
+
+  // Highlight config para DatePicker: días ya pagados en rojo
+  const highlightPagados = diasYaPagados.length > 0
+    ? [{ 'react-datepicker__day--pagado': diasYaPagados }]
+    : []
 
   const renderMetodoPagoSelect = () => (
     <div className="form-group">
@@ -416,31 +498,40 @@ export default function PagoTrabajadores() {
       <>
         <div className="form-group">
           <label>Fecha Desde</label>
-          <input
-            type="date"
-            value={formData.fecha_desde}
-            onChange={(e) => handleChange('fecha_desde', e.target.value)}
-            required
+          <DatePicker
+            selected={parseDateStr(formData.fecha_desde)}
+            onChange={(date) => handleChange('fecha_desde', date ? fechaLocalStr(date) : '')}
+            dateFormat="dd/MM/yyyy"
+            locale="es"
+            placeholderText="Seleccionar"
+            isClearable
+            highlightDates={highlightPagados}
           />
         </div>
 
         <div className="form-group">
           <label>Fecha Hasta</label>
-          <input
-            type="date"
-            value={formData.fecha_hasta}
-            onChange={(e) => handleChange('fecha_hasta', e.target.value)}
-            required
+          <DatePicker
+            selected={parseDateStr(formData.fecha_hasta)}
+            onChange={(date) => handleChange('fecha_hasta', date ? fechaLocalStr(date) : '')}
+            dateFormat="dd/MM/yyyy"
+            locale="es"
+            placeholderText="Seleccionar"
+            isClearable
+            minDate={parseDateStr(formData.fecha_desde)}
+            highlightDates={highlightPagados}
           />
         </div>
 
         <div className="form-group">
           <label>Fecha de Pago</label>
-          <input
-            type="date"
-            value={formData.fecha}
-            onChange={(e) => handleChange('fecha', e.target.value)}
-            required
+          <DatePicker
+            selected={parseDateStr(formData.fecha)}
+            onChange={(date) => handleChange('fecha', date ? fechaLocalStr(date) : '')}
+            dateFormat="dd/MM/yyyy"
+            locale="es"
+            placeholderText="Seleccionar"
+            isClearable
           />
         </div>
 
@@ -453,6 +544,11 @@ export default function PagoTrabajadores() {
             <p style={{ margin: '0 0 8px', fontWeight: '600' }}>Resumen ({tipoPagoLabel(lavador?.tipo_pago)})</p>
             <p style={{ margin: '4px 0' }}>Lavadas en período: <strong>{formData.lavadas_cantidad}</strong></p>
             <p style={{ margin: '4px 0' }}>Adicionales: <strong>{formData.adicionales_cantidad}</strong></p>
+            {lavadasExcluidas > 0 && (
+              <p style={{ margin: '4px 0', color: 'var(--accent-yellow)', fontSize: '0.85em' }}>
+                {lavadasExcluidas} lavada{lavadasExcluidas > 1 ? 's' : ''} excluida{lavadasExcluidas > 1 ? 's' : ''} (días ya pagados)
+              </p>
+            )}
             {lavador?.tipo_pago === 'porcentaje' && (
               <p style={{ margin: '4px 0' }}>Valor total lavadas: <strong>{formatMoney(formData.detalle?.suma_valor_lavadas || 0)}</strong> x {lavador.pago_porcentaje || 0}%</p>
             )}
@@ -495,11 +591,13 @@ export default function PagoTrabajadores() {
       <>
         <div className="form-group">
           <label>Fecha</label>
-          <input
-            type="date"
-            value={formData.fecha}
-            onChange={(e) => handleChange('fecha', e.target.value)}
-            required
+          <DatePicker
+            selected={parseDateStr(formData.fecha)}
+            onChange={(date) => handleChange('fecha', date ? fechaLocalStr(date) : '')}
+            dateFormat="dd/MM/yyyy"
+            locale="es"
+            placeholderText="Seleccionar"
+            isClearable
           />
         </div>
 
@@ -582,7 +680,6 @@ export default function PagoTrabajadores() {
         />
       </div>
 
-      {/* Tarjetas resumen */}
       <div className="balance-resumen">
         <div className="resumen-card egresos">
           <DollarSign size={24} />
