@@ -496,43 +496,32 @@ export default function PagoTrabajadores() {
     const lavador = getSelectedLavador()
     return (
       <>
-        <div className="form-group">
-          <label>Fecha Desde</label>
-          <DatePicker
-            selected={parseDateStr(formData.fecha_desde)}
-            onChange={(date) => handleChange('fecha_desde', date ? fechaLocalStr(date) : '')}
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            placeholderText="Seleccionar"
-            isClearable
-            highlightDates={highlightPagados}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Fecha Hasta</label>
-          <DatePicker
-            selected={parseDateStr(formData.fecha_hasta)}
-            onChange={(date) => handleChange('fecha_hasta', date ? fechaLocalStr(date) : '')}
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            placeholderText="Seleccionar"
-            isClearable
-            minDate={parseDateStr(formData.fecha_desde)}
-            highlightDates={highlightPagados}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Fecha de Pago</label>
-          <DatePicker
-            selected={parseDateStr(formData.fecha)}
-            onChange={(date) => handleChange('fecha', date ? fechaLocalStr(date) : '')}
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            placeholderText="Seleccionar"
-            isClearable
-          />
+        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '1rem' }}>
+          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+            <label>Fecha Desde</label>
+            <DatePicker
+              selected={parseDateStr(formData.fecha_desde)}
+              onChange={(date) => handleChange('fecha_desde', date ? fechaLocalStr(date) : '')}
+              dateFormat="dd/MM/yyyy"
+              locale="es"
+              placeholderText="Seleccionar"
+              isClearable
+              highlightDates={highlightPagados}
+            />
+          </div>
+          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+            <label>Fecha Hasta</label>
+            <DatePicker
+              selected={parseDateStr(formData.fecha_hasta)}
+              onChange={(date) => handleChange('fecha_hasta', date ? fechaLocalStr(date) : '')}
+              dateFormat="dd/MM/yyyy"
+              locale="es"
+              placeholderText="Seleccionar"
+              isClearable
+              minDate={parseDateStr(formData.fecha_desde)}
+              highlightDates={highlightPagados}
+            />
+          </div>
         </div>
 
         {renderMetodoPagoSelect()}
