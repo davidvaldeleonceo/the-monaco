@@ -168,11 +168,6 @@ body {
   flex-direction: column;
   position: fixed;
   height: 100vh;
-  transition: width 0.3s ease;
-}
-
-.sidebar.collapsed {
-  width: 68px;
 }
 
 .sidebar-header {
@@ -181,34 +176,6 @@ body {
   gap: 0.75rem;
   padding: 1.5rem;
   border-bottom: 1px solid var(--border-color);
-}
-
-.sidebar.collapsed .sidebar-header {
-  justify-content: center;
-  padding: 1.5rem 0.5rem;
-}
-
-.sidebar-collapse-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0.35rem;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: auto;
-  transition: all 0.2s;
-}
-
-.sidebar-collapse-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.sidebar.collapsed .sidebar-collapse-btn {
-  margin-left: 0;
 }
 
 .sidebar-header h1 {
@@ -242,11 +209,6 @@ body {
   background: rgba(16, 185, 129, 0.1);
   color: var(--accent-green);
   border-right: 3px solid var(--accent-green);
-}
-
-.sidebar.collapsed .nav-item {
-  justify-content: center;
-  padding: 0.875rem 0;
 }
 
 .sidebar-footer {
@@ -311,16 +273,6 @@ body {
   padding: 2rem;
   background: var(--bg-primary);
   min-height: 100vh;
-  transition: margin-left 0.3s ease;
-}
-
-.sidebar.collapsed ~ .main-content {
-  margin-left: 68px;
-}
-
-.sidebar.collapsed .sidebar-footer {
-  justify-content: center;
-  padding: 1rem 0.5rem;
 }
 
 /* Page Styles */
@@ -477,7 +429,8 @@ body {
 
 .estado-espera { background: rgba(245, 158, 11, 0.1); color: var(--accent-yellow); }
 .estado-lavado { background: rgba(59, 130, 246, 0.1); color: var(--accent-blue); }
-.estado-terminado { background: rgba(160, 160, 160, 0.1); color: #a0a0a0; }
+.estado-terminado { background: rgba(6, 182, 212, 0.1); color: #06b6d4; }
+.estado-notificado { background: rgba(139, 92, 246, 0.1); color: var(--accent-purple); }
 .estado-entregado { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); }
 .tiempo-cell {
   font-weight: 500;
@@ -629,18 +582,21 @@ body {
 /* Filters */
 .filters {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.75rem;
   margin-bottom: 1.5rem;
-  align-items: center;
 }
 
 .filters-row-main {
-  display: contents;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
 }
 
 .filters-row-extra {
-  display: contents;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
 }
 
 .filter-toggle-btn {
@@ -656,6 +612,7 @@ body {
   border-radius: 8px;
   padding: 0.75rem 1rem;
   flex: 1;
+  max-width: 400px;
 }
 
 .search-box input {
@@ -687,7 +644,6 @@ body {
   background: var(--bg-hover);
   border-color: var(--accent-green);
 }
-
 
 .filter-fechas {
   display: flex;
@@ -1028,386 +984,54 @@ body {
 .valor-positivo { color: var(--accent-green); }
 .valor-negativo { color: var(--accent-red); }
 
-/* Edición inline Balance */
-.fila-editando td {
-  background: var(--bg-secondary);
+/* Reportes */
+.reportes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
 }
 
-.edit-inline-input,
-.edit-inline-select {
-  width: 100%;
-  padding: 0.35rem 0.5rem;
-  font-size: 0.82rem;
+.reporte-card {
   background: var(--bg-card);
+  border-radius: 12px;
+  padding: 1.5rem;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  color: var(--text-primary);
-  outline: none;
-  transition: border-color 0.2s;
 }
 
-.edit-inline-input:focus,
-.edit-inline-select:focus {
-  border-color: var(--accent-green);
+.reporte-card h3 {
+  margin-bottom: 1rem;
+  font-size: 1.125rem;
 }
 
-.edit-inline-valor {
-  text-align: right;
-  font-weight: 600;
-  max-width: 120px;
-}
-
-.edit-inline-input[type="date"] {
-  max-width: 140px;
-}
-
-.edit-inline-select {
-  cursor: pointer;
-}
-
-/* Reportes */
-/* Reportes */
-.reportes-actions {
+.reporte-items {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 0.75rem;
 }
 
-.reportes-page .filters {
-  justify-content: center;
-}
-
-.btn-export {
+.reporte-item {
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.85rem;
-  transition: all 0.2s;
-}
-
-.btn-export:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btn-pdf {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.btn-pdf:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.25);
-}
-
-.btn-excel {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.btn-excel:hover:not(:disabled) {
-  background: rgba(16, 185, 129, 0.25);
-}
-
-.reporte-titulo {
-  text-align: center;
-  margin-bottom: 2rem;
-}
-
-.reporte-titulo h2 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 0.25rem;
-}
-
-.reporte-titulo p {
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-}
-
-.reportes-secciones {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-
-.reporte-seccion {
-  background: var(--bg-card);
-  border-radius: 12px;
-  padding: 1.5rem;
-  border: 1px solid var(--border-color);
-}
-
-.reporte-seccion-titulo {
-  font-size: 1.1rem;
-  font-weight: 700;
-  margin-bottom: 1rem;
-  color: var(--text-primary);
-}
-
-.reporte-tabla {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.reporte-tabla th {
-  text-align: left;
-  padding: 0.75rem 1rem;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 2px solid var(--border-color);
-}
-
-.reporte-tabla td {
-  padding: 0.75rem 1rem;
+  justify-content: space-between;
+  padding: 0.75rem 0;
   border-bottom: 1px solid var(--border-color);
-  font-size: 0.95rem;
 }
 
-.reporte-tabla tbody tr:last-child td {
+.reporte-item:last-child {
   border-bottom: none;
 }
 
-.reporte-tabla .col-valor {
-  text-align: right;
+.reporte-item .valor {
   font-weight: 600;
-  white-space: nowrap;
 }
 
-.reporte-tabla .col-pct {
-  text-align: center;
-  color: var(--text-secondary);
-  width: 80px;
-}
+.reporte-item .valor.positivo { color: var(--accent-green); }
+.reporte-item .valor.negativo { color: var(--accent-red); }
 
-.reporte-tabla .positivo {
-  color: var(--accent-green);
-}
-
-.reporte-tabla .negativo {
-  color: var(--accent-red);
-}
-
-.reporte-tabla .fila-balance td {
-  font-weight: 700;
-  font-size: 1.05rem;
-  border-top: 2px solid var(--border-color);
-  padding-top: 1rem;
-}
-
-.reporte-tabla .fila-egresos td {
-  color: var(--accent-red);
-}
-
-/* Charts */
-.chart-card {
-  background: var(--bg-card);
-  border-radius: 12px;
-  padding: 1.5rem;
-  border: 1px solid var(--border-color);
-  margin-bottom: 1.5rem;
-}
-
-.chart-card.chart-full {
-  width: 100%;
-}
-
-.chart-title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-  color: var(--text-primary);
-}
-
-.chart-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.chart-grid .chart-card {
-  margin-bottom: 0;
-}
-
-.chart-grid.chart-centered {
-  grid-template-columns: 1fr;
-  max-width: 600px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.chart-tooltip {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  font-size: 0.85rem;
-  color: var(--text-primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.chart-tooltip-label {
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-  color: var(--text-secondary);
-}
-
-.chart-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 300px;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-}
-
-/* Recharts dark theme overrides */
-.recharts-legend-item-text {
-  color: var(--text-secondary) !important;
-}
-
-.recharts-default-legend {
-  color: var(--text-secondary);
-}
-
-/* Reporte Tabs */
-.reporte-tabs {
-  display: flex;
-  gap: 0;
-  background: var(--bg-card);
-  border-radius: 12px;
-  padding: 4px;
-  margin-bottom: 1.5rem;
-  border: 1px solid var(--border-color);
-}
-
-.reporte-tab {
-  flex: 1;
-  padding: 0.75rem 1rem;
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.reporte-tab:hover {
-  color: var(--text-primary);
+.reporte-item.destacado {
   background: var(--bg-hover);
-}
-
-.reporte-tab.active {
-  background: var(--accent-green);
-  color: var(--bg-primary);
-  font-weight: 600;
-}
-
-/* KPI Cards (Tab 3) */
-.kpi-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.kpi-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.kpi-label {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.kpi-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.kpi-value.positivo {
-  color: var(--accent-green);
-}
-
-.kpi-value.negativo {
-  color: var(--accent-red);
-}
-
-.kpi-change {
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-
-.kpi-change.positivo {
-  color: var(--accent-green);
-}
-
-.kpi-change.negativo {
-  color: var(--accent-red);
-}
-
-/* KPI Result Grid (Tab 2) */
-.kpi-result-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-}
-
-.kpi-result {
-  background: var(--bg-hover);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  text-align: center;
-}
-
-.kpi-result-label {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.kpi-result-value {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.kpi-result-value.positivo {
-  color: var(--accent-green);
-}
-
-.kpi-result-value.negativo {
-  color: var(--accent-red);
-}
-
-/* Top Performers Grid */
-.top-performers-grid {
-  grid-template-columns: repeat(3, 1fr);
+  margin: 0 -1.5rem;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
 }
 
 /* Tareas */
@@ -1590,128 +1214,6 @@ body {
   background: rgba(16, 185, 129, 0.1) !important;
   color: var(--accent-green) !important;
   font-weight: 600;
-}
-
-/* Pago Trabajadores - Stats Cards */
-.pagos-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.pago-stat-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 1rem 1.5rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.pago-stat-left {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-.pago-stat-valor {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.pago-stat-card.egresos { border-left: 4px solid var(--accent-red); }
-.pago-stat-card.egresos svg { color: var(--accent-red); }
-.pago-stat-card.egresos .pago-stat-valor { color: var(--accent-red); }
-
-.pago-stat-card.balance.positivo { border-left: 4px solid var(--accent-blue); }
-.pago-stat-card.balance.positivo svg { color: var(--accent-blue); }
-.pago-stat-card.balance.positivo .pago-stat-valor { color: var(--accent-blue); }
-
-.pago-stat-card.ingresos { border-left: 4px solid var(--accent-green); }
-.pago-stat-card.ingresos svg { color: var(--accent-green); }
-.pago-stat-card.ingresos .pago-stat-valor { color: var(--accent-green); }
-
-@media (max-width: 768px) {
-  .pagos-stats {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Pago Trabajadores - líneas de totales */
-.pago-linea-total {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid var(--border-color);
-  font-size: 0.95rem;
-}
-
-.pago-linea-total:last-child {
-  border-bottom: none;
-}
-
-.pago-linea-total span {
-  color: var(--text-secondary);
-}
-
-.pago-linea-total strong {
-  color: var(--text-primary);
-  font-size: 1rem;
-}
-
-.pago-linea-final {
-  padding-top: 0.75rem;
-  margin-top: 0.25rem;
-  border-top: 2px solid var(--border-color);
-  border-bottom: none;
-}
-
-.pago-linea-final strong {
-  color: var(--accent-green);
-  font-size: 1.15rem;
-}
-
-.pago-descuento-input {
-  width: 120px;
-  padding: 0.4rem 0.6rem;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  color: var(--accent-red);
-  font-size: 0.9rem;
-  text-align: right;
-  font-weight: 600;
-}
-
-.pago-descuento-input:focus {
-  outline: none;
-  border-color: var(--accent-green);
-}
-
-/* Días ya pagados en DatePicker */
-.react-datepicker__day--pagado {
-  background: rgba(239, 68, 68, 0.25) !important;
-  color: var(--accent-red) !important;
-  border-radius: 8px;
-  position: relative;
-}
-
-.react-datepicker__day--pagado:hover {
-  background: rgba(239, 68, 68, 0.4) !important;
-}
-
-/* Fila anulada */
-.fila-anulada td {
-  opacity: 0.5;
-  text-decoration: line-through;
-  color: var(--text-secondary);
 }
 
 /* Lavador Select */
@@ -2003,6 +1505,10 @@ body {
   display: none;
 }
 
+.desktop-only {
+  display: block;
+}
+
 /* Mobile Card Layout for Lavadas */
 .lavadas-cards {
   display: flex;
@@ -2022,7 +1528,8 @@ body {
 
 .lavada-card.estado-espera-border { border-left-color: var(--accent-yellow); }
 .lavada-card.estado-lavado-border { border-left-color: var(--accent-blue); }
-.lavada-card.estado-terminado-border { border-left-color: #a0a0a0; }
+.lavada-card.estado-terminado-border { border-left-color: #06b6d4; }
+.lavada-card.estado-notificado-border { border-left-color: var(--accent-purple); }
 .lavada-card.estado-entregado-border { border-left-color: var(--accent-green); }
 
 .lavada-card-header {
@@ -2078,19 +1585,6 @@ body {
   white-space: nowrap;
 }
 
-.lavada-card-timer {
-  font-size: 0.7rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  padding: 0.15rem 0.4rem;
-  border-radius: 8px;
-}
-
-.lavada-card-timer.estado-espera { color: var(--accent-yellow); }
-.lavada-card-timer.estado-lavado { color: var(--accent-blue); }
-.lavada-card-timer.estado-terminado { color: #a0a0a0; }
-
 .lavada-card-valor-mini {
   font-weight: 700;
   font-size: 0.85rem;
@@ -2129,67 +1623,6 @@ body {
   align-items: center;
   flex-shrink: 0;
 }
-
-/* Estado flow inside expanded card */
-.estado-flow {
-  display: flex;
-  gap: 0.375rem;
-  padding-bottom: 0.625rem;
-  border-bottom: 1px solid var(--border-color);
-  align-items: stretch;
-}
-
-.estado-step-btn {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.1rem;
-  padding: 0.4rem 0.25rem;
-  border: none;
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.6);
-  cursor: pointer;
-  transition: all 0.2s;
-  opacity: 0.4;
-}
-
-.estado-step-btn.active {
-  opacity: 1;
-  color: white;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
-}
-
-.estado-step-btn:hover {
-  opacity: 0.8;
-}
-
-.estado-step-btn.active:hover {
-  opacity: 1;
-}
-
-.estado-step-label {
-  font-size: 0.6rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.estado-step-time {
-  font-size: 0.8rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.estado-espera-bg { background: rgba(245, 158, 11, 0.25); }
-.estado-espera-bg.active { background: rgba(245, 158, 11, 0.5); }
-.estado-lavado-bg { background: rgba(59, 130, 246, 0.25); }
-.estado-lavado-bg.active { background: rgba(59, 130, 246, 0.5); }
-.estado-terminado-bg { background: rgba(160, 160, 160, 0.25); }
-.estado-terminado-bg.active { background: rgba(160, 160, 160, 0.5); }
-.estado-entregado-bg { background: rgba(16, 185, 129, 0.25); }
-.estado-entregado-bg.active { background: rgba(16, 185, 129, 0.5); }
 
 .lavada-card-body {
   padding: 0.75rem 1rem;
@@ -2237,30 +1670,6 @@ body {
   padding: 0.375rem 0;
 }
 
-.lavada-card-tipo-adic {
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-start;
-}
-
-.lavada-card-tipo-adic > .lavada-card-field {
-  flex: 0 0 40%;
-}
-
-.lavada-card-tipo-adic > .lavada-card-field .tipo-lavado-select {
-  width: 100%;
-  max-width: none;
-}
-
-.lavada-card-tipo-adic > .lavada-card-adicionales {
-  flex: 1;
-  align-items: flex-end;
-}
-
-.lavada-card-tipo-adic > .lavada-card-adicionales .lavada-card-checks {
-  justify-content: flex-end;
-}
-
 .lavada-card-adicionales {
   display: flex;
   flex-direction: column;
@@ -2285,21 +1694,6 @@ body {
   font-weight: 700;
   font-size: 1.1rem;
   color: var(--accent-green);
-  white-space: nowrap;
-}
-
-.lavada-card-valor.pago-ok {
-  color: var(--accent-green);
-}
-
-.lavada-card-valor.pago-error {
-  color: var(--accent-red);
-}
-
-.pago-diff-msg {
-  font-size: 0.75rem;
-  color: var(--accent-red);
-  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -2393,37 +1787,13 @@ body {
     position: fixed;
     left: -280px;
     top: 0;
-    width: 260px;
     height: 100vh;
     z-index: 1002;
     transition: left 0.3s ease;
   }
 
-  .sidebar.collapsed {
-    width: 260px;
-  }
-
   .sidebar.open {
     left: 0;
-  }
-
-  .sidebar-collapse-btn {
-    display: none;
-  }
-
-  .sidebar.collapsed .nav-item {
-    justify-content: flex-start;
-    padding: 0.875rem 1.5rem;
-  }
-
-  .sidebar.collapsed .sidebar-header {
-    justify-content: flex-start;
-    padding: 1.5rem;
-  }
-
-  .sidebar.collapsed .sidebar-footer {
-    justify-content: space-between;
-    padding: 1rem 1.5rem;
   }
 
   .sidebar-overlay {
@@ -2441,10 +1811,6 @@ body {
     padding-top: 70px;
     padding-left: 1rem;
     padding-right: 1rem;
-  }
-
-  .sidebar.collapsed ~ .main-content {
-    margin-left: 0;
   }
 
   /* Page Headers */
@@ -2485,13 +1851,10 @@ body {
 
   /* Filters */
   .filters {
-    flex-direction: column;
-    flex-wrap: nowrap;
     gap: 0.5rem;
   }
 
   .filters-row-main {
-    display: flex;
     gap: 0.375rem;
   }
 
@@ -2531,9 +1894,9 @@ body {
   }
 
   .filters-row-extra {
-    display: none;
     flex-direction: column;
     gap: 0.5rem;
+    display: none;
   }
 
   .filters-row-extra.open {
@@ -2573,6 +1936,10 @@ body {
   /* Show/Hide for mobile */
   .mobile-only {
     display: block;
+  }
+
+  .desktop-only.card {
+    display: none;
   }
 
   /* Tables (for non-lavadas views) */
@@ -2623,78 +1990,7 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .reportes-actions {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .reporte-titulo h2 {
-    font-size: 1.15rem;
-  }
-
-  .reporte-seccion {
-    padding: 1rem;
-  }
-
-  .reporte-tabla th,
-  .reporte-tabla td {
-    padding: 0.5rem 0.5rem;
-    font-size: 0.82rem;
-  }
-
-  .reporte-tabla .col-pct {
-    width: 55px;
-  }
-
-  .btn-export span {
-    display: none;
-  }
-
-  .btn-export {
-    padding: 0.5rem;
-  }
-
-  .chart-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .chart-card {
-    padding: 1rem;
-  }
-
-  .chart-grid.chart-centered {
-    max-width: 100%;
-  }
-
-  .reporte-tabs {
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .reporte-tab {
-    font-size: 0.82rem;
-    padding: 0.6rem 0.75rem;
-  }
-
-  .kpi-cards {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
-  }
-
-  .kpi-value {
-    font-size: 1.2rem;
-  }
-
-  .kpi-result-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
-  }
-
-  .kpi-result-value {
-    font-size: 1.1rem;
-  }
-
-  .top-performers-grid {
+  .reportes-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2726,17 +2022,6 @@ body {
   /* WhatsApp Button */
   .btn-whatsapp {
     padding: 0.4rem;
-  }
-
-  /* Tipo + Adicionales stack on mobile */
-  .lavada-card-tipo-adic {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .lavada-card-tipo-adic > .lavada-card-field {
-    flex: none;
-    width: 100%;
   }
 }
 

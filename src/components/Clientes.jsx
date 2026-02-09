@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
-import { Plus, Search, X, Edit, Trash2 } from 'lucide-react'
+import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -10,7 +10,7 @@ import es from 'date-fns/locale/es'
 registerLocale('es', es)
 
 export default function Clientes() {
-  const { clientes, tiposMembresia, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes } = useData()
+  const { clientes, tiposMembresia, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, negocioId } = useData()
 
   const [showModal, setShowModal] = useState(false)
   const [editando, setEditando] = useState(null)
@@ -20,6 +20,8 @@ export default function Clientes() {
   const [fechaDesde, setFechaDesde] = useState(null)
   const [fechaHasta, setFechaHasta] = useState(null)
   const [filtroRapido, setFiltroRapido] = useState('')
+  const [expandedCard, setExpandedCard] = useState(null)
+  const [showFilters, setShowFilters] = useState(false)
 
   const [formData, setFormData] = useState({
     nombre: '',
@@ -103,7 +105,7 @@ export default function Clientes() {
     } else {
       const { data, error } = await supabase
         .from('clientes')
-        .insert([cleanData])
+        .insert([{ ...cleanData, negocio_id: negocioId }])
         .select('*, membresia:tipos_membresia(nombre)')
         .single()
 
@@ -254,73 +256,85 @@ export default function Clientes() {
       </div>
 
       <div className="filters">
-        <div className="search-box">
-          <Search size={20} />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, placa, cédula o teléfono..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <select
-          value={filtroTipoCliente}
-          onChange={(e) => setFiltroTipoCliente(e.target.value)}
-          className="filter-select"
-        >
-          <option value="">Todos los tipos</option>
-          {tiposMembresia.map(m => (
-            <option key={m.id} value={m.id}>{m.nombre}</option>
-          ))}
-        </select>
-        <select
-          value={filtroEstado}
-          onChange={(e) => setFiltroEstado(e.target.value)}
-          className="filter-select"
-        >
-          <option value="">Todos</option>
-          <option value="Activo">Activo</option>
-          <option value="Inactivo">Inactivo</option>
-        </select>
-        <div className="filter-rapido">
-          <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
-          <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
-          <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
-          <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
-          <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
+        <div className="filters-row-main">
+          <div className="search-box">
+            <Search size={18} />
+            <input
+              type="text"
+              placeholder="Buscar nombre, placa, cédula..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select
+            value={filtroTipoCliente}
+            onChange={(e) => setFiltroTipoCliente(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Tipo</option>
+            {tiposMembresia.map(m => (
+              <option key={m.id} value={m.id}>{m.nombre}</option>
+            ))}
+          </select>
+          <select
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Estado</option>
+            <option value="Activo">Activo</option>
+            <option value="Inactivo">Inactivo</option>
+          </select>
+          <button
+            className={`filter-toggle-btn ${showFilters ? 'active' : ''}`}
+            onClick={() => setShowFilters(prev => !prev)}
+            title="Más filtros"
+          >
+            <SlidersHorizontal size={18} />
+          </button>
         </div>
 
-        <div className="filter-fechas">
-          <DatePicker
-            selected={fechaDesde}
-            onChange={(date) => setFechaDesde(date)}
-            selectsStart
-            startDate={fechaDesde}
-            endDate={fechaHasta}
-            placeholderText="Desde"
-            className="filter-date"
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            isClearable
-          />
-          <span className="filter-separator">→</span>
-          <DatePicker
-            selected={fechaHasta}
-            onChange={(date) => setFechaHasta(date)}
-            selectsEnd
-            startDate={fechaDesde}
-            endDate={fechaHasta}
-            minDate={fechaDesde}
-            placeholderText="Hasta"
-            className="filter-date"
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            isClearable
-          />
+        <div className={`filters-row-extra ${showFilters ? 'open' : ''}`}>
+          <div className="filter-rapido">
+            <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
+            <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
+            <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
+            <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
+            <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
+          </div>
+          <div className="filter-fechas">
+            <DatePicker
+              selected={fechaDesde}
+              onChange={(date) => setFechaDesde(date)}
+              selectsStart
+              startDate={fechaDesde}
+              endDate={fechaHasta}
+              placeholderText="Desde"
+              className="filter-date"
+              dateFormat="dd/MM/yyyy"
+              locale="es"
+              isClearable
+            />
+            <span className="filter-separator">→</span>
+            <DatePicker
+              selected={fechaHasta}
+              onChange={(date) => setFechaHasta(date)}
+              selectsEnd
+              startDate={fechaDesde}
+              endDate={fechaHasta}
+              minDate={fechaDesde}
+              placeholderText="Hasta"
+              className="filter-date"
+              dateFormat="dd/MM/yyyy"
+              locale="es"
+              isClearable
+            />
+          </div>
         </div>
       </div>
 
-      <div className="card">
+      {/* Desktop: tabla */}
+      <div className="card clientes-tabla-desktop">
         <div className="table-container">
         <table className="data-table">
           <thead>
@@ -377,6 +391,59 @@ export default function Clientes() {
           </tbody>
         </table>
         </div>
+      </div>
+
+      {/* Mobile: cards */}
+      <div className="clientes-cards-mobile">
+        {clientesFiltrados.map(cliente => {
+          const estado = getEstadoCliente(cliente)
+          const isExpanded = expandedCard === cliente.id
+          return (
+            <div key={cliente.id} className={`cliente-card ${estado === 'Activo' ? 'estado-activo-border' : 'estado-vencido-border'} ${isExpanded ? 'expanded' : ''}`}>
+              <div className="cliente-card-header" onClick={() => setExpandedCard(isExpanded ? null : cliente.id)}>
+                <div className="cliente-card-left">
+                  <span className="cliente-card-nombre">{cliente.nombre}</span>
+                  <span className="cliente-card-placa">{cliente.placa}</span>
+                </div>
+                <div className="cliente-card-right">
+                  <span className={`estado-badge-mini ${estado === 'Activo' ? 'activo' : 'vencido'}`}>{estado}</span>
+                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="cliente-card-body">
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Moto</span>
+                    <span className="cliente-card-value">{cliente.moto || '—'}</span>
+                  </div>
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Teléfono</span>
+                    <span className="cliente-card-value">{cliente.telefono || '—'}</span>
+                  </div>
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Tipo</span>
+                    <span className="cliente-card-value">{cliente.membresia?.nombre || 'Sin tipo'}</span>
+                  </div>
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Vencimiento</span>
+                    <span className="cliente-card-value">{cliente.fecha_fin_membresia || '—'}</span>
+                  </div>
+                  <div className="cliente-card-actions">
+                    <button className="btn-secondary" onClick={() => handleEdit(cliente)}>
+                      <Edit size={16} /> Editar
+                    </button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => handleDelete(cliente.id)}>
+                      <Trash2 size={16} /> Eliminar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {clientesFiltrados.length === 0 && (
+          <div className="clientes-cards-empty">No hay clientes registrados</div>
+        )}
       </div>
 
       {showModal && (

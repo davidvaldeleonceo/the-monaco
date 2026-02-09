@@ -38,17 +38,24 @@ function generarRangoDias(desdeStr, hastaStr) {
 }
 
 export default function PagoTrabajadores() {
-  const { metodosPago } = useData()
+  const { metodosPago, negocioId } = useData()
 
   const [pagos, setPagos] = useState([])
   const [lavadores, setLavadores] = useState([])
   const [showModal, setShowModal] = useState(false)
-  const [filtroMes, setFiltroMes] = useState(new Date().toISOString().slice(0, 7))
   const [lavadasPeriodo, setLavadasPeriodo] = useState([])
   const [calculando, setCalculando] = useState(false)
   const [editandoId, setEditandoId] = useState(null)
   const [diasYaPagados, setDiasYaPagados] = useState([])
   const [lavadasExcluidas, setLavadasExcluidas] = useState(0)
+  const [descuentosFocused, setDescuentosFocused] = useState(false)
+
+  // Filtros de fecha (igual que Balance)
+  const hoyInit = new Date()
+  hoyInit.setHours(0, 0, 0, 0)
+  const [filtroDesde, setFiltroDesde] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth(), 1))
+  const [filtroHasta, setFiltroHasta] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth() + 1, 0))
+  const [filtroRapido, setFiltroRapido] = useState('mes')
 
   const [formData, setFormData] = useState({
     lavador_id: '',
@@ -69,23 +76,27 @@ export default function PagoTrabajadores() {
 
   useEffect(() => {
     fetchData()
-  }, [filtroMes])
+  }, [filtroDesde, filtroHasta])
 
   const fetchData = async () => {
-    const inicioMes = `${filtroMes}-01`
-    const finMes = new Date(filtroMes + '-01')
-    finMes.setMonth(finMes.getMonth() + 1)
-    const finMesStr = finMes.toISOString().split('T')[0]
-
-    const { data: pagosData } = await supabase
+    let query = supabase
       .from('pago_trabajadores')
       .select(`
         *,
         lavador:lavadores(nombre)
       `)
-      .gte('fecha', inicioMes)
-      .lt('fecha', finMesStr)
       .order('fecha', { ascending: false })
+
+    if (filtroDesde) {
+      query = query.gte('fecha', fechaLocalStr(filtroDesde))
+    }
+    if (filtroHasta) {
+      const hasta = new Date(filtroHasta)
+      hasta.setDate(hasta.getDate() + 1)
+      query = query.lt('fecha', fechaLocalStr(hasta))
+    }
+
+    const { data: pagosData } = await query
 
     const { data: lavadoresData } = await supabase
       .from('lavadores')
@@ -94,6 +105,49 @@ export default function PagoTrabajadores() {
 
     setPagos(pagosData || [])
     setLavadores(lavadoresData || [])
+  }
+
+  const aplicarFiltroRapido = (tipo) => {
+    setFiltroRapido(tipo)
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+
+    switch (tipo) {
+      case 'hoy':
+        setFiltroDesde(hoy)
+        setFiltroHasta(hoy)
+        break
+      case 'semana': {
+        const inicioSemana = new Date(hoy)
+        const diaS = hoy.getDay()
+        inicioSemana.setDate(hoy.getDate() - (diaS === 0 ? 6 : diaS - 1))
+        const finSemana = new Date(inicioSemana)
+        finSemana.setDate(inicioSemana.getDate() + 6)
+        setFiltroDesde(inicioSemana)
+        setFiltroHasta(finSemana)
+        break
+      }
+      case 'mes': {
+        const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+        const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0)
+        setFiltroDesde(inicioMes)
+        setFiltroHasta(finMes)
+        break
+      }
+      case 'año': {
+        const inicioAño = new Date(hoy.getFullYear(), 0, 1)
+        const finAño = new Date(hoy.getFullYear(), 11, 31)
+        setFiltroDesde(inicioAño)
+        setFiltroHasta(finAño)
+        break
+      }
+      case 'todas':
+        setFiltroDesde(null)
+        setFiltroHasta(null)
+        break
+      default:
+        break
+    }
   }
 
   const getSelectedLavador = () => {
@@ -376,7 +430,8 @@ export default function PagoTrabajadores() {
         metodo_pago_id: formData.metodo_pago_id,
         placa_o_persona: lavador?.nombre || '',
         descripcion: `Pago trabajador - ${periodo}`,
-        fecha: formData.fecha + 'T12:00:00-05:00'
+        fecha: formData.fecha + 'T12:00:00-05:00',
+        negocio_id: negocioId
       }])
 
     } else {
@@ -400,7 +455,8 @@ export default function PagoTrabajadores() {
 
       const { error: pagoError } = await supabase.from('pago_trabajadores').insert([{
         ...formData,
-        metodo_pago_id: formData.metodo_pago_id
+        metodo_pago_id: formData.metodo_pago_id,
+        negocio_id: negocioId
       }])
 
       if (pagoError) {
@@ -415,7 +471,8 @@ export default function PagoTrabajadores() {
         metodo_pago_id: formData.metodo_pago_id,
         placa_o_persona: lavador?.nombre || '',
         descripcion: `Pago trabajador - ${periodo}`,
-        fecha: formData.fecha + 'T12:00:00-05:00'
+        fecha: formData.fecha + 'T12:00:00-05:00',
+        negocio_id: negocioId
       }])
     }
 
@@ -482,6 +539,25 @@ export default function PagoTrabajadores() {
   const highlightPagados = diasYaPagados.length > 0
     ? [{ 'react-datepicker__day--pagado': diasYaPagados }]
     : []
+
+  const renderDescuentosInput = () => (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={descuentosFocused ? (formData.descuentos || '') : formatMoney(formData.descuentos)}
+      placeholder={formatMoney(0)}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^\d]/g, '')
+        handleChange('descuentos', raw === '' ? 0 : Number(raw))
+      }}
+      onFocus={(e) => {
+        setDescuentosFocused(true)
+        if (formData.descuentos === 0) e.target.value = ''
+      }}
+      onBlur={() => setDescuentosFocused(false)}
+      className="pago-descuento-input"
+    />
+  )
 
   const renderMetodoPagoSelect = () => (
     <div className="form-group">
@@ -571,12 +647,7 @@ export default function PagoTrabajadores() {
         <div style={{ gridColumn: '1 / -1' }}>
           <div className="pago-linea-total">
             <span>Descuentos</span>
-            <input
-              type="number"
-              value={formData.descuentos}
-              onChange={(e) => handleChange('descuentos', Number(e.target.value))}
-              className="pago-descuento-input"
-            />
+            {renderDescuentosInput()}
           </div>
           <div className="pago-linea-total pago-linea-final">
             <span>Total a Pagar</span>
@@ -647,12 +718,7 @@ export default function PagoTrabajadores() {
           </div>
           <div className="pago-linea-total">
             <span>Descuentos</span>
-            <input
-              type="number"
-              value={formData.descuentos}
-              onChange={(e) => handleChange('descuentos', Number(e.target.value))}
-              className="pago-descuento-input"
-            />
+            {renderDescuentosInput()}
           </div>
           <div className="pago-linea-total pago-linea-final">
             <span>Total a Pagar</span>
@@ -674,12 +740,42 @@ export default function PagoTrabajadores() {
       </div>
 
       <div className="filters">
-        <input
-          type="month"
-          value={filtroMes}
-          onChange={(e) => setFiltroMes(e.target.value)}
-          className="filter-month"
-        />
+        <div className="filter-rapido">
+          <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
+          <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
+          <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
+          <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
+          <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
+        </div>
+
+        <div className="filter-fechas">
+          <DatePicker
+            selected={filtroDesde}
+            onChange={(date) => { setFiltroDesde(date); setFiltroRapido('') }}
+            selectsStart
+            startDate={filtroDesde}
+            endDate={filtroHasta}
+            placeholderText="Desde"
+            className="filter-date"
+            dateFormat="dd/MM/yyyy"
+            locale="es"
+            isClearable
+          />
+          <span className="filter-separator">→</span>
+          <DatePicker
+            selected={filtroHasta}
+            onChange={(date) => { setFiltroHasta(date); setFiltroRapido('') }}
+            selectsEnd
+            startDate={filtroDesde}
+            endDate={filtroHasta}
+            minDate={filtroDesde}
+            placeholderText="Hasta"
+            className="filter-date"
+            dateFormat="dd/MM/yyyy"
+            locale="es"
+            isClearable
+          />
+        </div>
       </div>
 
       <div className="pagos-stats">
@@ -765,7 +861,7 @@ export default function PagoTrabajadores() {
             })}
             {pagos.length === 0 && (
               <tr>
-                <td colSpan="9" className="empty">No hay pagos registrados este mes</td>
+                <td colSpan="9" className="empty">No hay pagos registrados en este período</td>
               </tr>
             )}
           </tbody>

@@ -4,7 +4,7 @@ import { useData } from './DataContext'
 import { Plus, X, Edit, Trash2, Settings } from 'lucide-react'
 
 export default function Configuracion() {
-  const { refreshConfig, serviciosAdicionales } = useData()
+  const { refreshConfig, serviciosAdicionales, negocioId } = useData()
   const [activeTab, setActiveTab] = useState('membresias')
   const [data, setData] = useState([])
   const [showModal, setShowModal] = useState(false)
@@ -181,7 +181,7 @@ export default function Configuracion() {
       const res = await supabase.from(getTable()).update(cleaned).eq('id', editando)
       error = res.error
     } else {
-      const res = await supabase.from(getTable()).insert([cleaned])
+      const res = await supabase.from(getTable()).insert([{ ...cleaned, negocio_id: negocioId }])
       error = res.error
     }
 

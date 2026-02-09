@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
-import { Plus, X, TrendingUp, TrendingDown, Search, Trash2, Pencil, Check } from 'lucide-react'
+import { Plus, X, TrendingUp, TrendingDown, Search, Trash2, Pencil, Check, SlidersHorizontal, ChevronDown } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -10,7 +10,7 @@ import es from 'date-fns/locale/es'
 registerLocale('es', es)
 
 export default function Balance() {
-  const { metodosPago: metodosPagoConfig, lavadas } = useData()
+  const { metodosPago: metodosPagoConfig, lavadas, negocioId } = useData()
 
   const [transacciones, setTransacciones] = useState([])
   const [showModal, setShowModal] = useState(false)
@@ -46,6 +46,8 @@ export default function Balance() {
   const [fechaDesde, setFechaDesde] = useState(filtrosIniciales.desde)
   const [fechaHasta, setFechaHasta] = useState(filtrosIniciales.hasta)
   const [filtroRapido, setFiltroRapido] = useState(filtrosIniciales.rapido)
+  const [showFilters, setShowFilters] = useState(false)
+  const [expandedCard, setExpandedCard] = useState(null)
 
   // Eliminar
   const [eliminarId, setEliminarId] = useState(null)
@@ -235,7 +237,8 @@ export default function Balance() {
 
     await supabase.from('transacciones').insert([{
       ...formData,
-      fecha: formData.fecha + 'T12:00:00-05:00'
+      fecha: formData.fecha + 'T12:00:00-05:00',
+      negocio_id: negocioId
     }])
 
     setShowModal(false)
@@ -394,87 +397,95 @@ export default function Balance() {
       </div>
 
       <div className="filters">
-        <div className="search-box">
-          <Search size={20} />
-          <input
-            type="text"
-            placeholder="Buscar por descripción, placa o categoría..."
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-          />
+        <div className="filters-row-main">
+          <div className="search-box">
+            <Search size={18} />
+            <input
+              type="text"
+              placeholder="Buscar descripción, placa..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+            />
+          </div>
+          <select
+            value={filtroTipo}
+            onChange={(e) => setFiltroTipo(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Tipo</option>
+            <option value="INGRESO">Ingreso</option>
+            <option value="EGRESO">Egreso</option>
+          </select>
+          <select
+            value={filtroCategoria}
+            onChange={(e) => setFiltroCategoria(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Categoría</option>
+            {todasCategorias.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <select
+            value={filtroMetodo}
+            onChange={(e) => setFiltroMetodo(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Método</option>
+            {metodosPagoConfig.map(m => (
+              <option key={m.id} value={m.id}>{m.nombre}</option>
+            ))}
+          </select>
+          <button
+            className={`filter-toggle-btn ${showFilters ? 'active' : ''}`}
+            onClick={() => setShowFilters(prev => !prev)}
+            title="Más filtros"
+          >
+            <SlidersHorizontal size={18} />
+          </button>
         </div>
 
-        <select
-          value={filtroTipo}
-          onChange={(e) => setFiltroTipo(e.target.value)}
-          className="filter-select"
-        >
-          <option value="">Todos los tipos</option>
-          <option value="INGRESO">Ingreso</option>
-          <option value="EGRESO">Egreso</option>
-        </select>
-
-        <select
-          value={filtroCategoria}
-          onChange={(e) => setFiltroCategoria(e.target.value)}
-          className="filter-select"
-        >
-          <option value="">Todas las categorías</option>
-          {todasCategorias.map(c => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-
-        <select
-          value={filtroMetodo}
-          onChange={(e) => setFiltroMetodo(e.target.value)}
-          className="filter-select"
-        >
-          <option value="">Todos los métodos</option>
-          {metodosPagoConfig.map(m => (
-            <option key={m.id} value={m.id}>{m.nombre}</option>
-          ))}
-        </select>
-
-        <div className="filter-rapido">
-          <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
-          <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
-          <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
-          <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
-          <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
-        </div>
-
-        <div className="filter-fechas">
-          <DatePicker
-            selected={fechaDesde}
-            onChange={(date) => { setFechaDesde(date); setFiltroRapido('') }}
-            selectsStart
-            startDate={fechaDesde}
-            endDate={fechaHasta}
-            placeholderText="Desde"
-            className="filter-date"
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            isClearable
-          />
-          <span className="filter-separator">→</span>
-          <DatePicker
-            selected={fechaHasta}
-            onChange={(date) => { setFechaHasta(date); setFiltroRapido('') }}
-            selectsEnd
-            startDate={fechaDesde}
-            endDate={fechaHasta}
-            minDate={fechaDesde}
-            placeholderText="Hasta"
-            className="filter-date"
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            isClearable
-          />
+        <div className={`filters-row-extra ${showFilters ? 'open' : ''}`}>
+          <div className="filter-rapido">
+            <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
+            <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
+            <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
+            <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
+            <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
+          </div>
+          <div className="filter-fechas">
+            <DatePicker
+              selected={fechaDesde}
+              onChange={(date) => { setFechaDesde(date); setFiltroRapido('') }}
+              selectsStart
+              startDate={fechaDesde}
+              endDate={fechaHasta}
+              placeholderText="Desde"
+              className="filter-date"
+              dateFormat="dd/MM/yyyy"
+              locale="es"
+              isClearable
+            />
+            <span className="filter-separator">→</span>
+            <DatePicker
+              selected={fechaHasta}
+              onChange={(date) => { setFechaHasta(date); setFiltroRapido('') }}
+              selectsEnd
+              startDate={fechaDesde}
+              endDate={fechaHasta}
+              minDate={fechaDesde}
+              placeholderText="Hasta"
+              className="filter-date"
+              dateFormat="dd/MM/yyyy"
+              locale="es"
+              isClearable
+            />
+          </div>
         </div>
       </div>
 
-      <div className="card">
+      {/* Desktop: tabla */}
+      <div className="card balance-tabla-desktop">
         <div className="table-container">
           <table className="data-table">
             <thead>
@@ -616,6 +627,63 @@ export default function Balance() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Mobile: cards */}
+      <div className="balance-cards-mobile">
+        {[...transaccionesFiltradas].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(t => {
+          const isExpanded = expandedCard === t.id
+          const esIngreso = t.tipo === 'INGRESO'
+          return (
+            <div key={t.id} className={`balance-card ${esIngreso ? 'ingreso-border' : 'egreso-border'} ${isExpanded ? 'expanded' : ''}`}>
+              <div className="balance-card-header" onClick={() => setExpandedCard(isExpanded ? null : t.id)}>
+                <div className="balance-card-left">
+                  <span className="balance-card-desc">{t.descripcion || t.categoria}</span>
+                  <span className="balance-card-fecha">{formatFecha(t.fecha)}</span>
+                </div>
+                <div className="balance-card-right">
+                  <span className={`balance-card-valor ${esIngreso ? 'positivo' : 'negativo'}`}>
+                    {esIngreso ? '' : '-'}{formatMoney(t.valor)}
+                  </span>
+                  <ChevronDown size={16} className={`balance-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="balance-card-body">
+                  <div className="balance-card-row">
+                    <span className="balance-card-label">Tipo</span>
+                    <span className={`tipo-badge ${t.tipo.toLowerCase()}`}>{t.tipo}</span>
+                  </div>
+                  <div className="balance-card-row">
+                    <span className="balance-card-label">Categoría</span>
+                    <span className="balance-card-val">{t.categoria}</span>
+                  </div>
+                  <div className="balance-card-row">
+                    <span className="balance-card-label">Placa/Persona</span>
+                    <span className="balance-card-val">{t.placa_o_persona || '—'}</span>
+                  </div>
+                  <div className="balance-card-row">
+                    <span className="balance-card-label">Método</span>
+                    <span className="balance-card-val">{t.metodo_pago?.nombre || '—'}</span>
+                  </div>
+                  {!t._esLavada && (
+                    <div className="balance-card-actions">
+                      <button className="btn-secondary" onClick={() => iniciarEdicion(t)}>
+                        <Pencil size={16} /> Editar
+                      </button>
+                      <button className="btn-secondary btn-danger-outline" onClick={() => handleEliminar(t.id)}>
+                        <Trash2 size={16} /> Eliminar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {transaccionesFiltradas.length === 0 && (
+          <div className="balance-cards-empty">No hay transacciones con estos filtros</div>
+        )}
       </div>
 
       {/* Modal nueva transacción */}

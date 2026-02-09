@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import Login from './components/Login'
+import Register from './components/Register'
 import Layout from './components/Layout'
 import Dashboard from './components/Dashboard'
 import Lavadas from './components/Lavadas'
@@ -13,7 +14,41 @@ import PagoTrabajadores from './components/PagoTrabajadores'
 import Configuracion from './components/Configuracion'
 import Membresias from './components/Membresias'
 import { DataProvider } from './components/DataContext'
+import { TenantProvider, useTenant } from './components/TenantContext'
+import Onboarding from './components/Onboarding'
 import './App.css'
+
+function AuthenticatedApp({ session }) {
+  const { loading, needsOnboarding } = useTenant()
+
+  if (loading) {
+    return <div className="loading-screen">Cargando...</div>
+  }
+
+  if (needsOnboarding) {
+    return <Onboarding />
+  }
+
+  return (
+    <DataProvider>
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route element={<Layout user={session.user} />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/lavadas" element={<Lavadas />} />
+          <Route path="/clientes" element={<Clientes />} />
+          <Route path="/balance" element={<Balance />} />
+          <Route path="/reportes" element={<Reportes />} />
+          <Route path="/tareas" element={<Tareas />} />
+          <Route path="/pagos" element={<PagoTrabajadores />} />
+          <Route path="/membresias" element={<Membresias />} />
+          <Route path="/configuracion" element={<Configuracion />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </DataProvider>
+  )
+}
 
 function App() {
   const [session, setSession] = useState(null)
@@ -38,32 +73,24 @@ function App() {
 
   return (
     <BrowserRouter>
-      <DataProvider>
-        <Routes>
-          {!session ? (
-            <>
-              <Route path="/" element={<Login />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </>
-          ) : (
-            <>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route element={<Layout user={session.user} />}>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/lavadas" element={<Lavadas />} />
-                <Route path="/clientes" element={<Clientes />} />
-                <Route path="/balance" element={<Balance />} />
-                <Route path="/reportes" element={<Reportes />} />
-                <Route path="/tareas" element={<Tareas />} />
-                <Route path="/pagos" element={<PagoTrabajadores />} />
-                <Route path="/membresias" element={<Membresias />} />
-                <Route path="/configuracion" element={<Configuracion />} />
-              </Route>
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </>
-          )}
-        </Routes>
-      </DataProvider>
+      <Routes>
+        {!session ? (
+          <>
+            <Route path="/registro" element={<Register />} />
+            <Route path="/" element={<Login />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </>
+        ) : (
+          <Route
+            path="*"
+            element={
+              <TenantProvider session={session}>
+                <AuthenticatedApp session={session} />
+              </TenantProvider>
+            }
+          />
+        )}
+      </Routes>
     </BrowserRouter>
   )
 }

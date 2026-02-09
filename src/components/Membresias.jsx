@@ -11,7 +11,7 @@ import es from 'date-fns/locale/es'
 registerLocale('es', es)
 
 export default function Membresias() {
-  const { clientes, tiposMembresia, metodosPago, loading, updateClienteLocal, addClienteLocal } = useData()
+  const { clientes, tiposMembresia, metodosPago, loading, updateClienteLocal, addClienteLocal, negocioId } = useData()
 
   const [pagos, setPagos] = useState([])
   const [loadingPagos, setLoadingPagos] = useState(false)
@@ -150,7 +150,8 @@ export default function Membresias() {
             ...cleanCliente,
             membresia_id: formData.membresia_id,
             ...fechas,
-            estado: 'Activo'
+            estado: 'Activo',
+            negocio_id: negocioId
           }])
           .select('*, membresia:tipos_membresia(nombre)')
           .single()
@@ -196,7 +197,8 @@ export default function Membresias() {
       metodo_pago_id: formData.metodo_pago_id || null,
       placa_o_persona: `${clienteNombre} - ${clientePlaca}`,
       descripcion: `Pago membresía ${membresia.nombre}`,
-      fecha: fechaLocalStr(new Date()) + 'T12:00:00-05:00'
+      fecha: fechaLocalStr(new Date()) + 'T12:00:00-05:00',
+      negocio_id: negocioId
     }])
 
     setShowModal(false)

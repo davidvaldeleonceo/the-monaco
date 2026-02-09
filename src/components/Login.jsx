@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 
 export default function Login() {
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -27,7 +29,7 @@ export default function Login() {
     <div className="login-container">
       <div className="login-box">
         <div className="login-header">
-          <h1>Monaco</h1>
+          <h1>monaco</h1>
           <span className="badge">PRO</span>
         </div>
         <p className="login-subtitle">Sistema de Gestión</p>
@@ -61,6 +63,13 @@ export default function Login() {
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
         </form>
+
+        <div className="login-register-link">
+          <span>¿No tienes cuenta? </span>
+          <a href="/registro" onClick={(e) => { e.preventDefault(); navigate('/registro') }}>
+            Registra tu negocio
+          </a>
+        </div>
       </div>
     </div>
   )

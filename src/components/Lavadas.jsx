@@ -10,7 +10,7 @@ import es from 'date-fns/locale/es'
 registerLocale('es', es)
 
 export default function Lavadas() {
-  const { lavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal } = useData()
+  const { lavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal, negocioId } = useData()
 
   const loadSavedFilters = () => {
     try {
@@ -202,7 +202,8 @@ export default function Lavadas() {
       pagos: [],
       metodo_pago_id: null,
       fecha: ahora,
-      tiempo_espera_inicio: ahora
+      tiempo_espera_inicio: ahora,
+      negocio_id: negocioId
     }
 
     const { data, error } = await supabase

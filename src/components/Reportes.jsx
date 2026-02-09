@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabaseClient'
+import { useTenant } from './TenantContext'
 import { FileText, FileSpreadsheet } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -50,6 +51,7 @@ const PieTooltip = ({ active, payload }) => {
 }
 
 export default function Reportes() {
+  const { negocioNombre } = useTenant()
   const hoyInit = new Date(); hoyInit.setHours(0,0,0,0)
 
   const [fechaDesde, setFechaDesde] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth(), 1))
@@ -279,7 +281,7 @@ export default function Reportes() {
       doc.setDrawColor(...cVerde); doc.setLineWidth(0.8)
       doc.line(M, 12, W - M, 12)
       doc.setFontSize(8); doc.setTextColor(...cGrisMedio)
-      doc.text('Monaco Moto Detailing', M, 10)
+      doc.text(negocioNombre || 'Monaco', M, 10)
       doc.text(getTitulo(), W - M, 10, { align: 'right' })
       doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.3)
       doc.line(M, H - 15, W - M, H - 15)
@@ -309,9 +311,9 @@ export default function Reportes() {
     // ===== PAGE 1: COVER =====
     doc.setFillColor(...cVerde); doc.rect(0, 0, W, 5, 'F')
     doc.setFontSize(36); doc.setFont(undefined, 'bold'); doc.setTextColor(...cGrisOscuro)
-    doc.text('Monaco', W / 2, 85, { align: 'center' })
+    doc.text(negocioNombre || 'Monaco', W / 2, 85, { align: 'center' })
     doc.setFontSize(18); doc.setFont(undefined, 'normal'); doc.setTextColor(...cGrisMedio)
-    doc.text('Moto Detailing', W / 2, 96, { align: 'center' })
+    doc.text('Reporte de Gestión', W / 2, 96, { align: 'center' })
     doc.setDrawColor(...cVerde); doc.setLineWidth(1.2)
     doc.line(W / 2 - 35, 108, W / 2 + 35, 108)
     doc.setFontSize(22); doc.setFont(undefined, 'bold'); doc.setTextColor(...cGrisOscuro)
@@ -548,14 +550,15 @@ export default function Reportes() {
 
     const mes = MESES[fechaDesde?.getMonth() || 0]
     const año = fechaDesde?.getFullYear() || new Date().getFullYear()
-    doc.save(`REPORTE_MONACO_${mes.toUpperCase()}_${año}.pdf`)
+    const filePrefix = (negocioNombre || 'MONACO').toUpperCase().replace(/\s+/g, '_')
+    doc.save(`REPORTE_${filePrefix}_${mes.toUpperCase()}_${año}.pdf`)
   }
 
   // --- Excel ---
   const descargarExcel = async () => {
     if (!data) return
     const wb = new ExcelJS.Workbook()
-    wb.creator = 'Monaco Moto Detailing'
+    wb.creator = negocioNombre || 'Monaco'
     wb.created = new Date()
 
     const sign = v => Number(v) >= 0 ? `+${v}%` : `${v}%`
@@ -810,7 +813,8 @@ export default function Reportes() {
     const buffer = await wb.xlsx.writeBuffer()
     const mes = MESES[fechaDesde?.getMonth() || 0]
     const año = fechaDesde?.getFullYear() || new Date().getFullYear()
-    saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `REPORTE_MONACO_${mes.toUpperCase()}_${año}.xlsx`)
+    const excelPrefix = (negocioNombre || 'MONACO').toUpperCase().replace(/\s+/g, '_')
+    saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `REPORTE_${excelPrefix}_${mes.toUpperCase()}_${año}.xlsx`)
   }
 
   // --- Row builders ---

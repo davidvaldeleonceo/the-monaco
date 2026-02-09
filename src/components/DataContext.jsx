@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
+import { useTenant } from './TenantContext'
 
 const DataContext = createContext()
 
@@ -8,6 +9,7 @@ export function useData() {
 }
 
 export function DataProvider({ children }) {
+  const { negocioId } = useTenant()
   const [clientes, setClientes] = useState([])
   const [lavadas, setLavadas] = useState([])
   const [tiposLavado, setTiposLavado] = useState([])
@@ -125,10 +127,12 @@ export function DataProvider({ children }) {
   }
 
   useEffect(() => {
+    setInitialized(false)
     fetchAllData()
-  }, [])
+  }, [negocioId])
 
   const value = {
+    negocioId,
     clientes,
     lavadas,
     tiposLavado,

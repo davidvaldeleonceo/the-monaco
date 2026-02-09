@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { useTenant } from './TenantContext'
 import {
   LayoutDashboard,
   Droplets,
@@ -20,6 +21,7 @@ import {
 
 export default function Layout({ user }) {
   const navigate = useNavigate()
+  const { negocioNombre, userProfile } = useTenant()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
@@ -51,7 +53,7 @@ export default function Layout({ user }) {
         <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)}>
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
-        <h1 className="mobile-title">Monaco</h1>
+        <h1 className="mobile-title">monaco</h1>
         <span className="badge">PRO</span>
       </header>
 
@@ -60,7 +62,7 @@ export default function Layout({ user }) {
 
       <aside className={`sidebar ${menuOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
-          {!sidebarCollapsed && <h1>Monaco</h1>}
+          {!sidebarCollapsed && <h1>monaco</h1>}
           {!sidebarCollapsed && <span className="badge">PRO</span>}
           <button
             className="sidebar-collapse-btn"
@@ -99,7 +101,7 @@ export default function Layout({ user }) {
                 </div>
                 <div className="user-details">
                   <span className="user-name">{user?.email?.split('@')[0]}</span>
-                  <span className="user-role">Administrador</span>
+                  <span className="user-role">{userProfile?.rol || 'Administrador'}</span>
                 </div>
               </div>
               <button onClick={handleLogout} className="logout-button" title="Cerrar sesión">
