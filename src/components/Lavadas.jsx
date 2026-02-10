@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
-import { Plus, Search, X, MessageCircle, Calendar, Trash2, ChevronDown, SlidersHorizontal } from 'lucide-react'
+import { Plus, Search, X, MessageCircle, Calendar, Trash2, ChevronDown, SlidersHorizontal, CheckCircle2 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -45,6 +45,17 @@ export default function Lavadas() {
   const [expandedCards, setExpandedCards] = useState({})
   const [showFilters, setShowFilters] = useState(false)
   const [now, setNow] = useState(new Date())
+  const [editingPago, setEditingPago] = useState(null)
+  const [validationErrors, setValidationErrors] = useState({})
+  const [collapsingCards, setCollapsingCards] = useState({})
+
+  const smoothCollapse = (lavadaId) => {
+    setCollapsingCards(prev => ({ ...prev, [lavadaId]: true }))
+    setTimeout(() => {
+      setExpandedCards(prev => ({ ...prev, [lavadaId]: false }))
+      setCollapsingCards(prev => { const n = { ...prev }; delete n[lavadaId]; return n })
+    }, 350)
+  }
 
   // Guardar filtros en localStorage cuando cambien
   useEffect(() => {
@@ -132,10 +143,25 @@ export default function Lavadas() {
   const calcularValor = (tipoId, adicionales) => {
     const tipo = tiposLavado.find(t => t.id == tipoId)
     let total = tipo?.precio || 0
+    const incluidos = tipo?.adicionales_incluidos || []
     if (adicionales && adicionales.length > 0) {
-      total += adicionales.reduce((sum, a) => sum + (a.precio || 0), 0)
+      total += adicionales
+        .filter(a => !incluidos.includes(a.id))
+        .reduce((sum, a) => sum + (a.precio || 0), 0)
     }
     return total
+  }
+
+  const autoAddIncluidos = (tipo, adicionalesActuales) => {
+    const incluidos = tipo?.adicionales_incluidos || []
+    const nuevos = [...adicionalesActuales]
+    incluidos.forEach(id => {
+      if (!nuevos.some(a => a.id === id)) {
+        const s = serviciosAdicionales.find(s => s.id === id)
+        if (s) nuevos.push({ id: s.id, nombre: s.nombre, precio: s.precio })
+      }
+    })
+    return nuevos
   }
 
   const handleClienteChange = (clienteId) => {
@@ -143,13 +169,15 @@ export default function Lavadas() {
     if (cliente) {
       const tipo = detectarTipoLavado(cliente)
       const tipoId = tipo?.id || ''
-      const valor = calcularValor(tipoId, formData.adicionales)
+      const adicionales = autoAddIncluidos(tipo, formData.adicionales)
+      const valor = calcularValor(tipoId, adicionales)
 
       setFormData(prev => ({
         ...prev,
         cliente_id: clienteId,
         placa: cliente.placa || '',
         tipo_lavado_id: tipoId,
+        adicionales,
         valor
       }))
     } else {
@@ -166,10 +194,13 @@ export default function Lavadas() {
   }
 
   const handleTipoLavadoChange = (tipoId) => {
-    const valor = calcularValor(tipoId, formData.adicionales)
+    const tipo = tiposLavado.find(t => t.id == tipoId)
+    const adicionales = autoAddIncluidos(tipo, formData.adicionales)
+    const valor = calcularValor(tipoId, adicionales)
     setFormData(prev => ({
       ...prev,
       tipo_lavado_id: tipoId,
+      adicionales,
       valor
     }))
   }
@@ -290,19 +321,20 @@ export default function Lavadas() {
   const handleTipoLavadoChangeInline = async (lavadaId, tipoId) => {
     const tipo = tiposLavado.find(t => t.id == tipoId)
     const lavada = lavadas.find(l => l.id === lavadaId)
-    const adicionalesLavada = lavada.adicionales || []
+    const nuevosAdicionales = autoAddIncluidos(tipo, lavada.adicionales || [])
 
-    const nuevoValor = calcularValor(tipoId, adicionalesLavada)
+    const nuevoValor = calcularValor(tipoId, nuevosAdicionales)
 
     updateLavadaLocal(lavadaId, {
       tipo_lavado_id: tipoId,
       tipo_lavado: tipo,
+      adicionales: nuevosAdicionales,
       valor: nuevoValor
     })
 
     await supabase
       .from('lavadas')
-      .update({ tipo_lavado_id: tipoId, valor: nuevoValor })
+      .update({ tipo_lavado_id: tipoId, adicionales: nuevosAdicionales, valor: nuevoValor })
       .eq('id', lavadaId)
   }
 
@@ -447,12 +479,6 @@ export default function Lavadas() {
   const totalFiltrado = lavadasFiltradas.reduce((sum, l) => sum + (l.valor || 0), 0)
   const cantidadFiltrada = lavadasFiltradas.length
 
-  const getTipoLavadoLabel = () => {
-    if (!formData.tipo_lavado_id) return 'Seleccione un cliente'
-    const tipo = tiposLavado.find(t => t.id === formData.tipo_lavado_id)
-    return tipo ? `${tipo.nombre} - ${formatMoney(tipo.precio)}` : ''
-  }
-
   if (loading) {
     return <div className="loading">Cargando...</div>
   }
@@ -555,8 +581,11 @@ export default function Lavadas() {
           const pagos = lavada.pagos || []
           const isExpanded = expandedCards[lavada.id]
           const estadoLabels = { 'EN ESPERA': 'Espera', 'EN LAVADO': 'Lavando', 'TERMINADO': 'Terminado', 'ENTREGADO': 'Entregado' }
+          const vErrs = validationErrors[lavada.id] || {}
+          const isCollapsing = collapsingCards[lavada.id]
+          const showBody = isExpanded || isCollapsing
           return (
-            <div key={lavada.id} className={`lavada-card ${getEstadoClass(lavada.estado)}-border ${isExpanded ? 'expanded' : ''}`}>
+            <div key={lavada.id} className={`lavada-card ${getEstadoClass(lavada.estado)}-border ${isExpanded && !isCollapsing ? 'expanded' : ''}`}>
               <div
                 className="lavada-card-header"
                 onClick={() => setExpandedCards(prev => ({ ...prev, [lavada.id]: !prev[lavada.id] }))}
@@ -575,8 +604,8 @@ export default function Lavadas() {
                 </div>
               </div>
 
-              {isExpanded && (
-                <div className="lavada-card-body">
+              {showBody && (
+                <div className={`lavada-card-body ${isCollapsing ? 'collapsing' : ''}`}>
                   <div className="estado-flow">
                     <button
                       className={`estado-step-btn estado-espera-bg ${lavada.estado === 'EN ESPERA' ? 'active' : ''}`}
@@ -601,7 +630,25 @@ export default function Lavadas() {
                     </button>
                     <button
                       className={`estado-step-btn estado-entregado-bg ${lavada.estado === 'ENTREGADO' ? 'active' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); handleEstadoChange(lavada.id, 'ENTREGADO') }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const p = lavada.pagos || []
+                        const suma = p.reduce((s, pg) => s + (Number(pg.valor) || 0), 0)
+                        const totalVal = lavada.valor || 0
+                        const allMetodos = p.length === 0 || p.every(pg => pg.metodo_pago_id)
+                        const pagosValid = totalVal === 0 ? (p.length === 0 || suma === totalVal) : (p.length > 0 && suma === totalVal)
+                        const errs = {}
+                        if (!lavada.tipo_lavado_id) errs.tipo = true
+                        if (!lavada.lavador_id) errs.lavador = true
+                        if (!pagosValid || !allMetodos) errs.pagos = true
+                        if (Object.keys(errs).length > 0) {
+                          setValidationErrors(prev => ({ ...prev, [lavada.id]: errs }))
+                          setTimeout(() => setValidationErrors(prev => { const n = { ...prev }; delete n[lavada.id]; return n }), 2000)
+                          return
+                        }
+                        handleEstadoChange(lavada.id, 'ENTREGADO')
+                        smoothCollapse(lavada.id)
+                      }}
                     >
                       <span className="estado-step-label">Entregado</span>
                     </button>
@@ -613,7 +660,7 @@ export default function Lavadas() {
                       <select
                         value={lavada.tipo_lavado_id || ''}
                         onChange={(e) => handleTipoLavadoChangeInline(lavada.id, e.target.value)}
-                        className="tipo-lavado-select"
+                        className={`tipo-lavado-select ${vErrs.tipo ? 'field-error' : ''}`}
                       >
                         <option value="">Seleccionar</option>
                         {tiposLavado.map(t => (
@@ -651,7 +698,7 @@ export default function Lavadas() {
                       <select
                         value={lavada.lavador_id || ''}
                         onChange={(e) => handleLavadorChange(lavada.id, e.target.value)}
-                        className="lavador-select"
+                        className={`lavador-select ${vErrs.lavador ? 'field-error' : ''}`}
                       >
                         <option value="">Sin asignar</option>
                         {lavadores.map(l => (
@@ -665,67 +712,115 @@ export default function Lavadas() {
                     const sumaPagos = pagos.reduce((s, p) => s + (Number(p.valor) || 0), 0)
                     const total = lavada.valor || 0
                     const diff = sumaPagos - total
-                    const pagosOk = pagos.length === 0 || sumaPagos === total
+                    const pagosOk = total === 0 ? (pagos.length === 0 || sumaPagos === total) : (pagos.length > 0 && sumaPagos === total)
+                    const allMetodosSet = pagos.length === 0 || pagos.every(p => p.metodo_pago_id)
+                    const tipoOk = !!lavada.tipo_lavado_id
+                    const lavadorOk = !!lavada.lavador_id
+                    const canComplete = pagosOk && allMetodosSet && tipoOk && lavadorOk
+                    const isEditingThisLavada = editingPago?.lavadaId === lavada.id
+                    const yaEntregado = lavada.estado === 'ENTREGADO'
+
+                    let completarTooltip = ''
+                    if (!tipoOk) completarTooltip = 'Falta tipo de lavado'
+                    else if (!lavadorOk) completarTooltip = 'Falta asignar lavador'
+                    else if (pagos.length === 0) completarTooltip = 'Agrega al menos un pago'
+                    else if (!allMetodosSet) completarTooltip = 'Todos los pagos necesitan método'
+                    else if (!pagosOk) completarTooltip = diff > 0 ? `Pagos exceden ${formatMoney(diff)}` : `Faltan ${formatMoney(Math.abs(diff))}`
+
                     return (
                       <div className="lavada-card-footer">
                         <div className={`lavada-card-valor ${pagos.length > 0 ? (pagosOk ? 'pago-ok' : 'pago-error') : ''}`}>
                           {formatMoney(total)}
                         </div>
-                        <div className="lavada-card-pagos">
+                        <div className={`lavada-card-pagos-pills ${vErrs.pagos ? 'field-error' : ''}`}>
                           {pagos.length === 0 && lavada.metodo_pago?.nombre && (
-                            <span className="pago-legacy">{lavada.metodo_pago.nombre}</span>
+                            <span className="pago-pill legacy">{lavada.metodo_pago.nombre}</span>
                           )}
-                          {pagos.map((p, idx) => (
-                            <div key={idx} className="pago-inline-row">
-                              <select
-                                value={p.metodo_pago_id || ''}
-                                onChange={(e) => {
-                                  const metodo = metodosPago.find(m => m.id == e.target.value)
-                                  const nuevosPagos = pagos.map((pg, i) =>
-                                    i === idx ? { ...pg, metodo_pago_id: e.target.value, nombre: metodo?.nombre || '' } : pg
-                                  )
-                                  handlePagosChange(lavada.id, nuevosPagos)
-                                }}
-                                className="pago-inline-select"
+                          {pagos.map((p, idx) => {
+                            const isEditing = isEditingThisLavada && editingPago.idx === idx
+                            const metodoNombre = p.nombre || metodosPago.find(m => m.id == p.metodo_pago_id)?.nombre
+
+                            if (isEditing || !p.metodo_pago_id) {
+                              return (
+                                <div key={idx} className="pago-pill editing">
+                                  <select
+                                    value={p.metodo_pago_id || ''}
+                                    onChange={(e) => {
+                                      const metodo = metodosPago.find(m => m.id == e.target.value)
+                                      const nuevosPagos = pagos.map((pg, i) =>
+                                        i === idx ? { ...pg, metodo_pago_id: e.target.value, nombre: metodo?.nombre || '' } : pg
+                                      )
+                                      handlePagosChange(lavada.id, nuevosPagos)
+                                      if (e.target.value && p.valor > 0) setEditingPago(null)
+                                    }}
+                                    className="pago-pill-select"
+                                    autoFocus
+                                  >
+                                    <option value="">Método</option>
+                                    {metodosPago.map(m => (
+                                      <option key={m.id} value={m.id}>{m.nombre}</option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={p.valor === 0 ? '' : Number(p.valor).toLocaleString('es-CO')}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/\D/g, '')
+                                      const nuevosPagos = pagos.map((pg, i) =>
+                                        i === idx ? { ...pg, valor: val === '' ? 0 : Number(val) } : pg
+                                      )
+                                      handlePagosChange(lavada.id, nuevosPagos)
+                                    }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' && p.metodo_pago_id) setEditingPago(null) }}
+                                    className="pago-pill-input"
+                                    placeholder="$0"
+                                  />
+                                  <button
+                                    className="pago-pill-x"
+                                    onClick={() => {
+                                      const nuevosPagos = pagos.filter((_, i) => i !== idx)
+                                      handlePagosChange(lavada.id, nuevosPagos)
+                                      setEditingPago(null)
+                                    }}
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              )
+                            }
+
+                            return (
+                              <div
+                                key={idx}
+                                className="pago-pill"
+                                onClick={() => setEditingPago({ lavadaId: lavada.id, idx })}
                               >
-                                <option value="">Método</option>
-                                {metodosPago.map(m => (
-                                  <option key={m.id} value={m.id}>{m.nombre}</option>
-                                ))}
-                              </select>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={p.valor === 0 ? '' : Number(p.valor).toLocaleString('es-CO')}
-                                onChange={(e) => {
-                                  const val = e.target.value.replace(/\D/g, '')
-                                  const nuevosPagos = pagos.map((pg, i) =>
-                                    i === idx ? { ...pg, valor: val === '' ? 0 : Number(val) } : pg
-                                  )
-                                  handlePagosChange(lavada.id, nuevosPagos)
-                                }}
-                                className="pago-inline-input"
-                              />
-                              <button
-                                className="btn-remove-pago-inline"
-                                onClick={() => {
-                                  const nuevosPagos = pagos.filter((_, i) => i !== idx)
-                                  handlePagosChange(lavada.id, nuevosPagos)
-                                }}
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ))}
+                                <span className="pago-pill-metodo">{metodoNombre}</span>
+                                <span className="pago-pill-valor">{formatMoney(p.valor)}</span>
+                                <button
+                                  className="pago-pill-x"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    const nuevosPagos = pagos.filter((_, i) => i !== idx)
+                                    handlePagosChange(lavada.id, nuevosPagos)
+                                  }}
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            )
+                          })}
                           <button
-                            className="btn-add-pago-inline"
+                            className="pago-pill-add"
                             onClick={() => {
                               const restante = total - sumaPagos
                               const nuevosPagos = [...pagos, { metodo_pago_id: '', nombre: '', valor: restante > 0 ? restante : 0 }]
                               handlePagosChange(lavada.id, nuevosPagos)
+                              setEditingPago({ lavadaId: lavada.id, idx: pagos.length })
                             }}
                           >
-                            <Plus size={14} /> Pago
+                            <Plus size={14} />
                           </button>
                           {pagos.length > 0 && !pagosOk && (
                             <span className="pago-diff-msg">
@@ -752,6 +847,27 @@ export default function Lavadas() {
                             <Trash2 size={16} />
                           </button>
                         </div>
+                        <button
+                          className={`btn-completar-servicio ${yaEntregado ? 'completado' : ''} ${!canComplete && !yaEntregado ? 'error' : ''}`}
+                          title={yaEntregado ? 'Servicio entregado' : (canComplete ? 'Marcar como completado' : completarTooltip)}
+                          onClick={() => {
+                            if (yaEntregado) return
+                            if (!canComplete) {
+                              const errs = {}
+                              if (!tipoOk) errs.tipo = true
+                              if (!lavadorOk) errs.lavador = true
+                              if (!pagosOk || !allMetodosSet) errs.pagos = true
+                              setValidationErrors(prev => ({ ...prev, [lavada.id]: errs }))
+                              setTimeout(() => setValidationErrors(prev => { const n = { ...prev }; delete n[lavada.id]; return n }), 2000)
+                              return
+                            }
+                            handleEstadoChange(lavada.id, 'ENTREGADO')
+                            smoothCollapse(lavada.id)
+                          }}
+                        >
+                          <CheckCircle2 size={16} />
+                          {yaEntregado ? 'Completado' : 'Completar'}
+                        </button>
                       </div>
                     )
                   })()}
@@ -801,12 +917,15 @@ export default function Lavadas() {
 
                 <div className="form-group">
                   <label>Tipo de Lavado</label>
-                  <input
-                    type="text"
-                    value={getTipoLavadoLabel()}
-                    readOnly
-                    className="input-readonly"
-                  />
+                  <select
+                    value={formData.tipo_lavado_id}
+                    onChange={(e) => handleTipoLavadoChange(e.target.value)}
+                  >
+                    <option value="">Seleccionar tipo</option>
+                    {tiposLavado.map(t => (
+                      <option key={t.id} value={t.id}>{t.nombre} - {formatMoney(t.precio)}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="form-group">

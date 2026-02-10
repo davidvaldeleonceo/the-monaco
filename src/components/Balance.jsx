@@ -358,25 +358,25 @@ export default function Balance() {
 
       <div className="balance-resumen">
         <div className="resumen-card ingresos">
-          <TrendingUp size={24} />
-          <div>
+          <div className="left">
+            <TrendingUp size={24} />
             <span className="label">Ingresos</span>
-            <span className="valor">{formatMoney(ingresosFiltrados)}</span>
           </div>
+          <span className="valor">{formatMoney(ingresosFiltrados)}</span>
         </div>
         <div className="resumen-card egresos">
-          <TrendingDown size={24} />
-          <div>
+          <div className="left">
+            <TrendingDown size={24} />
             <span className="label">Egresos</span>
-            <span className="valor">{formatMoney(egresosFiltrados)}</span>
           </div>
+          <span className="valor">{formatMoney(egresosFiltrados)}</span>
         </div>
         <div className={`resumen-card balance ${balanceFiltrado >= 0 ? 'positivo' : 'negativo'}`}>
-          <TrendingUp size={24} />
-          <div>
+          <div className="left">
+            <TrendingUp size={24} />
             <span className="label">Balance</span>
-            <span className="valor">{formatMoney(balanceFiltrado)}</span>
           </div>
+          <span className="valor">{formatMoney(balanceFiltrado)}</span>
         </div>
       </div>
 

@@ -65,6 +65,13 @@ export default function Layout({ user }) {
           {!sidebarCollapsed && <h1>monaco</h1>}
           {!sidebarCollapsed && <span className="badge">PRO</span>}
           <button
+            className="sidebar-close-btn"
+            onClick={() => setMenuOpen(false)}
+            title="Cerrar menú"
+          >
+            <X size={20} />
+          </button>
+          <button
             className="sidebar-collapse-btn"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             title={sidebarCollapsed ? 'Expandir' : 'Colapsar'}

@@ -249,31 +249,45 @@ export default function Tareas() {
 
   return (
     <div className="tareas-page">
-      {/* Header fijo */}
-      <div className="tareas-header">
-        <div className="tareas-header-top">
-          <h1 className="page-title">Control de Tareas</h1>
-          <div className="tareas-header-stats">
-            <span className="tareas-stat">
-              <ClipboardList size={16} />
-              {totalTareasSemana} tareas
-            </span>
-            <span className="tareas-stat completadas-stat">
-              <CheckCircle2 size={16} />
-              {totalCompletadas}/{totalTareasSemana} ({porcentajeTotal}%)
-            </span>
-            <span className="tareas-stat activo-stat">
-              <Users size={16} />
-              {lavadorMasActivo ? lavadorMasActivo.nombre : '—'}
-            </span>
-          </div>
-        </div>
+      <div className="page-header">
+        <h1 className="page-title">Control de Tareas</h1>
+        <button className="btn-primary" onClick={abrirModalNuevaTarea}>
+          <Plus size={20} />
+          Nueva Tarea
+        </button>
+      </div>
+
+      <div className="filters">
         <div className="semana-navegacion">
           <button className="btn-secondary" onClick={() => cambiarSemana(-1)}>←</button>
           <span className="semana-actual">
             Semana del {semanaActual.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })}
           </span>
           <button className="btn-secondary" onClick={() => cambiarSemana(1)}>→</button>
+        </div>
+      </div>
+
+      <div className="pagos-stats">
+        <div className="pago-stat-card balance positivo">
+          <div className="pago-stat-left">
+            <ClipboardList size={20} />
+            <span>Total Tareas</span>
+          </div>
+          <span className="pago-stat-valor">{totalTareasSemana}</span>
+        </div>
+        <div className="pago-stat-card ingresos">
+          <div className="pago-stat-left">
+            <CheckCircle2 size={20} />
+            <span>Completadas</span>
+          </div>
+          <span className="pago-stat-valor">{totalCompletadas}/{totalTareasSemana} ({porcentajeTotal}%)</span>
+        </div>
+        <div className="pago-stat-card egresos">
+          <div className="pago-stat-left">
+            <Users size={20} />
+            <span>Más Activo</span>
+          </div>
+          <span className="pago-stat-valor">{lavadorMasActivo ? lavadorMasActivo.nombre : '—'}</span>
         </div>
       </div>
 
@@ -358,15 +372,10 @@ export default function Tareas() {
           </div>
         </div>
 
-        {/* Tareas Predefinidas - sección inferior */}
-        <div className="tareas-predefinidas-section">
-          <div className="tareas-predefinidas-card">
+        {/* Tareas Predefinidas */}
+        <div className="card">
             <div className="card-header-row">
               <h2>Tareas Predefinidas</h2>
-              <button className="btn-primary" onClick={abrirModalNuevaTarea}>
-                <Plus size={18} />
-                Nueva Tarea
-              </button>
             </div>
             <div className="table-container">
               <table className="data-table">
@@ -408,7 +417,6 @@ export default function Tareas() {
                 </tbody>
               </table>
             </div>
-          </div>
         </div>
 
       {/* Modal Tarea Predefinida */}

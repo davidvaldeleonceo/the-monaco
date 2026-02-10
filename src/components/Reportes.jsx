@@ -59,6 +59,7 @@ export default function Reportes() {
   const [filtroRapido, setFiltroRapido] = useState('mes')
   const [tabActivo, setTabActivo] = useState(0)
   const [data, setData] = useState(null)
+  const [cargando, setCargando] = useState(false)
   const chartsRef = useRef(null)
 
   useEffect(() => { if (fechaDesde && fechaHasta) fetchAll() }, [fechaDesde, fechaHasta])
@@ -90,14 +91,36 @@ export default function Reportes() {
 
   const fetchAll = async () => {
     if (!fechaDesde || !fechaHasta) return
+    setCargando(true)
+
     const desdeStr = fechaLocalStr(fechaDesde)
     const hasta = new Date(fechaHasta); hasta.setDate(hasta.getDate() + 1)
     const hastaStr = fechaLocalStr(hasta)
 
-    const [lavadasRes, transRes] = await Promise.all([
+    // Previous month range
+    const mesAntDesde = new Date(fechaDesde.getFullYear(), fechaDesde.getMonth() - 1, 1)
+    const mesAntHasta = new Date(fechaDesde.getFullYear(), fechaDesde.getMonth(), 0)
+    const maDesdeStr = fechaLocalStr(mesAntDesde)
+    const maH = new Date(mesAntHasta); maH.setDate(maH.getDate() + 1)
+    const maHastaStr = fechaLocalStr(maH)
+
+    // 6-month historical range (single query each)
+    const meses6 = []
+    for (let i = 5; i >= 0; i--) { const d = new Date(fechaHasta.getFullYear(), fechaHasta.getMonth() - i, 1); meses6.push({ year: d.getFullYear(), month: d.getMonth() }) }
+    const hist6Desde = `${meses6[0].year}-${String(meses6[0].month+1).padStart(2,'0')}-01`
+    const hist6HastaD = new Date(meses6[5].year, meses6[5].month+1, 1)
+    const hist6Hasta = fechaLocalStr(hist6HastaD)
+
+    // ALL queries in parallel: 6 total instead of 16
+    const [lavadasRes, transRes, lavAntRes, transAntRes, lavHistRes, transHistRes] = await Promise.all([
       supabase.from('lavadas').select('*, tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre)').gte('fecha', desdeStr).lt('fecha', hastaStr),
-      supabase.from('transacciones').select('*').gte('fecha', desdeStr).lt('fecha', hastaStr)
+      supabase.from('transacciones').select('*').gte('fecha', desdeStr).lt('fecha', hastaStr),
+      supabase.from('lavadas').select('valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
+      supabase.from('transacciones').select('tipo, valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
+      supabase.from('lavadas').select('valor, fecha').gte('fecha', hist6Desde).lt('fecha', hist6Hasta),
+      supabase.from('transacciones').select('tipo, valor, fecha').gte('fecha', hist6Desde).lt('fecha', hist6Hasta),
     ])
+
     const lavadas = lavadasRes.data || []
     const trans = transRes.data || []
 
@@ -192,17 +215,7 @@ export default function Reportes() {
     const egPie = egresosDetalle.map(e => ({ name: e.categoria, value: e.valor, porcentaje: pctNum(e.valor, egresosTrans) }))
 
     // --- Tab 3: Reporte Total ---
-    // Mes anterior
-    const mesAntDesde = new Date(fechaDesde.getFullYear(), fechaDesde.getMonth() - 1, 1)
-    const mesAntHasta = new Date(fechaDesde.getFullYear(), fechaDesde.getMonth(), 0)
-    const maDesdeStr = fechaLocalStr(mesAntDesde)
-    const maH = new Date(mesAntHasta); maH.setDate(maH.getDate() + 1)
-    const maHastaStr = fechaLocalStr(maH)
-
-    const [lavAntRes, transAntRes] = await Promise.all([
-      supabase.from('lavadas').select('valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
-      supabase.from('transacciones').select('tipo, valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr)
-    ])
+    // Previous month (already fetched in parallel)
     const lavAnt = lavAntRes.data || []
     const transAnt = transAntRes.data || []
     const ventasAnt = lavAnt.reduce((s,l) => s + Number(l.valor||0), 0) + transAnt.filter(t => t.tipo === 'INGRESO').reduce((s,t) => s + Number(t.valor||0), 0)
@@ -232,23 +245,19 @@ export default function Reportes() {
     // Top 3 adicionales
     const topAdicionales = adicionales.slice(0, 3)
 
-    // 6 meses: ingresos, egresos, balance, ticket
-    const meses6 = []
-    for (let i = 5; i >= 0; i--) { const d = new Date(fechaHasta.getFullYear(), fechaHasta.getMonth() - i, 1); meses6.push({ year: d.getFullYear(), month: d.getMonth() }) }
+    // 6 months: group historical data by month in JS (no extra queries)
+    const lavHist = lavHistRes.data || []
+    const transHist = transHistRes.data || []
 
-    const tend6 = await Promise.all(meses6.map(async ({ year, month }) => {
-      const ini = `${year}-${String(month+1).padStart(2,'0')}-01`
-      const finD = new Date(year, month+1, 1); const finStr = fechaLocalStr(finD)
-      const [lr, tr] = await Promise.all([
-        supabase.from('lavadas').select('valor').gte('fecha', ini).lt('fecha', finStr),
-        supabase.from('transacciones').select('tipo, valor').gte('fecha', ini).lt('fecha', finStr)
-      ])
-      const lav = lr.data || []; const trs = tr.data || []
-      const ing = lav.reduce((s,l) => s + Number(l.valor||0), 0) + trs.filter(t => t.tipo === 'INGRESO').reduce((s,t) => s + Number(t.valor||0), 0)
-      const eg = trs.filter(t => t.tipo === 'EGRESO').reduce((s,t) => s + Number(t.valor||0), 0)
-      const cnt = lav.length
+    const tend6 = meses6.map(({ year, month }) => {
+      const prefix = `${year}-${String(month+1).padStart(2,'0')}`
+      const lavMes = lavHist.filter(l => (l.fecha || '').startsWith(prefix))
+      const trsMes = transHist.filter(t => (t.fecha || '').startsWith(prefix))
+      const ing = lavMes.reduce((s,l) => s + Number(l.valor||0), 0) + trsMes.filter(t => t.tipo === 'INGRESO').reduce((s,t) => s + Number(t.valor||0), 0)
+      const eg = trsMes.filter(t => t.tipo === 'EGRESO').reduce((s,t) => s + Number(t.valor||0), 0)
+      const cnt = lavMes.length
       return { mes: MESES[month].substring(0,3), ingresos: ing, egresos: eg, balance: ing - eg, ticket: cnt > 0 ? ing / cnt : 0 }
-    }))
+    })
 
     // Ranking lavadores por ingresos
     const rankLavadores = [...rendLavadores].sort((a,b) => b.total - a.total)
@@ -263,6 +272,7 @@ export default function Reportes() {
       comparativa, topDias, topLavadores, topAdicionales, tend6, rankLavadores,
       cTotal,
     })
+    setCargando(false)
   }
 
   // --- Render helpers ---
@@ -912,7 +922,9 @@ export default function Reportes() {
         <p>{getRangoStr()}</p>
       </div>
 
-      {data && (
+      {cargando && <div className="loading">Cargando reportes...</div>}
+
+      {data && !cargando && (
         <div className="reportes-secciones" ref={chartsRef}>
 
           {/* ========== TAB 1: VENTAS ========== */}
