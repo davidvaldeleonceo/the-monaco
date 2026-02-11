@@ -349,7 +349,7 @@ export default function Balance() {
   return (
     <div className="balance-page">
       <div className="page-header">
-        <h1 className="page-title">Balance <span className="total-hoy">({transaccionesFiltradas.length})</span></h1>
+        <h1 className="page-title">Balance</h1>
         <button className="btn-primary" onClick={() => setShowModal(true)}>
           <Plus size={20} />
           Nueva Transacción
