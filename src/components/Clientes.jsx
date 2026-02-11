@@ -174,7 +174,9 @@ export default function Clientes() {
   const handleDelete = async (id) => {
     if (confirm('¿Estás seguro de eliminar este cliente?')) {
       const { error } = await supabase.from('clientes').delete().eq('id', id)
-      if (!error) {
+      if (error) {
+        alert('No se pudo eliminar: ' + (error.message.includes('foreign key') ? 'El cliente tiene lavadas asociadas. Elimina sus lavadas primero.' : error.message))
+      } else {
         deleteClienteLocal(id)
         setSelectedClientes(prev => { const next = new Set(prev); next.delete(id); return next })
       }
@@ -204,11 +206,24 @@ export default function Clientes() {
     if (!confirm(`¿Estás seguro de eliminar ${count} cliente${count > 1 ? 's' : ''}?`)) return
 
     const ids = [...selectedClientes]
-    const { error } = await supabase.from('clientes').delete().in('id', ids)
-    if (!error) {
-      ids.forEach(id => deleteClienteLocal(id))
-      setSelectedClientes(new Set())
-      setModoSeleccion(false)
+    let eliminados = 0
+    let fallos = 0
+
+    for (const id of ids) {
+      const { error } = await supabase.from('clientes').delete().eq('id', id)
+      if (!error) {
+        deleteClienteLocal(id)
+        eliminados++
+      } else {
+        fallos++
+      }
+    }
+
+    setSelectedClientes(new Set())
+    setModoSeleccion(false)
+
+    if (fallos > 0) {
+      alert(`Se eliminaron ${eliminados} de ${count} clientes. ${fallos} no se pudieron eliminar porque tienen lavadas asociadas.`)
     }
   }
 

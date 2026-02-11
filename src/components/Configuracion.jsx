@@ -751,21 +751,8 @@ export default function Configuracion() {
               <input type="number" step="0.01" value={numVal(formData.descuento)} onChange={numChange('descuento')} />
             </div>
             <div className="form-group">
-              <label>Duración</label>
-              <select value={formData.duracion_dias || 1} onChange={(e) => setFormData({ ...formData, duracion_dias: Number(e.target.value) })}>
-                <option value={1}>1 mes</option>
-                <option value={2}>2 meses</option>
-                <option value={3}>3 meses</option>
-                <option value={4}>4 meses</option>
-                <option value={5}>5 meses</option>
-                <option value={6}>6 meses</option>
-                <option value={7}>7 meses</option>
-                <option value={8}>8 meses</option>
-                <option value={9}>9 meses</option>
-                <option value={10}>10 meses</option>
-                <option value={11}>11 meses</option>
-                <option value={12}>12 meses</option>
-              </select>
+              <label>Duración (meses)</label>
+              <input type="number" min="1" value={numVal(formData.duracion_dias)} onChange={numChange('duracion_dias')} required />
             </div>
             <div className="form-group checkbox-group">
               <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
