@@ -989,6 +989,20 @@ body {
   display: none;
 }
 
+.filter-clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-red, #ff4d4d);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem;
+  cursor: pointer;
+  min-width: 36px;
+  height: 36px;
+}
+
 .search-box {
   display: flex;
   align-items: center;
@@ -1222,8 +1236,173 @@ body {
   gap: 1rem;
 }
 
+.form-row {
+  display: flex;
+  gap: 1rem;
+}
+.form-row .form-group {
+  flex: 1;
+}
+
 .form-group {
   margin-bottom: 1rem;
+}
+
+/* Cliente searchable dropdown */
+.cliente-search-group {
+  grid-column: 1 / -1;
+}
+
+.cliente-search-wrapper {
+  position: relative;
+}
+
+.cliente-search-wrapper input {
+  padding-right: 32px;
+}
+
+.cliente-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.cliente-search-clear:hover {
+  color: var(--text-primary);
+}
+
+.cliente-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-top: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.cliente-search-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.cliente-search-option:hover {
+  background: var(--bg-secondary);
+}
+
+.cliente-search-nombre {
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cliente-search-placa {
+  font-size: 0.8rem;
+  color: var(--accent-blue);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.cliente-search-tag {
+  font-size: 0.7rem;
+  color: #888;
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.cliente-search-empty {
+  padding: 12px;
+  text-align: center;
+  color: #888;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-nuevo-cliente-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.nuevo-cliente-inline {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 4px;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.nuevo-cliente-inline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.nuevo-cliente-inline-header button {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.nuevo-cliente-inline input {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.btn-crear-cliente {
+  padding: 8px 12px !important;
+  font-size: 0.85rem !important;
+  border-radius: 8px !important;
 }
 
 .form-group label {
@@ -2587,6 +2766,13 @@ body {
   text-overflow: ellipsis;
 }
 
+.lavada-card-fecha {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: #888;
+  margin-left: 6px;
+}
+
 .lavada-card-placa {
   font-size: 0.8rem;
   color: var(--accent-blue);
@@ -3870,9 +4056,17 @@ body {
   .modal {
     width: 100%;
     max-width: 100%;
-    max-height: 95vh;
+    max-height: 75vh;
     border-radius: 1rem 1rem 0 0;
     margin: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal form {
+    overflow-y: auto;
+    flex: 1;
+    padding: 1rem;
   }
 
   .modal-header {
@@ -4592,6 +4786,21 @@ input:checked + .slider:before {
     transform: none;
     justify-content: space-between;
   }
+}
+
+.bulk-select-all {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.bulk-select-all:hover {
+  color: var(--text-primary);
 }
 
 /* Adicionales incluidos */

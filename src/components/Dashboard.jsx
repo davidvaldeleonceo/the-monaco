@@ -311,7 +311,7 @@ export default function Dashboard() {
         <div className="dash-kpi">
           <div className="dash-kpi-icon green"><Droplets size={18} /></div>
           <div className="dash-kpi-info">
-            <span className="dash-kpi-label">Lavadas</span>
+            <span className="dash-kpi-label">Servicios</span>
             <span className="dash-kpi-value">{kpis.lavadas}</span>
           </div>
         </div>
@@ -391,7 +391,7 @@ export default function Dashboard() {
         </div>
 
         <div className="dash-chart-card">
-          <h3 className="dash-chart-title">Lavadas por Lavador</h3>
+          <h3 className="dash-chart-title">Servicios por Lavador</h3>
           {lavadorData.length === 0 ? (
             <div className="dash-chart-empty">Sin datos</div>
           ) : (
@@ -410,7 +410,7 @@ export default function Dashboard() {
                   <Tooltip
                     contentStyle={{ background: '#1a1a24', border: '1px solid #2a2a3a', borderRadius: 8, color: '#fff' }}
                     cursor={{ fill: 'rgba(255, 255, 255, 0.04)' }}
-                    formatter={(v) => [v, 'Lavadas']}
+                    formatter={(v) => [v, 'Servicios']}
                   />
                   <Bar dataKey="value" fill="#10b981" radius={[0, 4, 4, 0]} barSize={16} />
                 </BarChart>
@@ -457,7 +457,7 @@ export default function Dashboard() {
                 <div key={i} className="dash-list-item">
                   <span className="dash-list-rank">#{i + 1}</span>
                   <span className="dash-list-name">{c.nombre}</span>
-                  <span className="dash-list-detail">{c.count} lavadas</span>
+                  <span className="dash-list-detail">{c.count} servicios</span>
                   <span className="dash-list-value">{formatMoney(c.total)}</span>
                 </div>
               ))}

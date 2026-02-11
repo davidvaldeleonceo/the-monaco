@@ -32,7 +32,7 @@ export default function Layout({ user }) {
 
   const menuItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/lavadas', icon: Droplets, label: 'Lavadas' },
+    { to: '/lavadas', icon: Droplets, label: 'Servicios' },
     { to: '/clientes', icon: Users, label: 'Clientes' },
     { to: '/balance', icon: DollarSign, label: 'Balance' },
     { to: '/reportes', icon: FileText, label: 'Reportes' },

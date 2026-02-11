@@ -175,7 +175,7 @@ export default function Clientes() {
     if (confirm('¿Estás seguro de eliminar este cliente?')) {
       const { error } = await supabase.from('clientes').delete().eq('id', id)
       if (error) {
-        alert('No se pudo eliminar: ' + (error.message.includes('foreign key') ? 'El cliente tiene lavadas asociadas. Elimina sus lavadas primero.' : error.message))
+        alert('No se pudo eliminar: ' + (error.message.includes('foreign key') ? 'El cliente tiene servicios asociados. Elimina sus servicios primero.' : error.message))
       } else {
         deleteClienteLocal(id)
         setSelectedClientes(prev => { const next = new Set(prev); next.delete(id); return next })
@@ -223,7 +223,7 @@ export default function Clientes() {
     setModoSeleccion(false)
 
     if (fallos > 0) {
-      alert(`Se eliminaron ${eliminados} de ${count} clientes. ${fallos} no se pudieron eliminar porque tienen lavadas asociadas.`)
+      alert(`Se eliminaron ${eliminados} de ${count} clientes. ${fallos} no se pudieron eliminar porque tienen servicios asociados.`)
     }
   }
 
@@ -642,6 +642,22 @@ export default function Clientes() {
           >
             <SlidersHorizontal size={18} />
           </button>
+          {(search || filtroTipoCliente || filtroEstado || fechaDesde || fechaHasta || filtroRapido) && (
+            <button
+              className="filter-clear-btn"
+              onClick={() => {
+                setSearch('')
+                setFiltroTipoCliente('')
+                setFiltroEstado('')
+                setFechaDesde(null)
+                setFechaHasta(null)
+                setFiltroRapido('')
+              }}
+              title="Limpiar filtros"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
 
         <div className={`filters-row-extra ${showFilters ? 'open' : ''}`}>
@@ -1141,40 +1157,30 @@ export default function Clientes() {
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label>Estado</label>
-                  <select
-                    value={formData.estado}
-                    onChange={(e) => setFormData({ ...formData, estado: e.target.value })}
-                  >
-                    <option value="Activo">Activo</option>
-                    <option value="No Activo">No Activo</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Fecha inicio</label>
-                  <DatePicker
-                    selected={formData.fecha_inicio_membresia}
-                    onChange={(date) => setFormData({ ...formData, fecha_inicio_membresia: date })}
-                    dateFormat="dd/MM/yyyy"
-                    locale="es"
-                    isClearable
-                    placeholderText="Seleccionar fecha"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Fecha fin</label>
-                  <DatePicker
-                    selected={formData.fecha_fin_membresia}
-                    onChange={(date) => setFormData({ ...formData, fecha_fin_membresia: date })}
-                    dateFormat="dd/MM/yyyy"
-                    locale="es"
-                    isClearable
-                    placeholderText="Seleccionar fecha"
-                    minDate={formData.fecha_inicio_membresia}
-                  />
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Fecha inicio</label>
+                    <DatePicker
+                      selected={formData.fecha_inicio_membresia}
+                      onChange={(date) => setFormData({ ...formData, fecha_inicio_membresia: date })}
+                      dateFormat="dd/MM/yyyy"
+                      locale="es"
+                      isClearable
+                      placeholderText="Seleccionar fecha"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Fecha fin</label>
+                    <DatePicker
+                      selected={formData.fecha_fin_membresia}
+                      onChange={(date) => setFormData({ ...formData, fecha_fin_membresia: date })}
+                      dateFormat="dd/MM/yyyy"
+                      locale="es"
+                      isClearable
+                      placeholderText="Seleccionar fecha"
+                      minDate={formData.fecha_inicio_membresia}
+                    />
+                  </div>
                 </div>
               </div>
 

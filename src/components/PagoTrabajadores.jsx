@@ -531,7 +531,7 @@ export default function PagoTrabajadores() {
   const tipoPagoLabel = (tipo) => {
     if (tipo === 'porcentaje') return 'Porcentaje'
     if (tipo === 'sueldo_fijo') return 'Sueldo fijo'
-    if (tipo === 'porcentaje_lavada') return '% de lavada + adic.'
+    if (tipo === 'porcentaje_lavada') return '% de servicio + adic.'
     return '-'
   }
 
@@ -614,26 +614,26 @@ export default function PagoTrabajadores() {
         {!calculando && formData.fecha_desde && formData.fecha_hasta && (
           <div style={{ background: 'var(--bg-secondary, #f5f5f5)', padding: '12px', borderRadius: '8px', marginBottom: '12px', gridColumn: '1 / -1' }}>
             <p style={{ margin: '0 0 8px', fontWeight: '600' }}>Resumen ({tipoPagoLabel(lavador?.tipo_pago)})</p>
-            <p style={{ margin: '4px 0' }}>Lavadas en período: <strong>{formData.lavadas_cantidad}</strong></p>
+            <p style={{ margin: '4px 0' }}>Servicios en período: <strong>{formData.lavadas_cantidad}</strong></p>
             <p style={{ margin: '4px 0' }}>Adicionales: <strong>{formData.adicionales_cantidad}</strong></p>
             {lavadasExcluidas > 0 && (
               <p style={{ margin: '4px 0', color: 'var(--accent-yellow)', fontSize: '0.85em' }}>
-                {lavadasExcluidas} lavada{lavadasExcluidas > 1 ? 's' : ''} excluida{lavadasExcluidas > 1 ? 's' : ''} (días ya pagados)
+                {lavadasExcluidas} servicio{lavadasExcluidas > 1 ? 's' : ''} excluido{lavadasExcluidas > 1 ? 's' : ''} (días ya pagados)
               </p>
             )}
             {lavador?.tipo_pago === 'porcentaje' && (
-              <p style={{ margin: '4px 0' }}>Valor total lavadas: <strong>{formatMoney(formData.detalle?.suma_valor_lavadas || 0)}</strong> x {lavador.pago_porcentaje || 0}%</p>
+              <p style={{ margin: '4px 0' }}>Valor total servicios: <strong>{formatMoney(formData.detalle?.suma_valor_lavadas || 0)}</strong> x {lavador.pago_porcentaje || 0}%</p>
             )}
             {lavador?.tipo_pago === 'sueldo_fijo' && (
               <>
                 <p style={{ margin: '4px 0' }}>Sueldo base: <strong>{formatMoney(lavador.pago_sueldo_base || 0)}</strong></p>
-                <p style={{ margin: '4px 0' }}>+ {formData.lavadas_cantidad} lavadas x {formatMoney(lavador.pago_por_lavada || 0)}</p>
+                <p style={{ margin: '4px 0' }}>+ {formData.lavadas_cantidad} servicios x {formatMoney(lavador.pago_por_lavada || 0)}</p>
                 <p style={{ margin: '4px 0' }}>+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_por_adicional || 0)}</p>
               </>
             )}
             {lavador?.tipo_pago === 'porcentaje_lavada' && (
               <>
-                <p style={{ margin: '4px 0' }}>% por tipo de lavada: {lavador.pago_porcentaje_lavada || 0}%</p>
+                <p style={{ margin: '4px 0' }}>% por tipo de servicio: {lavador.pago_porcentaje_lavada || 0}%</p>
                 <p style={{ margin: '4px 0' }}>+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_adicional_fijo || 0)}</p>
               </>
             )}
@@ -676,7 +676,7 @@ export default function PagoTrabajadores() {
         {renderMetodoPagoSelect()}
 
         <div className="form-group">
-          <label>Cantidad Lavadas</label>
+          <label>Cantidad Servicios</label>
           <input
             type="number"
             value={formData.lavadas_cantidad}
@@ -811,7 +811,7 @@ export default function PagoTrabajadores() {
               <th>Trabajador</th>
               <th>Tipo Pago</th>
               <th>Período</th>
-              <th>Lavadas</th>
+              <th>Servicios</th>
               <th>Total</th>
               <th>Descuentos</th>
               <th>A Pagar</th>

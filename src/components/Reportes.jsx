@@ -182,8 +182,8 @@ export default function Reportes() {
     // --- Tab 2: Ingresos y Egresos ---
     const ingMembresias = trans.filter(t => t.tipo === 'INGRESO' && t.categoria === 'MEMBRESIA').reduce((s,t) => s + Number(t.valor||0), 0)
     const ingAdicional = trans.filter(t => t.tipo === 'INGRESO' && t.categoria === 'ADICIONAL').reduce((s,t) => s + Number(t.valor||0), 0)
-    const ingOtros = trans.filter(t => t.tipo === 'INGRESO' && !['MEMBRESIA','ADICIONAL','LAVADA'].includes(t.categoria)).reduce((s,t) => s + Number(t.valor||0), 0)
-    const ingLavadas = trans.filter(t => t.tipo === 'INGRESO' && t.categoria === 'LAVADA').reduce((s,t) => s + Number(t.valor||0), 0)
+    const ingOtros = trans.filter(t => t.tipo === 'INGRESO' && !['MEMBRESIA','ADICIONAL','SERVICIO','LAVADA'].includes(t.categoria)).reduce((s,t) => s + Number(t.valor||0), 0)
+    const ingLavadas = trans.filter(t => t.tipo === 'INGRESO' && (t.categoria === 'SERVICIO' || t.categoria === 'LAVADA')).reduce((s,t) => s + Number(t.valor||0), 0)
     const totalIngresos = totalInd + totalAdicMem + ingresosTrans
 
     const egCats = {}
@@ -206,7 +206,7 @@ export default function Reportes() {
     for (let i = 0; i < dias; i++) { const d = new Date(fechaDesde); d.setDate(d.getDate()+i); const dia = d.getDate(); ingEgDiario.push({ dia: String(dia), ingresos: ingDia[dia]||0, egresos: egDia[dia]||0 }) }
 
     const ingPie = [
-      { name: 'Lavadas individuales', value: totalInd, porcentaje: pctNum(totalInd, totalIngresos) },
+      { name: 'Individuales', value: totalInd, porcentaje: pctNum(totalInd, totalIngresos) },
       { name: 'Adicionales membresía', value: totalAdicMem, porcentaje: pctNum(totalAdicMem, totalIngresos) },
       { name: 'Membresías', value: ingMembresias, porcentaje: pctNum(ingMembresias, totalIngresos) },
       { name: 'Otros', value: ingOtros + ingAdicional + ingLavadas, porcentaje: pctNum(ingOtros + ingAdicional + ingLavadas, totalIngresos) },
@@ -346,7 +346,7 @@ export default function Reportes() {
         ['Total Egresos', fmt(data.egresosTrans), ''],
         ['Balance Neto', fmt(data.balance), sign(data.comparativa.balance)],
         ['Margen de Ganancia', `${data.margen}%`, ''],
-        ['Total Lavadas', String(data.cTotal), sign(data.comparativa.lavadas)],
+        ['Total Servicios', String(data.cTotal), sign(data.comparativa.lavadas)],
         ['Ticket Promedio', fmt(data.ventas.ticketTotal), ''],
       ],
       columnStyles: { 0: { cellWidth: 80 }, 1: { halign: 'right', cellWidth: 50 }, 2: { halign: 'center', cellWidth: 35 } },
@@ -405,7 +405,7 @@ export default function Reportes() {
 
     autoTable(doc, {
       ...ts, startY: y,
-      head: [['#', 'Lavador', 'Lavadas', 'Ingresos', 'Promedio']],
+      head: [['#', 'Lavador', 'Servicios', 'Ingresos', 'Promedio']],
       body: data.rankLavadores.map((l, i) => [
         i + 1, l.nombre, l.cantidad, fmt(l.total), fmt(l.cantidad > 0 ? l.total / l.cantidad : 0)
       ]),
@@ -474,7 +474,7 @@ export default function Reportes() {
     }
 
     doc.setFontSize(12); doc.setFont(undefined, 'bold'); doc.setTextColor(...cGrisOscuro)
-    doc.text('Distribución de Lavadas', M, y); y += 4
+    doc.text('Distribución de Servicios', M, y); y += 4
 
     autoTable(doc, {
       ...ts, startY: y,
@@ -650,7 +650,7 @@ export default function Reportes() {
       { label: 'Total Egresos', valor: data.egresosTrans, cambio: '', fontV: fontRojoBold },
       { label: 'Balance Neto', valor: data.balance, cambio: sign(data.comparativa.balance), fontV: data.balance >= 0 ? fontVerdeBold : fontRojoBold },
       { label: 'Margen de Ganancia', valor: `${data.margen}%`, cambio: '', fontV: Number(data.margen) >= 0 ? fontVerde : fontRojo, raw: true },
-      { label: 'Total Lavadas', valor: data.cTotal, cambio: sign(data.comparativa.lavadas), raw: true },
+      { label: 'Total Servicios', valor: data.cTotal, cambio: sign(data.comparativa.lavadas), raw: true },
       { label: 'Ticket Promedio', valor: data.ventas.ticketTotal, cambio: '' },
     ]
     kpis.forEach((kpi, i) => {
@@ -670,7 +670,7 @@ export default function Reportes() {
     r = addTitle(ws2, 'Detalle de Ingresos', 3)
     addHeaders(ws2, r, ['Concepto', 'Valor', 'Porcentaje'])
     const ingRows = [
-      ['Lavadas individuales', data.ingresos.lavInd, pctNum(data.ingresos.lavInd, data.totalIngresos)],
+      ['Servicios individuales', data.ingresos.lavInd, pctNum(data.ingresos.lavInd, data.totalIngresos)],
       ['Adicionales membresías', data.ingresos.adicMem, pctNum(data.ingresos.adicMem, data.totalIngresos)],
       ['Membresías vendidas', data.ingresos.membresias, pctNum(data.ingresos.membresias, data.totalIngresos)],
       ['Otros ingresos', data.ingresos.otros + data.ingresos.adicTrans + data.ingresos.lavTrans, pctNum(data.ingresos.otros + data.ingresos.adicTrans + data.ingresos.lavTrans, data.totalIngresos)],
@@ -742,7 +742,7 @@ export default function Reportes() {
     // ===== SHEET 4: Lavadores =====
     const ws4 = wb.addWorksheet('Rendimiento Lavadores')
     r = addTitle(ws4, 'Rendimiento por Lavador', 5)
-    addHeaders(ws4, r, ['#', 'Lavador', 'Lavadas', 'Ingresos', 'Promedio'])
+    addHeaders(ws4, r, ['#', 'Lavador', 'Servicios', 'Ingresos', 'Promedio'])
     data.rankLavadores.forEach((l, i) => {
       const rn = r + 1 + i
       const prom = l.cantidad > 0 ? l.total / l.cantidad : 0
@@ -768,7 +768,7 @@ export default function Reportes() {
       r = r + 1 + Math.min(data.adicionales.length, 10) + 1
     }
 
-    r = addSubtitle(ws5, r, 'Distribución de Lavadas', 3)
+    r = addSubtitle(ws5, r, 'Distribución de Servicios', 3)
     addHeaders(ws5, r, ['Tipo', 'Cantidad', 'Porcentaje'])
     const distRows = [
       ['Individuales', data.ventas.cInd, Number(pctNum(data.ventas.cInd, data.ventas.cTotal))],
@@ -833,7 +833,7 @@ export default function Reportes() {
     const t = data.ventas.totalVentas
     return [
       ['Total ventas', fmt(t), '100%'],
-      ['Lavadas individuales', fmt(data.ventas.totalInd), pct(data.ventas.totalInd, t)],
+      ['Servicios individuales', fmt(data.ventas.totalInd), pct(data.ventas.totalInd, t)],
       ['Adicionales membresías', fmt(data.ventas.totalAdicMem), pct(data.ventas.totalAdicMem, t)],
       ['Membresías y otros ingresos', fmt(data.ventas.ingresosTrans), pct(data.ventas.ingresosTrans, t)],
       ['Total egresos', fmt(data.ventas.totalEgresos), pct(data.ventas.totalEgresos, t)],
@@ -843,8 +843,8 @@ export default function Reportes() {
   const getEstadisticasRows = () => {
     if (!data) return []
     return [
-      ['Lavadas individuales', String(data.ventas.cInd), pct(data.ventas.cInd, data.ventas.cTotal)],
-      ['Lavadas membresía', String(data.ventas.cMem), pct(data.ventas.cMem, data.ventas.cTotal)],
+      ['Servicios individuales', String(data.ventas.cInd), pct(data.ventas.cInd, data.ventas.cTotal)],
+      ['Servicios membresía', String(data.ventas.cMem), pct(data.ventas.cMem, data.ventas.cTotal)],
       ['Ticket prom. sin membresía', fmt(data.ventas.ticketSin), ''],
       ['Ticket prom. con membresía', fmt(data.ventas.ticketCon), ''],
       ['Ticket prom. total', fmt(data.ventas.ticketTotal), ''],
@@ -854,7 +854,7 @@ export default function Reportes() {
     if (!data) return []
     const t = data.totalIngresos
     return [
-      ['Lavadas individuales', fmt(data.ingresos.lavInd), pct(data.ingresos.lavInd, t)],
+      ['Servicios individuales', fmt(data.ingresos.lavInd), pct(data.ingresos.lavInd, t)],
       ['Adicionales membresías', fmt(data.ingresos.adicMem), pct(data.ingresos.adicMem, t)],
       ['Membresías vendidas', fmt(data.ingresos.membresias), pct(data.ingresos.membresias, t)],
       ['Otros ingresos', fmt(data.ingresos.otros + data.ingresos.adicTrans + data.ingresos.lavTrans), pct(data.ingresos.otros + data.ingresos.adicTrans + data.ingresos.lavTrans, t)],
@@ -877,7 +877,7 @@ export default function Reportes() {
       ['Total Egresos', fmt(data.egresosTrans), ''],
       ['Balance Neto', fmt(data.balance), sign(c.balance)],
       ['Margen de Ganancia', data.margen + '%', ''],
-      ['Total Lavadas', String(data.cTotal), sign(c.lavadas)],
+      ['Total Servicios', String(data.cTotal), sign(c.lavadas)],
       ['Ticket Promedio', fmt(data.ventas.ticketTotal), ''],
     ]
   }
@@ -935,7 +935,7 @@ export default function Reportes() {
                 <thead><tr><th>Concepto</th><th className="col-valor">Valor</th><th className="col-pct">%</th></tr></thead>
                 <tbody>
                   <tr><td>Total ventas</td><td className="col-valor">{fmt(data.ventas.totalVentas)}</td><td className="col-pct">100%</td></tr>
-                  <tr><td>Lavadas individuales</td><td className="col-valor">{fmt(data.ventas.totalInd)}</td><td className="col-pct">{pct(data.ventas.totalInd, data.ventas.totalVentas)}</td></tr>
+                  <tr><td>Servicios individuales</td><td className="col-valor">{fmt(data.ventas.totalInd)}</td><td className="col-pct">{pct(data.ventas.totalInd, data.ventas.totalVentas)}</td></tr>
                   <tr><td>Adicionales membresías</td><td className="col-valor">{fmt(data.ventas.totalAdicMem)}</td><td className="col-pct">{pct(data.ventas.totalAdicMem, data.ventas.totalVentas)}</td></tr>
                   <tr><td>Membresías y otros ingresos</td><td className="col-valor">{fmt(data.ventas.ingresosTrans)}</td><td className="col-pct">{pct(data.ventas.ingresosTrans, data.ventas.totalVentas)}</td></tr>
                   <tr className="fila-egresos"><td>Total egresos</td><td className="col-valor negativo">{fmt(data.ventas.totalEgresos)}</td><td className="col-pct negativo">{pct(data.ventas.totalEgresos, data.ventas.totalVentas)}</td></tr>
@@ -945,12 +945,12 @@ export default function Reportes() {
             </div>
 
             <div className="reporte-seccion">
-              <h3 className="reporte-seccion-titulo">ESTADÍSTICAS DE LAVADAS</h3>
+              <h3 className="reporte-seccion-titulo">ESTADÍSTICAS DE SERVICIOS</h3>
               <table className="reporte-tabla">
                 <thead><tr><th>Concepto</th><th className="col-valor">Valor</th><th className="col-pct">%</th></tr></thead>
                 <tbody>
-                  <tr><td>Lavadas individuales</td><td className="col-valor">{data.ventas.cInd}</td><td className="col-pct">{pct(data.ventas.cInd, data.ventas.cTotal)}</td></tr>
-                  <tr><td>Lavadas membresía</td><td className="col-valor">{data.ventas.cMem}</td><td className="col-pct">{pct(data.ventas.cMem, data.ventas.cTotal)}</td></tr>
+                  <tr><td>Servicios individuales</td><td className="col-valor">{data.ventas.cInd}</td><td className="col-pct">{pct(data.ventas.cInd, data.ventas.cTotal)}</td></tr>
+                  <tr><td>Servicios membresía</td><td className="col-valor">{data.ventas.cMem}</td><td className="col-pct">{pct(data.ventas.cMem, data.ventas.cTotal)}</td></tr>
                   <tr><td>Ticket prom. sin membresía</td><td className="col-valor">{fmt(data.ventas.ticketSin)}</td><td className="col-pct"></td></tr>
                   <tr><td>Ticket prom. con membresía</td><td className="col-valor">{fmt(data.ventas.ticketCon)}</td><td className="col-pct"></td></tr>
                   <tr><td>Ticket prom. total</td><td className="col-valor">{fmt(data.ventas.ticketTotal)}</td><td className="col-pct"></td></tr>
@@ -1018,7 +1018,7 @@ export default function Reportes() {
               <table className="reporte-tabla">
                 <thead><tr><th>Concepto</th><th className="col-valor">Valor</th><th className="col-pct">%</th></tr></thead>
                 <tbody>
-                  <tr><td>Lavadas individuales</td><td className="col-valor">{fmt(data.ingresos.lavInd)}</td><td className="col-pct">{pct(data.ingresos.lavInd, data.totalIngresos)}</td></tr>
+                  <tr><td>Servicios individuales</td><td className="col-valor">{fmt(data.ingresos.lavInd)}</td><td className="col-pct">{pct(data.ingresos.lavInd, data.totalIngresos)}</td></tr>
                   <tr><td>Adicionales membresías</td><td className="col-valor">{fmt(data.ingresos.adicMem)}</td><td className="col-pct">{pct(data.ingresos.adicMem, data.totalIngresos)}</td></tr>
                   <tr><td>Membresías vendidas</td><td className="col-valor">{fmt(data.ingresos.membresias)}</td><td className="col-pct">{pct(data.ingresos.membresias, data.totalIngresos)}</td></tr>
                   <tr><td>Otros ingresos</td><td className="col-valor">{fmt(data.ingresos.otros + data.ingresos.adicTrans + data.ingresos.lavTrans)}</td><td className="col-pct">{pct(data.ingresos.otros + data.ingresos.adicTrans + data.ingresos.lavTrans, data.totalIngresos)}</td></tr>
@@ -1078,7 +1078,7 @@ export default function Reportes() {
               <div className="kpi-card"><span className="kpi-label">Total Egresos</span><span className="kpi-value negativo">{fmt(data.egresosTrans)}</span></div>
               <div className="kpi-card"><span className="kpi-label">Balance Neto</span><span className={`kpi-value ${data.balance >= 0 ? 'positivo' : 'negativo'}`}>{fmt(data.balance)}</span><span className={`kpi-change ${Number(data.comparativa.balance) >= 0 ? 'positivo' : 'negativo'}`}>{Number(data.comparativa.balance) >= 0 ? '+' : ''}{data.comparativa.balance}% vs mes ant.</span></div>
               <div className="kpi-card"><span className="kpi-label">Margen Ganancia</span><span className={`kpi-value ${Number(data.margen) >= 0 ? 'positivo' : 'negativo'}`}>{data.margen}%</span></div>
-              <div className="kpi-card"><span className="kpi-label">Total Lavadas</span><span className="kpi-value">{data.cTotal}</span><span className={`kpi-change ${Number(data.comparativa.lavadas) >= 0 ? 'positivo' : 'negativo'}`}>{Number(data.comparativa.lavadas) >= 0 ? '+' : ''}{data.comparativa.lavadas}% vs mes ant.</span></div>
+              <div className="kpi-card"><span className="kpi-label">Total Servicios</span><span className="kpi-value">{data.cTotal}</span><span className={`kpi-change ${Number(data.comparativa.lavadas) >= 0 ? 'positivo' : 'negativo'}`}>{Number(data.comparativa.lavadas) >= 0 ? '+' : ''}{data.comparativa.lavadas}% vs mes ant.</span></div>
               <div className="kpi-card"><span className="kpi-label">Ticket Promedio</span><span className="kpi-value">{fmt(data.ventas.ticketTotal)}</span></div>
             </div>
 
@@ -1113,7 +1113,7 @@ export default function Reportes() {
             <div className="chart-grid top-performers-grid">
               <div className="reporte-seccion">
                 <h4 className="chart-title">Top 3 Lavadores</h4>
-                <table className="reporte-tabla"><thead><tr><th>#</th><th>Lavador</th><th className="col-valor">Lavadas</th><th className="col-valor">Ingresos</th></tr></thead>
+                <table className="reporte-tabla"><thead><tr><th>#</th><th>Lavador</th><th className="col-valor">Servicios</th><th className="col-valor">Ingresos</th></tr></thead>
                   <tbody>{data.topLavadores.map((l,i) => <tr key={i}><td>{i+1}</td><td>{l.nombre}</td><td className="col-valor">{l.cantidad}</td><td className="col-valor">{fmt(l.total)}</td></tr>)}</tbody>
                 </table>
               </div>

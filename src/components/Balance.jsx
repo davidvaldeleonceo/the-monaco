@@ -69,7 +69,7 @@ export default function Balance() {
   })
 
   const categorias = {
-    INGRESO: ['MEMBRESIA', 'LAVADA', 'ADICIONAL', 'OTRO'],
+    INGRESO: ['MEMBRESIA', 'SERVICIO', 'ADICIONAL', 'OTRO'],
     EGRESO: ['INSUMOS', 'SERVICIOS', 'ABONO A SUELDO', 'ARRIENDO', 'PAGO TRABAJADOR', 'OTRO']
   }
 
@@ -185,7 +185,7 @@ export default function Balance() {
     return pagos.map((p, idx) => ({
       id: `lavada-${l.id}-${idx}`,
       tipo: 'INGRESO',
-      categoria: 'LAVADA',
+      categoria: 'SERVICIO',
       valor: p.valor || 0,
       metodo_pago_id: p.metodo_pago_id,
       metodo_pago: { nombre: p.nombre },
