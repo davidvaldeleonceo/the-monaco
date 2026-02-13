@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 *.fcpbundle
 .vercel
+
+# Server
+server/.env
+server/src/db/exported/

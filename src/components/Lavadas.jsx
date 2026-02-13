@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
-import { Plus, Search, X, MessageCircle, Calendar, Trash2, ChevronDown, SlidersHorizontal, CheckCircle2, Upload, Download, CheckSquare } from 'lucide-react'
+import { useTenant } from './TenantContext'
+import { logAudit } from '../utils/auditLog'
+import { Plus, Search, X, MessageCircle, Calendar, Trash2, ChevronDown, SlidersHorizontal, CheckCircle2, Upload, Download, CheckSquare, RefreshCw } from 'lucide-react'
+import Select from 'react-select'
 import * as XLSX from 'xlsx'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -11,7 +14,17 @@ import es from 'date-fns/locale/es'
 registerLocale('es', es)
 
 export default function Lavadas() {
-  const { lavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, tiposMembresia, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal, addClienteLocal, refreshLavadas, refreshClientes, negocioId } = useData()
+  const { lavadas: allLavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, tiposMembresia, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal, addClienteLocal, refreshLavadas, refreshClientes, negocioId } = useData()
+  const { userProfile, userEmail } = useTenant()
+
+  // Trabajador role: only see their own services
+  const lavadas = (() => {
+    const rol = (userProfile?.rol || 'admin').toLowerCase()
+    if (rol === 'trabajador' && userProfile?.lavador_id) {
+      return allLavadas.filter(l => l.lavador_id === userProfile.lavador_id)
+    }
+    return allLavadas
+  })()
 
   const loadSavedFilters = () => {
     try {
@@ -65,6 +78,7 @@ export default function Lavadas() {
   const [selectedLavadas, setSelectedLavadas] = useState(new Set())
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   const smoothCollapse = (lavadaId) => {
     setCollapsingCards(prev => ({ ...prev, [lavadaId]: true }))
@@ -326,6 +340,7 @@ export default function Lavadas() {
 
     if (!error && data) {
       addLavadaLocal(data)
+      logAudit({ tabla: 'lavadas', accion: 'create', registro_id: data.id, despues: { placa: data.placa, valor: data.valor, estado: data.estado }, descripcion: `Nuevo servicio: ${data.placa}`, usuario_email: userEmail, negocio_id: negocioId })
       setShowModal(false)
       setClienteSearch('')
       setFormData({
@@ -392,7 +407,8 @@ export default function Lavadas() {
 
   const handleLavadorChange = async (lavadaId, lavadorId) => {
     const lavador = lavadores.find(l => l.id == lavadorId)
-    updateLavadaLocal(lavadaId, { lavador_id: lavadorId, lavador })
+    // Match Supabase select shape: lavador:lavadores(nombre) returns { nombre }
+    updateLavadaLocal(lavadaId, { lavador_id: lavadorId, lavador: lavador ? { nombre: lavador.nombre } : null })
 
     await supabase
       .from('lavadas')
@@ -407,9 +423,10 @@ export default function Lavadas() {
 
     const nuevoValor = calcularValor(tipoId, nuevosAdicionales)
 
+    // Match Supabase select shape: tipo_lavado:tipos_lavado(nombre) returns { nombre }
     updateLavadaLocal(lavadaId, {
       tipo_lavado_id: tipoId,
-      tipo_lavado: tipo,
+      tipo_lavado: tipo ? { nombre: tipo.nombre } : null,
       adicionales: nuevosAdicionales,
       valor: nuevoValor
     })
@@ -525,10 +542,12 @@ export default function Lavadas() {
     let eliminados = 0
 
     for (const id of ids) {
+      const lavada = lavadas.find(l => l.id === id)
       const { error } = await supabase.from('lavadas').delete().eq('id', id)
       if (!error) {
         deleteLavadaLocal(id)
         eliminados++
+        logAudit({ tabla: 'lavadas', accion: 'delete', registro_id: id, antes: lavada ? { placa: lavada.placa, valor: lavada.valor } : null, descripcion: `Servicio eliminado: ${lavada?.placa || id}`, usuario_email: userEmail, negocio_id: negocioId })
       }
     }
 
@@ -640,7 +659,7 @@ export default function Lavadas() {
         if (!cliente) {
           errors.push({
             fila,
-            problema: `Placa "${placa}" no tiene cliente registrado → se creará automáticamente con SIN MEMBRESIA`,
+            problema: `Placa "${placa}" no tiene cliente registrado → se creará como "nn" con SIN MEMBRESIA`,
             solucion: 'Puedes editar el cliente después para agregar nombre y datos',
             tipo: 'warning'
           })
@@ -739,7 +758,7 @@ export default function Lavadas() {
 
         nuevos.push({
           cliente_id: cliente?.id || null,
-          cliente_nombre: cliente?.nombre || placa,
+          cliente_nombre: cliente?.nombre || 'nn',
           placa,
           tipo_lavado_id: tipo.id,
           tipo_lavado_nombre: tipo.nombre,
@@ -793,7 +812,7 @@ export default function Lavadas() {
           const { data: nuevoCliente, error: errCliente } = await supabase
             .from('clientes')
             .insert([{
-              nombre: row.placa,
+              nombre: 'nn',
               placa: row.placa,
               telefono: null,
               membresia_id: sinMembresia?.id || null,
@@ -911,6 +930,12 @@ export default function Lavadas() {
   const totalFiltrado = lavadasFiltradas.reduce((sum, l) => sum + (l.valor || 0), 0)
   const cantidadFiltrada = lavadasFiltradas.length
 
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await refreshLavadas()
+    setRefreshing(false)
+  }
+
   if (loading) {
     return <div className="loading">Cargando...</div>
   }
@@ -920,6 +945,14 @@ export default function Lavadas() {
       <div className="page-header">
         <h1 className="page-title">Servicios <span className="total-hoy">({cantidadFiltrada} - {formatMoney(totalFiltrado)})</span></h1>
         <div className="page-header-actions">
+          <button
+            className="btn-secondary btn-icon-only"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Actualizar datos"
+          >
+            <RefreshCw size={18} className={refreshing ? 'spin' : ''} />
+          </button>
           <button
             className={`btn-secondary ${modoSeleccion ? 'btn-seleccion-activo' : ''}`}
             onClick={() => { setModoSeleccion(prev => !prev); setSelectedLavadas(new Set()) }}
@@ -960,16 +993,30 @@ export default function Lavadas() {
             <option value="TERMINADO">Terminado</option>
             <option value="ENTREGADO">Entregado</option>
           </select>
-          <select
-            value={filtroLavador}
-            onChange={(e) => setFiltroLavador(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Lavador</option>
-            {lavadores.map(l => (
-              <option key={l.id} value={l.id}>{l.nombre}</option>
-            ))}
-          </select>
+          <Select
+            value={filtroLavador ? { value: filtroLavador, label: lavadores.find(l => l.id == filtroLavador)?.nombre || '' } : null}
+            onChange={(opt) => setFiltroLavador(opt ? opt.value : '')}
+            options={lavadores.map(l => ({ value: l.id, label: l.nombre, activo: l.activo }))}
+            isClearable
+            placeholder="Lavador"
+            formatOptionLabel={(opt) => (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: opt.activo !== false ? '#10b981' : '#666', flexShrink: 0 }} />
+                {opt.label}
+              </div>
+            )}
+            styles={{
+              control: (base) => ({ ...base, background: 'var(--bg-card)', borderColor: 'var(--border-color)', minHeight: 36, minWidth: 140, fontSize: '0.85rem', boxShadow: 'none', '&:hover': { borderColor: 'var(--accent-green)' } }),
+              menu: (base) => ({ ...base, background: 'var(--bg-card)', border: '1px solid var(--border-color)', zIndex: 10 }),
+              option: (base, state) => ({ ...base, background: state.isFocused ? 'var(--bg-hover)' : 'transparent', color: 'var(--text-primary)', fontSize: '0.85rem' }),
+              singleValue: (base) => ({ ...base, color: 'var(--text-primary)' }),
+              placeholder: (base) => ({ ...base, color: 'var(--text-secondary)' }),
+              input: (base) => ({ ...base, color: 'var(--text-primary)' }),
+              indicatorSeparator: () => ({ display: 'none' }),
+              dropdownIndicator: (base) => ({ ...base, padding: '4px', color: 'var(--text-secondary)' }),
+              clearIndicator: (base) => ({ ...base, padding: '4px', color: 'var(--text-secondary)' }),
+            }}
+          />
           <button
             className={`filter-toggle-btn ${showFilters ? 'active' : ''}`}
             onClick={() => setShowFilters(prev => !prev)}
@@ -1055,6 +1102,10 @@ export default function Lavadas() {
           const pagos = lavada.pagos || []
           const isExpanded = expandedCards[lavada.id]
           const estadoLabels = { 'EN ESPERA': 'Espera', 'EN LAVADO': 'Lavando', 'TERMINADO': 'Terminado', 'ENTREGADO': 'Entregado' }
+          const totalValor = Number(lavada.valor || 0)
+          const sumaPagosCard = pagos.reduce((s, p) => s + Number(p.valor || 0), 0)
+          const pagoStatus = totalValor === 0 || sumaPagosCard >= totalValor ? 'pagado' : sumaPagosCard > 0 ? 'parcial' : 'sin-pagar'
+          const pagoLabel = pagoStatus === 'pagado' ? 'Pagado' : pagoStatus === 'parcial' ? 'Parcial' : 'Sin pagar'
           const vErrs = validationErrors[lavada.id] || {}
           const isCollapsing = collapsingCards[lavada.id]
           const showBody = isExpanded || isCollapsing
@@ -1079,6 +1130,7 @@ export default function Lavadas() {
                   <span className="lavada-card-placa">{lavada.placa}</span>
                 </div>
                 <div className="lavada-card-summary">
+                  <span className={`pago-badge pago-badge-${pagoStatus}`}>{pagoLabel}</span>
                   <span className={`estado-badge-mini ${getEstadoClass(lavada.estado)}`}>{estadoLabels[lavada.estado] || lavada.estado}</span>
                   {getTimerActivo(lavada) && (
                     <span className={`lavada-card-timer ${getEstadoClass(lavada.estado)}`}>{getTimerActivo(lavada)}</span>

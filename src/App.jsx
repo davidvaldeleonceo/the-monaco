@@ -13,9 +13,12 @@ import Tareas from './components/Tareas'
 import PagoTrabajadores from './components/PagoTrabajadores'
 import Configuracion from './components/Configuracion'
 import Membresias from './components/Membresias'
+import Reservas from './components/Reservas'
+import AuditLog from './components/AuditLog'
 import { DataProvider } from './components/DataContext'
 import { TenantProvider, useTenant } from './components/TenantContext'
 import Onboarding from './components/Onboarding'
+import RoleGuard from './components/RoleGuard'
 import './App.css'
 
 function AuthenticatedApp({ session }) {
@@ -34,15 +37,17 @@ function AuthenticatedApp({ session }) {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route element={<Layout user={session.user} />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/lavadas" element={<Lavadas />} />
-          <Route path="/clientes" element={<Clientes />} />
-          <Route path="/balance" element={<Balance />} />
-          <Route path="/reportes" element={<Reportes />} />
-          <Route path="/tareas" element={<Tareas />} />
-          <Route path="/pagos" element={<PagoTrabajadores />} />
-          <Route path="/membresias" element={<Membresias />} />
-          <Route path="/configuracion" element={<Configuracion />} />
+          <Route path="/dashboard" element={<RoleGuard path="/dashboard"><Dashboard /></RoleGuard>} />
+          <Route path="/lavadas" element={<RoleGuard path="/lavadas"><Lavadas /></RoleGuard>} />
+          <Route path="/clientes" element={<RoleGuard path="/clientes"><Clientes /></RoleGuard>} />
+          <Route path="/balance" element={<RoleGuard path="/balance"><Balance /></RoleGuard>} />
+          <Route path="/reportes" element={<RoleGuard path="/reportes"><Reportes /></RoleGuard>} />
+          <Route path="/tareas" element={<RoleGuard path="/tareas"><Tareas /></RoleGuard>} />
+          <Route path="/pagos" element={<RoleGuard path="/pagos"><PagoTrabajadores /></RoleGuard>} />
+          <Route path="/membresias" element={<RoleGuard path="/membresias"><Membresias /></RoleGuard>} />
+          <Route path="/reservas" element={<RoleGuard path="/reservas"><Reservas /></RoleGuard>} />
+          <Route path="/configuracion" element={<RoleGuard path="/configuracion"><Configuracion /></RoleGuard>} />
+          <Route path="/auditoria" element={<RoleGuard path="/auditoria"><AuditLog /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

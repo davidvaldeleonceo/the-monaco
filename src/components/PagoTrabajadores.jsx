@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
-import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash } from 'lucide-react'
+import { useTenant } from './TenantContext'
+import { logAudit } from '../utils/auditLog'
+import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash, Minus } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -39,10 +41,12 @@ function generarRangoDias(desdeStr, hastaStr) {
 
 export default function PagoTrabajadores() {
   const { metodosPago, negocioId } = useData()
+  const { userEmail } = useTenant()
 
   const [pagos, setPagos] = useState([])
   const [lavadores, setLavadores] = useState([])
   const [showModal, setShowModal] = useState(false)
+  const [modalMinimized, setModalMinimized] = useState(false)
   const [lavadasPeriodo, setLavadasPeriodo] = useState([])
   const [calculando, setCalculando] = useState(false)
   const [editandoId, setEditandoId] = useState(null)
@@ -68,6 +72,7 @@ export default function PagoTrabajadores() {
     basico: 0,
     total: 0,
     descuentos: 0,
+    descuentos_detalle: [],
     total_pagar: 0,
     adicionales_cantidad: 0,
     detalle: null,
@@ -306,6 +311,17 @@ export default function PagoTrabajadores() {
     }
   }, [formData.descuentos])
 
+  // Recalc descuentos from detail when detail changes
+  useEffect(() => {
+    if (!isAutoCalc()) {
+      const suma = (formData.descuentos_detalle || []).reduce((s, d) => s + Number(d.valor || 0), 0)
+      if (suma !== formData.descuentos) {
+        const { total, total_pagar } = calcularTotalManual({ ...formData, descuentos: suma })
+        setFormData(prev => ({ ...prev, descuentos: suma, total, total_pagar }))
+      }
+    }
+  }, [formData.descuentos_detalle])
+
   const calcularTotalManual = (data) => {
     const total = Number(data.basico) + (data.lavadas_cantidad * 5000) + (data.kit_cantidad * 3000) + (data.cera_cantidad * 2000)
     const totalPagar = total - Number(data.descuentos)
@@ -334,6 +350,7 @@ export default function PagoTrabajadores() {
       basico: 0,
       total: 0,
       descuentos: 0,
+      descuentos_detalle: [],
       total_pagar: 0,
       adicionales_cantidad: 0,
       detalle: null,
@@ -357,11 +374,13 @@ export default function PagoTrabajadores() {
       basico: pago.basico || 0,
       total: pago.total || 0,
       descuentos: pago.descuentos || 0,
+      descuentos_detalle: pago.descuentos_detalle || [],
       total_pagar: pago.total_pagar || 0,
       adicionales_cantidad: pago.adicionales_cantidad || 0,
       detalle: pago.detalle || null,
       metodo_pago_id: pago.metodo_pago_id || ''
     })
+    setModalMinimized(false)
     setShowModal(true)
   }
 
@@ -403,6 +422,7 @@ export default function PagoTrabajadores() {
           basico: formData.basico,
           total: formData.total,
           descuentos: formData.descuentos,
+          descuentos_detalle: formData.descuentos_detalle || [],
           total_pagar: formData.total_pagar,
           adicionales_cantidad: formData.adicionales_cantidad,
           detalle: formData.detalle,
@@ -453,8 +473,10 @@ export default function PagoTrabajadores() {
         }
       }
 
+      const { descuentos_detalle, ...formDataRest } = formData
       const { error: pagoError } = await supabase.from('pago_trabajadores').insert([{
-        ...formData,
+        ...formDataRest,
+        descuentos_detalle: descuentos_detalle || [],
         metodo_pago_id: formData.metodo_pago_id,
         negocio_id: negocioId
       }])
@@ -476,7 +498,11 @@ export default function PagoTrabajadores() {
       }])
     }
 
+    const lavadorNombre = lavador?.nombre || 'Trabajador'
+    logAudit({ tabla: 'pago_trabajadores', accion: editandoId ? 'update' : 'create', registro_id: editandoId || 'nuevo', despues: { lavador: lavadorNombre, total: formData.total_pagar, periodo }, descripcion: `Pago ${editandoId ? 'editado' : 'creado'}: ${lavadorNombre} - $${formData.total_pagar?.toLocaleString()}`, usuario_email: userEmail, negocio_id: negocioId })
+
     setShowModal(false)
+    setModalMinimized(false)
     setEditandoId(null)
     resetForm()
     fetchData()
@@ -504,6 +530,8 @@ export default function PagoTrabajadores() {
       .eq('categoria', 'PAGO TRABAJADOR')
       .ilike('placa_o_persona', nombreLavador)
       .ilike('descripcion', `%${descripcionBuscada}%`)
+
+    logAudit({ tabla: 'pago_trabajadores', accion: 'delete', registro_id: pago.id, antes: { lavador: nombreLavador, total: pago.total_pagar, periodo }, descripcion: `Pago anulado: ${nombreLavador}`, usuario_email: userEmail, negocio_id: negocioId })
 
     fetchData()
   }
@@ -540,24 +568,69 @@ export default function PagoTrabajadores() {
     ? [{ 'react-datepicker__day--pagado': diasYaPagados }]
     : []
 
-  const renderDescuentosInput = () => (
-    <input
-      type="text"
-      inputMode="numeric"
-      value={descuentosFocused ? (formData.descuentos || '') : formatMoney(formData.descuentos)}
-      placeholder={formatMoney(0)}
-      onChange={(e) => {
-        const raw = e.target.value.replace(/[^\d]/g, '')
-        handleChange('descuentos', raw === '' ? 0 : Number(raw))
-      }}
-      onFocus={(e) => {
-        setDescuentosFocused(true)
-        if (formData.descuentos === 0) e.target.value = ''
-      }}
-      onBlur={() => setDescuentosFocused(false)}
-      className="pago-descuento-input"
-    />
-  )
+  const handleAddDescuento = () => {
+    const nuevos = [...(formData.descuentos_detalle || []), { concepto: '', valor: 0 }]
+    const suma = nuevos.reduce((s, d) => s + Number(d.valor || 0), 0)
+    setFormData(prev => ({ ...prev, descuentos_detalle: nuevos, descuentos: suma }))
+  }
+
+  const handleRemoveDescuento = (idx) => {
+    const nuevos = (formData.descuentos_detalle || []).filter((_, i) => i !== idx)
+    const suma = nuevos.reduce((s, d) => s + Number(d.valor || 0), 0)
+    setFormData(prev => ({ ...prev, descuentos_detalle: nuevos, descuentos: suma }))
+  }
+
+  const handleDescuentoChange = (idx, field, value) => {
+    const nuevos = (formData.descuentos_detalle || []).map((d, i) => i === idx ? { ...d, [field]: value } : d)
+    const suma = nuevos.reduce((s, d) => s + Number(d.valor || 0), 0)
+    setFormData(prev => ({ ...prev, descuentos_detalle: nuevos, descuentos: suma }))
+  }
+
+  const renderDescuentosSection = () => {
+    const detalle = formData.descuentos_detalle || []
+    return (
+      <div className="descuentos-section">
+        <div className="descuentos-header">
+          <span>Descuentos</span>
+          <button type="button" className="btn-add-descuento" onClick={handleAddDescuento}>
+            <Plus size={14} /> Descuento
+          </button>
+        </div>
+        {detalle.map((d, idx) => (
+          <div key={idx} className="descuento-row">
+            <input
+              type="text"
+              value={d.concepto}
+              onChange={(e) => handleDescuentoChange(idx, 'concepto', e.target.value)}
+              placeholder="Concepto"
+              className="descuento-concepto"
+            />
+            <input
+              type="text"
+              inputMode="numeric"
+              value={d.valor === 0 ? '' : Number(d.valor).toLocaleString('es-CO')}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^\d]/g, '')
+                handleDescuentoChange(idx, 'valor', raw === '' ? 0 : Number(raw))
+              }}
+              placeholder="$0"
+              className="descuento-valor"
+            />
+            <button type="button" className="descuento-remove" onClick={() => handleRemoveDescuento(idx)}>
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+        {detalle.length === 0 && (
+          <span className="descuentos-empty">Sin descuentos</span>
+        )}
+        <div className="pago-linea-total" style={{ marginTop: '0.5rem' }}>
+          <span>Total descuentos</span>
+          <strong style={{ color: 'var(--accent-red)' }}>{formatMoney(formData.descuentos)}</strong>
+        </div>
+      </div>
+    )
+  }
 
   const renderMetodoPagoSelect = () => (
     <div className="form-group">
@@ -589,6 +662,7 @@ export default function PagoTrabajadores() {
               locale="es"
               placeholderText="Seleccionar"
               isClearable
+              todayButton="Hoy"
               highlightDates={highlightPagados}
             />
           </div>
@@ -601,6 +675,7 @@ export default function PagoTrabajadores() {
               locale="es"
               placeholderText="Seleccionar"
               isClearable
+              todayButton="Hoy"
               minDate={parseDateStr(formData.fecha_desde)}
               highlightDates={highlightPagados}
             />
@@ -645,10 +720,7 @@ export default function PagoTrabajadores() {
         )}
 
         <div style={{ gridColumn: '1 / -1' }}>
-          <div className="pago-linea-total">
-            <span>Descuentos</span>
-            {renderDescuentosInput()}
-          </div>
+          {renderDescuentosSection()}
           <div className="pago-linea-total pago-linea-final">
             <span>Total a Pagar</span>
             <strong>{formatMoney(formData.total_pagar)}</strong>
@@ -670,6 +742,7 @@ export default function PagoTrabajadores() {
             locale="es"
             placeholderText="Seleccionar"
             isClearable
+            todayButton="Hoy"
           />
         </div>
 
@@ -716,10 +789,7 @@ export default function PagoTrabajadores() {
             <span>Total</span>
             <strong>{formatMoney(formData.total)}</strong>
           </div>
-          <div className="pago-linea-total">
-            <span>Descuentos</span>
-            {renderDescuentosInput()}
-          </div>
+          {renderDescuentosSection()}
           <div className="pago-linea-total pago-linea-final">
             <span>Total a Pagar</span>
             <strong>{formatMoney(formData.total_pagar)}</strong>
@@ -733,7 +803,7 @@ export default function PagoTrabajadores() {
     <div className="pagos-page">
       <div className="page-header">
         <h1 className="page-title">Pago Trabajadores</h1>
-        <button className="btn-primary" onClick={() => { resetForm(); setEditandoId(null); setShowModal(true) }}>
+        <button className="btn-primary" onClick={() => { resetForm(); setEditandoId(null); setModalMinimized(false); setShowModal(true) }}>
           <Plus size={20} />
           Nuevo Pago
         </button>
@@ -832,7 +902,14 @@ export default function PagoTrabajadores() {
                     : '-'}</td>
                   <td>{pago.lavadas_cantidad || 0}</td>
                   <td>{formatMoney(pago.total)}</td>
-                  <td className="valor-negativo">{formatMoney(pago.descuentos)}</td>
+                  <td className="valor-negativo" title={(pago.descuentos_detalle || []).map(d => `${d.concepto}: ${formatMoney(d.valor)}`).join('\n')}>
+                    {formatMoney(pago.descuentos)}
+                    {(pago.descuentos_detalle || []).length > 0 && (
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block' }}>
+                        {(pago.descuentos_detalle || []).map(d => d.concepto).filter(Boolean).join(', ')}
+                      </span>
+                    )}
+                  </td>
                   <td className={esAnulado ? '' : 'valor-positivo'}><strong>{formatMoney(pago.total_pagar)}</strong></td>
                   <td style={{ textAlign: 'center' }}>
                     {esAnulado ? (
@@ -869,14 +946,19 @@ export default function PagoTrabajadores() {
         </div>
       </div>
 
-      {showModal && (
+      {showModal && !modalMinimized && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
               <h2>{editandoId ? 'Editar Pago' : 'Nuevo Pago'}</h2>
-              <button className="btn-close" onClick={() => { setShowModal(false); setEditandoId(null) }}>
-                <X size={24} />
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <button className="btn-close" onClick={() => setModalMinimized(true)} title="Minimizar">
+                  <Minus size={20} />
+                </button>
+                <button className="btn-close" onClick={() => { setShowModal(false); setModalMinimized(false); setEditandoId(null); resetForm() }} title="Descartar">
+                  <X size={24} />
+                </button>
+              </div>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
@@ -898,8 +980,11 @@ export default function PagoTrabajadores() {
               </div>
 
               <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => { setShowModal(false); setEditandoId(null) }}>
-                  Cancelar
+                <button type="button" className="btn-secondary" onClick={() => setModalMinimized(true)}>
+                  Minimizar
+                </button>
+                <button type="button" className="btn-secondary" style={{ color: 'var(--accent-red)' }} onClick={() => { setShowModal(false); setModalMinimized(false); setEditandoId(null); resetForm() }}>
+                  Descartar
                 </button>
                 <button type="submit" className="btn-primary">
                   {editandoId ? 'Actualizar' : 'Guardar'}
@@ -908,6 +993,16 @@ export default function PagoTrabajadores() {
             </form>
           </div>
         </div>
+      )}
+
+      {showModal && modalMinimized && (
+        <button
+          className="floating-resume-btn"
+          onClick={() => setModalMinimized(false)}
+        >
+          <DollarSign size={18} />
+          Continuar pago...
+        </button>
       )}
     </div>
   )

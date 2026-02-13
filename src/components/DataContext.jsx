@@ -18,6 +18,7 @@ export function DataProvider({ children }) {
   const [tiposMembresia, setTiposMembresia] = useState([])
   const [serviciosAdicionales, setServiciosAdicionales] = useState([])
   const [transacciones, setTransacciones] = useState([])
+  const [reservas, setReservas] = useState([])
   const [loading, setLoading] = useState(true)
   const [initialized, setInitialized] = useState(false)
 
@@ -37,7 +38,8 @@ export function DataProvider({ children }) {
         lavadoresRes,
         metodosPagoRes,
         tiposMembresiaRes,
-        serviciosAdicionalesRes
+        serviciosAdicionalesRes,
+        reservasRes
       ] = await Promise.all([
         supabase.from('clientes').select('*, membresia:tipos_membresia(nombre)').order('nombre'),
         supabase.from('lavadas').select('*, cliente:clientes(nombre), tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre)').order('fecha', { ascending: false }),
@@ -45,7 +47,8 @@ export function DataProvider({ children }) {
         supabase.from('lavadores').select('*').eq('activo', true),
         supabase.from('metodos_pago').select('*').eq('activo', true),
         supabase.from('tipos_membresia').select('*').eq('activo', true),
-        supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre')
+        supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre'),
+        supabase.from('reservas').select('*').order('fecha_hora', { ascending: true })
       ])
 
       if (clientesRes.error) console.error('Error clientes:', clientesRes.error)
@@ -55,6 +58,7 @@ export function DataProvider({ children }) {
       if (metodosPagoRes.error) console.error('Error metodos_pago:', metodosPagoRes.error)
       if (tiposMembresiaRes.error) console.error('Error tipos_membresia:', tiposMembresiaRes.error)
       if (serviciosAdicionalesRes.error) console.error('Error servicios_adicionales:', serviciosAdicionalesRes.error)
+      if (reservasRes.error) console.error('Error reservas:', reservasRes.error)
 
       setClientes(clientesRes.data || [])
       setLavadas(lavadasRes.data || [])
@@ -63,6 +67,7 @@ export function DataProvider({ children }) {
       setMetodosPago(metodosPagoRes.data || [])
       setTiposMembresia(tiposMembresiaRes.data || [])
       setServiciosAdicionales(serviciosAdicionalesRes.data || [])
+      setReservas(reservasRes.data || [])
       setInitialized(true)
     } catch (error) {
       console.error('Error fetching data:', error)
@@ -126,9 +131,48 @@ export function DataProvider({ children }) {
     setLavadas(prev => prev.filter(l => l.id !== lavadaId))
   }
 
+  const refreshReservas = async () => {
+    const { data } = await supabase
+      .from('reservas')
+      .select('*')
+      .order('fecha_hora', { ascending: true })
+    setReservas(data || [])
+  }
+
+  const addReservaLocal = (nuevaReserva) => {
+    setReservas(prev => [...prev, nuevaReserva].sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora)))
+  }
+
+  const updateReservaLocal = (reservaId, updates) => {
+    setReservas(prev => prev.map(r => r.id === reservaId ? { ...r, ...updates } : r))
+  }
+
+  const deleteReservaLocal = (reservaId) => {
+    setReservas(prev => prev.filter(r => r.id !== reservaId))
+  }
+
   useEffect(() => {
     setInitialized(false)
     fetchAllData()
+  }, [negocioId])
+
+  // Supabase Realtime subscription for lavadas
+  useEffect(() => {
+    if (!negocioId) return
+
+    const channel = supabase
+      .channel('lavadas-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lavadas' }, () => {
+        refreshLavadas()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, () => {
+        refreshReservas()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [negocioId])
 
   const value = {
@@ -151,7 +195,12 @@ export function DataProvider({ children }) {
     updateClienteLocal,
     deleteClienteLocal,
     deleteLavadaLocal,
-    setLavadas
+    setLavadas,
+    reservas,
+    refreshReservas,
+    addReservaLocal,
+    updateReservaLocal,
+    deleteReservaLocal,
   }
 
   return (

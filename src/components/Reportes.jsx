@@ -111,14 +111,15 @@ export default function Reportes() {
     const hist6HastaD = new Date(meses6[5].year, meses6[5].month+1, 1)
     const hist6Hasta = fechaLocalStr(hist6HastaD)
 
-    // ALL queries in parallel: 6 total instead of 16
-    const [lavadasRes, transRes, lavAntRes, transAntRes, lavHistRes, transHistRes] = await Promise.all([
+    // ALL queries in parallel: 7 total
+    const [lavadasRes, transRes, lavAntRes, transAntRes, lavHistRes, transHistRes, clientesRes] = await Promise.all([
       supabase.from('lavadas').select('*, tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre)').gte('fecha', desdeStr).lt('fecha', hastaStr),
       supabase.from('transacciones').select('*').gte('fecha', desdeStr).lt('fecha', hastaStr),
       supabase.from('lavadas').select('valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
       supabase.from('transacciones').select('tipo, valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
       supabase.from('lavadas').select('valor, fecha').gte('fecha', hist6Desde).lt('fecha', hist6Hasta),
       supabase.from('transacciones').select('tipo, valor, fecha').gte('fecha', hist6Desde).lt('fecha', hist6Hasta),
+      supabase.from('clientes').select('id, nombre, created_at').gte('created_at', desdeStr).lt('created_at', hastaStr),
     ])
 
     const lavadas = lavadasRes.data || []
@@ -262,6 +263,21 @@ export default function Reportes() {
     // Ranking lavadores por ingresos
     const rankLavadores = [...rendLavadores].sort((a,b) => b.total - a.total)
 
+    // --- Tab 4: Clientes Nuevos ---
+    const clientesNuevos = clientesRes.data || []
+    const clientesNuevosPorDia = {}
+    clientesNuevos.forEach(c => {
+      const d = c.created_at ? new Date(c.created_at).getDate() : null
+      if (d) clientesNuevosPorDia[d] = (clientesNuevosPorDia[d] || 0) + 1
+    })
+    const clientesDiarios = []
+    for (let i = 0; i < dias; i++) {
+      const d = new Date(fechaDesde)
+      d.setDate(d.getDate() + i)
+      const dia = d.getDate()
+      clientesDiarios.push({ dia: String(dia), nuevos: clientesNuevosPorDia[dia] || 0 })
+    }
+
     setData({
       ventas, ingresos, egresosDetalle, egresosTrans, margen, balance, totalIngresos,
       // Tab 1 charts
@@ -271,6 +287,10 @@ export default function Reportes() {
       // Tab 3
       comparativa, topDias, topLavadores, topAdicionales, tend6, rankLavadores,
       cTotal,
+      // Tab 4: Clientes
+      clientesNuevos: clientesNuevos.length,
+      clientesDiarios,
+      clientesNuevosList: clientesNuevos,
     })
     setCargando(false)
   }
@@ -884,7 +904,7 @@ export default function Reportes() {
 
   // ================================ RENDER ================================
 
-  const TABS = ['Reporte de Ventas', 'Ingresos y Egresos', 'Reporte Total']
+  const TABS = ['Reporte de Ventas', 'Ingresos y Egresos', 'Reporte Total', 'Clientes Nuevos']
 
   return (
     <div className="reportes-page">
@@ -1132,6 +1152,46 @@ export default function Reportes() {
                 </div>
               )}
             </div>
+          </>)}
+
+          {tabActivo === 3 && (<>
+            <div className="kpi-cards">
+              <div className="kpi-card"><span className="kpi-label">Clientes Nuevos</span><span className="kpi-value">{data.clientesNuevos}</span></div>
+              <div className="kpi-card"><span className="kpi-label">Promedio Diario</span><span className="kpi-value">{data.clientesDiarios.length > 0 ? (data.clientesNuevos / data.clientesDiarios.length).toFixed(1) : 0}</span></div>
+            </div>
+
+            <div className="chart-card chart-full">
+              <h4 className="chart-title">Clientes nuevos por día</h4>
+              {data.clientesDiarios.some(d => d.nuevos > 0) ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={data.clientesDiarios}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
+                    <XAxis dataKey="dia" stroke="#a0a0a0" fontSize={11} />
+                    <YAxis stroke="#a0a0a0" fontSize={12} allowDecimals={false} />
+                    <Tooltip content={<ChartTooltip formatter={(v) => `${v} clientes`} />} />
+                    <Bar dataKey="nuevos" name="Nuevos" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <div className="chart-empty">Sin clientes nuevos en este período</div>}
+            </div>
+
+            {data.clientesNuevosList.length > 0 && (
+              <div className="reporte-seccion">
+                <h4 className="chart-title">Lista de clientes nuevos</h4>
+                <table className="reporte-tabla">
+                  <thead><tr><th>#</th><th>Nombre</th><th>Fecha registro</th></tr></thead>
+                  <tbody>
+                    {data.clientesNuevosList.map((c, i) => (
+                      <tr key={c.id}>
+                        <td>{i + 1}</td>
+                        <td>{c.nombre}</td>
+                        <td>{c.created_at ? new Date(c.created_at).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>)}
 
         </div>

@@ -1,7 +1,9 @@
 import { useState, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
-import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare } from 'lucide-react'
+import { useTenant } from './TenantContext'
+import { logAudit } from '../utils/auditLog'
+import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -12,6 +14,7 @@ registerLocale('es', es)
 
 export default function Clientes() {
   const { clientes, tiposMembresia, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, negocioId } = useData()
+  const { userEmail } = useTenant()
 
   const [showModal, setShowModal] = useState(false)
   const [editando, setEditando] = useState(null)
@@ -25,6 +28,7 @@ export default function Clientes() {
   const [showFilters, setShowFilters] = useState(false)
   const [selectedClientes, setSelectedClientes] = useState(new Set())
   const [modoSeleccion, setModoSeleccion] = useState(false)
+  const [filtroNuevos, setFiltroNuevos] = useState(false)
 
   // Import CSV states
   const [showImportModal, setShowImportModal] = useState(false)
@@ -116,6 +120,7 @@ export default function Clientes() {
 
       if (!error && data) {
         updateClienteLocal(editando, data)
+        logAudit({ tabla: 'clientes', accion: 'update', registro_id: editando, despues: { nombre: data.nombre, placa: data.placa }, descripcion: `Cliente actualizado: ${data.nombre}`, usuario_email: userEmail, negocio_id: negocioId })
       }
     } else {
       const { data, error } = await supabase
@@ -126,6 +131,7 @@ export default function Clientes() {
 
       if (!error && data) {
         addClienteLocal(data)
+        logAudit({ tabla: 'clientes', accion: 'create', registro_id: data.id, despues: { nombre: data.nombre, placa: data.placa }, descripcion: `Nuevo cliente: ${data.nombre} (${data.placa})`, usuario_email: userEmail, negocio_id: negocioId })
       }
     }
 
@@ -173,12 +179,14 @@ export default function Clientes() {
 
   const handleDelete = async (id) => {
     if (confirm('¿Estás seguro de eliminar este cliente?')) {
+      const cliente = clientes.find(c => c.id === id)
       const { error } = await supabase.from('clientes').delete().eq('id', id)
       if (error) {
         alert('No se pudo eliminar: ' + (error.message.includes('foreign key') ? 'El cliente tiene servicios asociados. Elimina sus servicios primero.' : error.message))
       } else {
         deleteClienteLocal(id)
         setSelectedClientes(prev => { const next = new Set(prev); next.delete(id); return next })
+        logAudit({ tabla: 'clientes', accion: 'delete', registro_id: id, antes: cliente ? { nombre: cliente.nombre, placa: cliente.placa } : null, descripcion: `Cliente eliminado: ${cliente?.nombre || id}`, usuario_email: userEmail, negocio_id: negocioId })
       }
     }
   }
@@ -538,6 +546,15 @@ export default function Clientes() {
     }
   }
 
+  const isClienteNuevo = (cliente) => {
+    if (!cliente.created_at) return false
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    const created = new Date(cliente.created_at)
+    created.setHours(0, 0, 0, 0)
+    return created.getTime() === hoy.getTime()
+  }
+
   const getEstadoCliente = (cliente) => {
     if (!cliente.fecha_inicio_membresia || !cliente.fecha_fin_membresia) return 'Inactivo'
     const hoy = new Date()
@@ -575,7 +592,9 @@ export default function Clientes() {
       }
     }
 
-    return matchSearch && matchTipo && matchEstado && matchFechaDesde && matchFechaHasta
+    const matchNuevos = !filtroNuevos || isClienteNuevo(c)
+
+    return matchSearch && matchTipo && matchEstado && matchFechaDesde && matchFechaHasta && matchNuevos
   })
 
   if (loading) {
@@ -642,7 +661,15 @@ export default function Clientes() {
           >
             <SlidersHorizontal size={18} />
           </button>
-          {(search || filtroTipoCliente || filtroEstado || fechaDesde || fechaHasta || filtroRapido) && (
+          <button
+            className={`filter-btn ${filtroNuevos ? 'active' : ''}`}
+            onClick={() => setFiltroNuevos(prev => !prev)}
+            title="Nuevos hoy"
+            style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+          >
+            <Sparkles size={14} /> Nuevos hoy
+          </button>
+          {(search || filtroTipoCliente || filtroEstado || fechaDesde || fechaHasta || filtroRapido || filtroNuevos) && (
             <button
               className="filter-clear-btn"
               onClick={() => {
@@ -652,6 +679,7 @@ export default function Clientes() {
                 setFechaDesde(null)
                 setFechaHasta(null)
                 setFiltroRapido('')
+                setFiltroNuevos(false)
               }}
               title="Limpiar filtros"
             >
@@ -743,7 +771,10 @@ export default function Clientes() {
                 )}
                 <td>
                   <div className="cliente-cell">
-                    <span className="cliente-nombre">{cliente.nombre}</span>
+                    <span className="cliente-nombre">
+                      {cliente.nombre}
+                      {isClienteNuevo(cliente) && <span className="badge-nuevo">Nuevo</span>}
+                    </span>
                     <span className="cliente-fecha">{cliente.moto}</span>
                   </div>
                 </td>
@@ -802,7 +833,10 @@ export default function Clientes() {
                       <span className="checkmark"></span>
                     </label>
                   )}
-                  <span className="cliente-card-nombre">{cliente.nombre}</span>
+                  <span className="cliente-card-nombre">
+                    {cliente.nombre}
+                    {isClienteNuevo(cliente) && <span className="badge-nuevo">Nuevo</span>}
+                  </span>
                   <span className="cliente-card-placa">{cliente.placa}</span>
                 </div>
                 <div className="cliente-card-right">

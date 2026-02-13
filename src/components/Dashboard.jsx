@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import {
-  Droplets, DollarSign, TrendingDown, Wallet, Users, Receipt
+  Droplets, DollarSign, TrendingDown, Wallet, Users, Receipt, CheckCircle, XCircle, UserPlus
 } from 'lucide-react'
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer
@@ -109,21 +109,44 @@ export default function Dashboard() {
     return allTransacciones.filter(t => t.fecha >= desdeStr)
   }, [allTransacciones, desde])
 
+  // Generate virtual INGRESO entries from lavadas.pagos (same logic as Balance.jsx)
+  const pagosLavadasPeriodo = useMemo(() => {
+    return lavadasPeriodo.flatMap(l => {
+      const pagos = l.pagos || []
+      if (pagos.length === 0) return []
+      return pagos.map((p, idx) => ({
+        id: `lavada-${l.id}-${idx}`,
+        tipo: 'INGRESO',
+        categoria: 'SERVICIO',
+        valor: p.valor || 0,
+        fecha: l.fecha,
+        _esLavada: true
+      }))
+    })
+  }, [lavadasPeriodo])
+
   // --- KPIs ---
   const kpis = useMemo(() => {
-    const desdeStr = desde.toISOString().split('T')[0]
-
-    const ingresos = transacciones
+    // Combine transacciones reales + pagos virtuales de servicios
+    const ingresosTransacciones = transacciones
       .filter(t => t.tipo === 'INGRESO')
       .reduce((s, t) => s + Number(t.valor), 0)
+
+    const ingresosPagosLavadas = pagosLavadasPeriodo
+      .reduce((s, p) => s + Number(p.valor), 0)
+
+    const ingresos = ingresosTransacciones + ingresosPagosLavadas
 
     const egresos = transacciones
       .filter(t => t.tipo === 'EGRESO')
       .reduce((s, t) => s + Number(t.valor), 0)
 
-    const porRecolectar = lavadasPeriodo
-      .filter(l => l.estado !== 'ENTREGADO')
-      .reduce((s, l) => s + Number(l.valor || 0), 0)
+    // Pendiente por colectar: sum(max(0, valor - sum(pagos))) for ALL services in period
+    const porRecolectar = lavadasPeriodo.reduce((s, l) => {
+      const totalValor = Number(l.valor || 0)
+      const sumaPagos = (l.pagos || []).reduce((sp, p) => sp + Number(p.valor || 0), 0)
+      return s + Math.max(0, totalValor - sumaPagos)
+    }, 0)
 
     const clientesActivos = new Set(
       lavadasPeriodo.map(l => l.cliente_id).filter(Boolean)
@@ -137,15 +160,37 @@ export default function Dashboard() {
       ? sinMem.reduce((s, l) => s + Number(l.valor), 0) / sinMem.length
       : 0
 
+    // New clients in period
+    const clientesNuevos = clientes.filter(c => {
+      if (!c.created_at) return false
+      const f = new Date(c.created_at)
+      f.setHours(0, 0, 0, 0)
+      return f >= desde
+    }).length
+
+    // Payment status counts
+    let pagados = 0, sinPagar = 0, parcial = 0
+    lavadasPeriodo.forEach(l => {
+      const totalValor = Number(l.valor || 0)
+      const sumaPagos = (l.pagos || []).reduce((sp, p) => sp + Number(p.valor || 0), 0)
+      if (totalValor === 0 || sumaPagos >= totalValor) pagados++
+      else if (sumaPagos > 0) parcial++
+      else sinPagar++
+    })
+
     return {
       lavadas: lavadasPeriodo.length,
       ingresos,
       egresos,
       porRecolectar,
       clientesActivos,
-      ticketPromedio
+      ticketPromedio,
+      pagados,
+      sinPagar,
+      parcial,
+      clientesNuevos
     }
-  }, [lavadasPeriodo, transacciones, desde])
+  }, [lavadasPeriodo, transacciones, pagosLavadasPeriodo, clientes, desde])
 
   // --- Charts ---
 
@@ -175,35 +220,47 @@ export default function Dashboard() {
       .slice(0, 5)
   }, [lavadasPeriodo])
 
+  // Generate virtual entries from ALL lavadas (not just period-filtered) for chart use
+  const allPagosLavadas = useMemo(() => {
+    return lavadas.flatMap(l => {
+      const pagos = l.pagos || []
+      if (pagos.length === 0) return []
+      const fechaStr = l.fecha?.split('T')[0] || ''
+      return pagos.map((p, idx) => ({
+        tipo: 'INGRESO',
+        valor: p.valor || 0,
+        fecha: fechaStr
+      }))
+    })
+  }, [lavadas])
+
+  // Combined income sources for charts
+  const allIngresos = useMemo(() => {
+    const fromTrans = allTransacciones.filter(t => t.tipo === 'INGRESO')
+    return [...fromTrans, ...allPagosLavadas]
+  }, [allTransacciones, allPagosLavadas])
+
   // Vertical bars: ingresos breakdown by sub-periods
   const ingresosBarData = useMemo(() => {
     const result = []
 
     if (periodo === 'dia') {
-      // Horas del día: 6am-10pm agrupadas en bloques de 2h
-      for (let h = 6; h <= 20; h += 2) {
-        const label = `${h}:00`
-        // We don't have hour info in fecha (date only), so show daily total as single bar
-        result.push({ name: label, value: 0 })
-      }
-      // Since transacciones only have date, show single total
-      const total = transacciones
-        .filter(t => t.tipo === 'INGRESO')
+      const desdeStr = desde.toISOString().split('T')[0]
+      const total = allIngresos
+        .filter(t => t.fecha === desdeStr || t.fecha?.startsWith(desdeStr))
         .reduce((s, t) => s + Number(t.valor), 0)
       return [{ name: 'Hoy', value: total }]
     } else if (periodo === 'semana') {
-      // 7 days of the week
       for (let i = 0; i < 7; i++) {
         const d = new Date(desde)
         d.setDate(d.getDate() + i)
         const dStr = d.toISOString().split('T')[0]
-        const total = allTransacciones
-          .filter(t => t.tipo === 'INGRESO' && t.fecha === dStr)
+        const total = allIngresos
+          .filter(t => t.fecha === dStr || t.fecha?.startsWith(dStr))
           .reduce((s, t) => s + Number(t.valor), 0)
         result.push({ name: DAY_LABELS[d.getDay()], value: total })
       }
     } else if (periodo === 'mes') {
-      // Weeks of the month (semana 1-5)
       const now = new Date()
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
       for (let w = 0; w < 5; w++) {
@@ -212,25 +269,30 @@ export default function Dashboard() {
         if (startDay > lastDay) break
         const startStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`
         const endStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
-        const total = allTransacciones
-          .filter(t => t.tipo === 'INGRESO' && t.fecha >= startStr && t.fecha <= endStr)
+        const total = allIngresos
+          .filter(t => {
+            const f = t.fecha?.split('T')[0] || t.fecha
+            return f >= startStr && f <= endStr
+          })
           .reduce((s, t) => s + Number(t.valor), 0)
         result.push({ name: `S${w + 1}`, value: total })
       }
     } else if (periodo === 'ano') {
-      // 12 months
       const year = new Date().getFullYear()
       for (let m = 0; m < 12; m++) {
         const prefix = `${year}-${String(m + 1).padStart(2, '0')}`
-        const total = allTransacciones
-          .filter(t => t.tipo === 'INGRESO' && t.fecha.startsWith(prefix))
+        const total = allIngresos
+          .filter(t => {
+            const f = t.fecha?.split('T')[0] || t.fecha
+            return f?.startsWith(prefix)
+          })
           .reduce((s, t) => s + Number(t.valor), 0)
         result.push({ name: MONTH_LABELS[m], value: total })
       }
     }
 
     return result
-  }, [periodo, desde, allTransacciones, transacciones])
+  }, [periodo, desde, allIngresos])
 
   // --- Lists ---
 
@@ -348,6 +410,27 @@ export default function Dashboard() {
           <div className="dash-kpi-info">
             <span className="dash-kpi-label">Ticket Promedio</span>
             <span className="dash-kpi-value">{formatMoney(Math.round(kpis.ticketPromedio))}</span>
+          </div>
+        </div>
+        <div className="dash-kpi">
+          <div className="dash-kpi-icon green"><CheckCircle size={18} /></div>
+          <div className="dash-kpi-info">
+            <span className="dash-kpi-label">Pagados</span>
+            <span className="dash-kpi-value">{kpis.pagados}</span>
+          </div>
+        </div>
+        <div className="dash-kpi">
+          <div className="dash-kpi-icon red"><XCircle size={18} /></div>
+          <div className="dash-kpi-info">
+            <span className="dash-kpi-label">Sin Pagar</span>
+            <span className="dash-kpi-value">{kpis.sinPagar}{kpis.parcial > 0 ? ` (${kpis.parcial} parcial)` : ''}</span>
+          </div>
+        </div>
+        <div className="dash-kpi">
+          <div className="dash-kpi-icon blue"><UserPlus size={18} /></div>
+          <div className="dash-kpi-info">
+            <span className="dash-kpi-label">Clientes Nuevos</span>
+            <span className="dash-kpi-value">{kpis.clientesNuevos}</span>
           </div>
         </div>
       </div>

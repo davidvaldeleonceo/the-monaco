@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useTenant } from './TenantContext'
+import { canAccess } from './RoleGuard'
 import {
   LayoutDashboard,
   Droplets,
@@ -11,6 +12,8 @@ import {
   CheckSquare,
   Wallet,
   CreditCard,
+  CalendarClock,
+  ScrollText,
   Settings,
   LogOut,
   Menu,
@@ -30,7 +33,9 @@ export default function Layout({ user }) {
     navigate('/')
   }
 
-  const menuItems = [
+  const rol = userProfile?.rol || 'admin'
+
+  const allMenuItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/lavadas', icon: Droplets, label: 'Servicios' },
     { to: '/clientes', icon: Users, label: 'Clientes' },
@@ -38,9 +43,13 @@ export default function Layout({ user }) {
     { to: '/reportes', icon: FileText, label: 'Reportes' },
     { to: '/tareas', icon: CheckSquare, label: 'Control Tareas' },
     { to: '/membresias', icon: CreditCard, label: 'Membresías' },
+    { to: '/reservas', icon: CalendarClock, label: 'Reservas' },
     { to: '/pagos', icon: Wallet, label: 'Pago Trabajadores' },
+    { to: '/auditoria', icon: ScrollText, label: 'Auditoría' },
     { to: '/configuracion', icon: Settings, label: 'Configuración' },
   ]
+
+  const menuItems = allMenuItems.filter(item => canAccess(rol, item.to))
 
   const handleNavClick = () => {
     setMenuOpen(false)
