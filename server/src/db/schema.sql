@@ -58,8 +58,10 @@ CREATE TABLE IF NOT EXISTS clientes (
   fecha_inicio_membresia DATE,
   fecha_fin_membresia DATE,
   estado TEXT DEFAULT 'Activo',
+  cashback_acumulado NUMERIC DEFAULT 0,
   negocio_id UUID NOT NULL REFERENCES negocios(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS tipos_lavado (
@@ -76,6 +78,7 @@ CREATE TABLE IF NOT EXISTS tipos_lavado (
 CREATE TABLE IF NOT EXISTS lavadores (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre TEXT NOT NULL,
+  telefono TEXT,
   activo BOOLEAN DEFAULT true,
   tipo_pago TEXT,
   pago_porcentaje NUMERIC DEFAULT 0,
@@ -111,6 +114,7 @@ CREATE TABLE IF NOT EXISTS lavadas (
   cliente_id UUID REFERENCES clientes(id) ON DELETE SET NULL,
   placa TEXT,
   tipo_lavado_id UUID REFERENCES tipos_lavado(id) ON DELETE SET NULL,
+  tipo_membresia_id UUID REFERENCES tipos_membresia(id) ON DELETE SET NULL,
   lavador_id UUID REFERENCES lavadores(id) ON DELETE SET NULL,
   metodo_pago_id UUID REFERENCES metodos_pago(id) ON DELETE SET NULL,
   valor NUMERIC DEFAULT 0,
@@ -119,6 +123,10 @@ CREATE TABLE IF NOT EXISTS lavadas (
   notas TEXT,
   adicionales JSONB DEFAULT '[]',
   pagos JSONB DEFAULT '[]',
+  cera_restaurador BOOLEAN DEFAULT false,
+  kit_completo BOOLEAN DEFAULT false,
+  hora_inicio_lavado TIMESTAMPTZ,
+  tiempo_lavado INTEGER,
   tiempo_espera_inicio TIMESTAMPTZ,
   duracion_espera INTEGER,
   tiempo_lavado_inicio TIMESTAMPTZ,
@@ -235,3 +243,18 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
 
 -- Unique constraint for placa per negocio
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_placa_negocio ON clientes(placa, negocio_id);
+
+-- ============================================
+-- ALTER TABLE — add columns missing from initial migration
+-- (safe to re-run: uses IF NOT EXISTS / exception handling)
+-- ============================================
+DO $$ BEGIN
+  ALTER TABLE clientes ADD COLUMN IF NOT EXISTS cashback_acumulado NUMERIC DEFAULT 0;
+  ALTER TABLE clientes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+  ALTER TABLE lavadores ADD COLUMN IF NOT EXISTS telefono TEXT;
+  ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS cera_restaurador BOOLEAN DEFAULT false;
+  ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS kit_completo BOOLEAN DEFAULT false;
+  ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS hora_inicio_lavado TIMESTAMPTZ;
+  ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS tiempo_lavado INTEGER;
+  ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS tipo_membresia_id UUID REFERENCES tipos_membresia(id) ON DELETE SET NULL;
+END $$;
