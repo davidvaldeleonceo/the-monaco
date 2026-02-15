@@ -229,7 +229,7 @@ class QueryBuilder {
 
       // Normalize response shape to match supabase-js { data, error }
       if (result.error && typeof result.error === 'string') {
-        resolve({ data: null, error: { message: result.error } })
+        resolve({ data: null, error: { message: result.message || result.error } })
       } else if (result.error && typeof result.error === 'object' && result.error.message) {
         resolve({ data: null, error: result.error })
       } else {

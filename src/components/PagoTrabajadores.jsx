@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
-import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash, Minus } from 'lucide-react'
+import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash, Minus, ChevronRight } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney } from '../utils/money'
+import Select from 'react-select'
 
 registerLocale('es', es)
 
@@ -21,7 +22,7 @@ function fechaLocalStr(date) {
 
 function parseDateStr(str) {
   if (!str) return null
-  const [y, m, d] = str.split('-').map(Number)
+  const [y, m, d] = str.split('T')[0].split('-').map(Number)
   return new Date(y, m - 1, d)
 }
 
@@ -53,6 +54,8 @@ export default function PagoTrabajadores() {
   const [diasYaPagados, setDiasYaPagados] = useState([])
   const [lavadasExcluidas, setLavadasExcluidas] = useState(0)
   const [descuentosFocused, setDescuentosFocused] = useState(false)
+  const [valorPagadoManual, setValorPagadoManual] = useState(false)
+  const [selectedWorker, setSelectedWorker] = useState(null)
 
   // Filtros de fecha (igual que Balance)
   const hoyInit = new Date()
@@ -67,13 +70,11 @@ export default function PagoTrabajadores() {
     fecha_desde: '',
     fecha_hasta: '',
     lavadas_cantidad: 0,
-    kit_cantidad: 0,
-    cera_cantidad: 0,
-    basico: 0,
     total: 0,
     descuentos: 0,
     descuentos_detalle: [],
     total_pagar: 0,
+    valor_pagado: 0,
     adicionales_cantidad: 0,
     detalle: null,
     metodo_pago_id: ''
@@ -157,11 +158,6 @@ export default function PagoTrabajadores() {
 
   const getSelectedLavador = () => {
     return lavadores.find(l => l.id == formData.lavador_id)
-  }
-
-  const isAutoCalc = () => {
-    const lavador = getSelectedLavador()
-    return lavador && lavador.tipo_pago
   }
 
   // Fetch pagos existentes del trabajador para saber días ya pagados
@@ -304,38 +300,20 @@ export default function PagoTrabajadores() {
     doCalc()
   }, [formData.lavador_id, formData.fecha_desde, formData.fecha_hasta, diasYaPagados])
 
-  // Recalc total_pagar when descuentos change (auto mode)
+  // Recalc total_pagar when descuentos change
   useEffect(() => {
-    if (isAutoCalc()) {
-      setFormData(prev => ({ ...prev, total_pagar: prev.total - Number(prev.descuentos) }))
-    }
+    setFormData(prev => ({ ...prev, total_pagar: prev.total - Number(prev.descuentos) }))
   }, [formData.descuentos])
 
-  // Recalc descuentos from detail when detail changes
+  // Auto-sync valor_pagado with total_pagar when user hasn't manually edited it
   useEffect(() => {
-    if (!isAutoCalc()) {
-      const suma = (formData.descuentos_detalle || []).reduce((s, d) => s + Number(d.valor || 0), 0)
-      if (suma !== formData.descuentos) {
-        const { total, total_pagar } = calcularTotalManual({ ...formData, descuentos: suma })
-        setFormData(prev => ({ ...prev, descuentos: suma, total, total_pagar }))
-      }
+    if (!valorPagadoManual) {
+      setFormData(prev => ({ ...prev, valor_pagado: prev.total_pagar }))
     }
-  }, [formData.descuentos_detalle])
-
-  const calcularTotalManual = (data) => {
-    const total = Number(data.basico) + (data.lavadas_cantidad * 5000) + (data.kit_cantidad * 3000) + (data.cera_cantidad * 2000)
-    const totalPagar = total - Number(data.descuentos)
-    return { total, total_pagar: totalPagar }
-  }
+  }, [formData.total_pagar, valorPagadoManual])
 
   const handleChange = (field, value) => {
-    const newData = { ...formData, [field]: value }
-    if (!isAutoCalc()) {
-      const { total, total_pagar } = calcularTotalManual(newData)
-      setFormData({ ...newData, total, total_pagar })
-    } else {
-      setFormData(newData)
-    }
+    setFormData(prev => ({ ...prev, [field]: value }))
   }
 
   const resetForm = () => {
@@ -345,29 +323,30 @@ export default function PagoTrabajadores() {
       fecha_desde: '',
       fecha_hasta: '',
       lavadas_cantidad: 0,
-      kit_cantidad: 0,
-      cera_cantidad: 0,
-      basico: 0,
       total: 0,
       descuentos: 0,
       descuentos_detalle: [],
       total_pagar: 0,
+      valor_pagado: 0,
       adicionales_cantidad: 0,
       detalle: null,
       metodo_pago_id: ''
     })
     setLavadasPeriodo([])
     setLavadasExcluidas(0)
+    setValorPagadoManual(false)
   }
 
   // Abrir modal en modo edición
   const handleEditar = (pago) => {
     setEditandoId(pago.id)
+    const valorPagado = pago.valor_pagado != null ? Number(pago.valor_pagado) : Number(pago.total_pagar || 0)
+    const totalPagar = Number(pago.total_pagar || 0)
     setFormData({
       lavador_id: pago.lavador_id || '',
       fecha: pago.fecha?.split('T')[0] || new Date().toISOString().split('T')[0],
-      fecha_desde: pago.fecha_desde || '',
-      fecha_hasta: pago.fecha_hasta || '',
+      fecha_desde: pago.fecha_desde?.split('T')[0] || '',
+      fecha_hasta: pago.fecha_hasta?.split('T')[0] || '',
       lavadas_cantidad: pago.lavadas_cantidad || 0,
       kit_cantidad: pago.kit_cantidad || 0,
       cera_cantidad: pago.cera_cantidad || 0,
@@ -375,11 +354,13 @@ export default function PagoTrabajadores() {
       total: pago.total || 0,
       descuentos: pago.descuentos || 0,
       descuentos_detalle: pago.descuentos_detalle || [],
-      total_pagar: pago.total_pagar || 0,
+      total_pagar: totalPagar,
+      valor_pagado: valorPagado,
       adicionales_cantidad: pago.adicionales_cantidad || 0,
       detalle: pago.detalle || null,
       metodo_pago_id: pago.metodo_pago_id || ''
     })
+    setValorPagadoManual(valorPagado !== totalPagar)
     setModalMinimized(false)
     setShowModal(true)
   }
@@ -387,13 +368,18 @@ export default function PagoTrabajadores() {
   const handleSubmit = async (e) => {
     e.preventDefault()
 
+    if (!formData.lavador_id) {
+      alert('Debes seleccionar un trabajador.')
+      return
+    }
+
     if (!formData.metodo_pago_id) {
       alert('Debes seleccionar un método de pago.')
       return
     }
 
-    if (formData.total_pagar <= 0) {
-      alert('El total a pagar debe ser mayor a cero.')
+    if (formData.valor_pagado <= 0) {
+      alert('El valor pagado debe ser mayor a cero.')
       return
     }
 
@@ -417,13 +403,11 @@ export default function PagoTrabajadores() {
           fecha_desde: formData.fecha_desde || null,
           fecha_hasta: formData.fecha_hasta || null,
           lavadas_cantidad: formData.lavadas_cantidad,
-          kit_cantidad: formData.kit_cantidad,
-          cera_cantidad: formData.cera_cantidad,
-          basico: formData.basico,
           total: formData.total,
           descuentos: formData.descuentos,
           descuentos_detalle: formData.descuentos_detalle || [],
           total_pagar: formData.total_pagar,
+          valor_pagado: formData.valor_pagado,
           adicionales_cantidad: formData.adicionales_cantidad,
           detalle: formData.detalle,
           metodo_pago_id: formData.metodo_pago_id
@@ -446,7 +430,7 @@ export default function PagoTrabajadores() {
       await supabase.from('transacciones').insert([{
         tipo: 'EGRESO',
         categoria: 'PAGO TRABAJADOR',
-        valor: formData.total_pagar,
+        valor: formData.valor_pagado,
         metodo_pago_id: formData.metodo_pago_id,
         placa_o_persona: lavador?.nombre || '',
         descripcion: `Pago trabajador - ${periodo}`,
@@ -489,7 +473,7 @@ export default function PagoTrabajadores() {
       await supabase.from('transacciones').insert([{
         tipo: 'EGRESO',
         categoria: 'PAGO TRABAJADOR',
-        valor: formData.total_pagar,
+        valor: formData.valor_pagado,
         metodo_pago_id: formData.metodo_pago_id,
         placa_o_persona: lavador?.nombre || '',
         descripcion: `Pago trabajador - ${periodo}`,
@@ -542,10 +526,85 @@ export default function PagoTrabajadores() {
   }
 
 
+  const lavadoresConPago = lavadores.filter(l => l.tipo_pago)
+  const lavadoresParaSelector = lavadoresConPago.some(l => l.id == formData.lavador_id)
+    ? lavadoresConPago
+    : [...lavadoresConPago, ...lavadores.filter(l => l.id == formData.lavador_id)]
+
   const pagosActivos = pagos.filter(p => !p.anulado)
-  const totalPagadoMes = pagosActivos.reduce((sum, p) => sum + Number(p.total_pagar), 0)
+  const totalPagadoMes = pagosActivos.reduce((sum, p) => sum + Number(p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? p.valor_pagado : p.total_pagar), 0)
   const pagosRealizados = pagosActivos.length
   const trabajadoresUnicos = new Set(pagosActivos.map(p => p.lavador_id)).size
+
+  // Derive worker cards from filtered pagos
+  const workerCards = useMemo(() => {
+    const porTrabajador = {}
+    pagosActivos.forEach(p => {
+      const lid = p.lavador_id
+      if (!porTrabajador[lid]) {
+        porTrabajador[lid] = {
+          lavador_id: lid,
+          nombre: p.lavador?.nombre || 'Sin nombre',
+          pagos: [],
+          total_pagado: 0,
+          total_a_pagar: 0,
+          total_descuentos: 0,
+          saldo: 0
+        }
+      }
+      porTrabajador[lid].pagos.push(p)
+      const valorPagado = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
+      porTrabajador[lid].total_pagado += valorPagado
+      porTrabajador[lid].total_a_pagar += Number(p.total_pagar || 0)
+      porTrabajador[lid].total_descuentos += Number(p.descuentos || 0)
+    })
+
+    Object.values(porTrabajador).forEach(w => {
+      w.saldo = w.total_pagado - w.total_a_pagar
+    })
+
+    return Object.values(porTrabajador).sort((a, b) => a.nombre.localeCompare(b.nombre))
+  }, [pagos])
+
+  // Fetch ALL pagos for a worker (no date filter) and open detail modal
+  const handleWorkerClick = async (workerCard) => {
+    const { data: allPagos } = await supabase
+      .from('pago_trabajadores')
+      .select(`
+        *,
+        lavador:lavadores(nombre, tipo_pago, telefono)
+      `)
+      .eq('lavador_id', workerCard.lavador_id)
+      .order('fecha', { ascending: true })
+
+    const pagosData = allPagos || []
+    const activos = pagosData.filter(p => !p.anulado)
+    const anulados = pagosData.filter(p => p.anulado)
+
+    let total_pagado = 0
+    let total_a_pagar = 0
+    let total_descuentos = 0
+
+    activos.forEach(p => {
+      const valorPagado = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
+      total_pagado += valorPagado
+      total_a_pagar += Number(p.total_pagar || 0)
+      total_descuentos += Number(p.descuentos || 0)
+    })
+
+    setSelectedWorker({
+      lavador_id: workerCard.lavador_id,
+      nombre: workerCard.nombre,
+      tipo_pago: pagosData[0]?.lavador?.tipo_pago || '',
+      telefono: pagosData[0]?.lavador?.telefono || '',
+      pagos: activos,
+      pagos_anulados: anulados,
+      total_pagado,
+      total_a_pagar,
+      total_descuentos,
+      saldo: total_pagado - total_a_pagar
+    })
+  }
 
   const tipoPagoLabel = (tipo) => {
     if (tipo === 'porcentaje') return 'Porcentaje'
@@ -576,6 +635,15 @@ export default function PagoTrabajadores() {
     const suma = nuevos.reduce((s, d) => s + Number(d.valor || 0), 0)
     setFormData(prev => ({ ...prev, descuentos_detalle: nuevos, descuentos: suma }))
   }
+
+  const handleValorPagadoChange = (e) => {
+    const raw = e.target.value.replace(/[^\d]/g, '')
+    const valor = raw === '' ? 0 : Number(raw)
+    setFormData(prev => ({ ...prev, valor_pagado: valor }))
+    setValorPagadoManual(true)
+  }
+
+  const saldo = formData.total_pagar - formData.valor_pagado
 
   const renderDescuentosSection = () => {
     const detalle = formData.descuentos_detalle || []
@@ -716,77 +784,196 @@ export default function PagoTrabajadores() {
             <span>Total a Pagar</span>
             <strong>{formatMoney(formData.total_pagar)}</strong>
           </div>
+          <div className="pago-linea-total">
+            <span>Valor Pagado</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              className="pago-valor-pagado-input"
+              value={formData.valor_pagado === 0 ? '' : Number(formData.valor_pagado).toLocaleString('es-CO')}
+              onChange={handleValorPagadoChange}
+              placeholder={formatMoney(formData.total_pagar)}
+            />
+          </div>
+          {formData.valor_pagado !== formData.total_pagar && (
+            <div className="pago-linea-total pago-linea-saldo">
+              <span>{saldo > 0 ? 'Falta por pagar' : 'Pagado de más'}</span>
+              <strong className={saldo > 0 ? 'saldo-pendiente' : 'saldo-favor'}>
+                {formatMoney(Math.abs(saldo))}
+              </strong>
+            </div>
+          )}
         </div>
       </>
     )
   }
 
-  const renderManualForm = () => {
+  const renderWorkerDetailModal = () => {
+    if (!selectedWorker) return null
+    const w = selectedWorker
+    const allPagos = [...w.pagos].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+
+    // Calcular saldo acumulado de más antiguo a más nuevo
+    let saldoAcum = 0
+    const pagosConSaldo = allPagos.map(p => {
+      const valorPagado = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
+      const totalPagar = Number(p.total_pagar || 0)
+      saldoAcum += valorPagado - totalPagar
+      return { ...p, saldo_acumulado: saldoAcum }
+    })
+
     return (
-      <>
-        <div className="form-group">
-          <label>Fecha</label>
-          <DatePicker
-            selected={parseDateStr(formData.fecha)}
-            onChange={(date) => handleChange('fecha', date ? fechaLocalStr(date) : '')}
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            placeholderText="Seleccionar"
-            isClearable
-            todayButton="Hoy"
-          />
-        </div>
-
-        {renderMetodoPagoSelect()}
-
-        <div className="form-group">
-          <label>Cantidad Servicios</label>
-          <input
-            type="number"
-            value={formData.lavadas_cantidad}
-            onChange={(e) => handleChange('lavadas_cantidad', Number(e.target.value))}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Cantidad Kit</label>
-          <input
-            type="number"
-            value={formData.kit_cantidad}
-            onChange={(e) => handleChange('kit_cantidad', Number(e.target.value))}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Cantidad Cera</label>
-          <input
-            type="number"
-            value={formData.cera_cantidad}
-            onChange={(e) => handleChange('cera_cantidad', Number(e.target.value))}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Básico</label>
-          <input
-            type="number"
-            value={formData.basico}
-            onChange={(e) => handleChange('basico', Number(e.target.value))}
-          />
-        </div>
-
-        <div className="pago-form-fullwidth">
-          <div className="pago-linea-total">
-            <span>Total</span>
-            <strong>{formatMoney(formData.total)}</strong>
+      <div className="modal-overlay" onClick={() => setSelectedWorker(null)}>
+        <div className="historial-detail-modal" onClick={e => e.stopPropagation()}>
+          <div className="modal-header">
+            <div>
+              <h2>{w.nombre}</h2>
+              <div className="historial-detail-subtitle">
+                {w.tipo_pago && <span>{tipoPagoLabel(w.tipo_pago)}</span>}
+                {w.telefono && <span> · {w.telefono}</span>}
+              </div>
+            </div>
+            <button className="btn-close" onClick={() => setSelectedWorker(null)}>
+              <X size={24} />
+            </button>
           </div>
-          {renderDescuentosSection()}
-          <div className="pago-linea-total pago-linea-final">
-            <span>Total a Pagar</span>
-            <strong>{formatMoney(formData.total_pagar)}</strong>
+
+          <div className="historial-detail-stats">
+            <div className="historial-detail-stat">
+              <span className="historial-stat-label">Total Ganado</span>
+              <span className="historial-stat-value">{formatMoney(w.total_a_pagar + w.total_descuentos)}</span>
+            </div>
+            <div className="historial-detail-stat">
+              <span className="historial-stat-label">Total Pagado</span>
+              <span className="historial-stat-value">{formatMoney(w.total_pagado)}</span>
+            </div>
+            <div className="historial-detail-stat">
+              <span className="historial-stat-label">Descuentos</span>
+              <span className="historial-stat-value valor-negativo">{formatMoney(w.total_descuentos)}</span>
+            </div>
+            <div className="historial-detail-stat">
+              <span className="historial-stat-label">Saldo</span>
+              <span className={`historial-stat-value ${w.saldo >= 0 ? 'saldo-favor' : 'saldo-pendiente'}`}>
+                {w.saldo >= 0 ? '+' : ''}{formatMoney(w.saldo)}
+              </span>
+            </div>
           </div>
+
+          {/* Desktop: tabla */}
+          <div className="historial-detail-tabla-desktop">
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Período</th>
+                    <th>Servicios</th>
+                    <th>Total</th>
+                    <th>Desc.</th>
+                    <th>A Pagar</th>
+                    <th>Pagado</th>
+                    <th>Saldo Acum.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagosConSaldo.map(p => {
+                    const valorPagado = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
+                    const totalPagar = Number(p.total_pagar || 0)
+                    return (
+                      <tr key={p.id}>
+                        <td>{formatFechaLocal(p.fecha)}</td>
+                        <td className="pagos-periodo">
+                          {p.fecha_desde && p.fecha_hasta
+                            ? `${formatFechaLocal(p.fecha_desde)} - ${formatFechaLocal(p.fecha_hasta)}`
+                            : '-'}
+                        </td>
+                        <td>{p.lavadas_cantidad || 0}</td>
+                        <td>{formatMoney(p.total)}</td>
+                        <td className="valor-negativo">{formatMoney(p.descuentos)}</td>
+                        <td>{formatMoney(totalPagar)}</td>
+                        <td className="valor-positivo">
+                          <strong>{formatMoney(valorPagado)}</strong>
+                          {valorPagado < totalPagar && <span className="badge-parcial">Parcial</span>}
+                          {valorPagado > totalPagar && <span className="badge-excede">Excede</span>}
+                        </td>
+                        <td className={p.saldo_acumulado >= 0 ? 'saldo-favor' : 'saldo-pendiente'}>
+                          <strong>{p.saldo_acumulado >= 0 ? '+' : ''}{formatMoney(p.saldo_acumulado)}</strong>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {pagosConSaldo.length === 0 && (
+                    <tr><td colSpan="8" className="empty">Sin pagos registrados</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="historial-detail-cards-mobile">
+            {pagosConSaldo.map(p => {
+              const valorPagado = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
+              const totalPagar = Number(p.total_pagar || 0)
+              const periodo = p.fecha_desde && p.fecha_hasta
+                ? `${formatFechaLocal(p.fecha_desde)} - ${formatFechaLocal(p.fecha_hasta)}`
+                : formatFechaLocal(p.fecha)
+              return (
+                <div key={p.id} className="pago-card">
+                  <div className="pago-card-top">
+                    <div className="pago-card-info">
+                      <span className="pago-card-nombre">{formatFechaLocal(p.fecha)}</span>
+                      <span className="pago-card-periodo">{periodo}</span>
+                    </div>
+                    <div className="pago-card-monto">
+                      <span className="pago-card-total positivo">
+                        {formatMoney(valorPagado)}
+                      </span>
+                      {valorPagado < totalPagar && <span className="badge-parcial">Parcial</span>}
+                      {valorPagado > totalPagar && <span className="badge-excede">Excede</span>}
+                    </div>
+                  </div>
+                  <div className="pago-card-bottom">
+                    <div className="pago-card-details">
+                      <span>{p.lavadas_cantidad || 0} servicios</span>
+                      <span>A pagar {formatMoney(totalPagar)}</span>
+                      {Number(p.descuentos) > 0 && <span className="valor-negativo">-{formatMoney(p.descuentos)}</span>}
+                    </div>
+                    <div className={`historial-card-saldo-acum ${p.saldo_acumulado >= 0 ? 'saldo-favor' : 'saldo-pendiente'}`}>
+                      Saldo: {p.saldo_acumulado >= 0 ? '+' : ''}{formatMoney(p.saldo_acumulado)}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Pagos anulados */}
+          {w.pagos_anulados.length > 0 && (
+            <div className="historial-anulados">
+              <h4>Pagos Anulados ({w.pagos_anulados.length})</h4>
+              {w.pagos_anulados.map(p => (
+                <div key={p.id} className="pago-card anulado">
+                  <div className="pago-card-top">
+                    <div className="pago-card-info">
+                      <span className="pago-card-nombre">{formatFechaLocal(p.fecha)}</span>
+                      <span className="pago-card-periodo">
+                        {p.fecha_desde && p.fecha_hasta
+                          ? `${formatFechaLocal(p.fecha_desde)} - ${formatFechaLocal(p.fecha_hasta)}`
+                          : '-'}
+                      </span>
+                    </div>
+                    <div className="pago-card-monto">
+                      <span>{formatMoney(p.total_pagar)}</span>
+                      <span className="estado-badge inactivo">Anulado</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </>
+      </div>
     )
   }
 
@@ -863,6 +1050,42 @@ export default function PagoTrabajadores() {
         </div>
       </div>
 
+      {/* Worker cards grid */}
+      {workerCards.length > 0 && (
+        <div className="historial-workers-grid" style={{ marginBottom: '1.5rem' }}>
+          {workerCards.map(w => (
+            <div
+              key={w.lavador_id}
+              className="historial-worker-card"
+              onClick={() => handleWorkerClick(w)}
+            >
+              <div className="historial-worker-header">
+                <div className="historial-worker-name">{w.nombre}</div>
+                <ChevronRight size={18} className="historial-worker-arrow" />
+              </div>
+              <div className="historial-worker-stats">
+                <div className="historial-worker-stat">
+                  <span className="historial-stat-label">Pagado</span>
+                  <span className="historial-stat-value">{formatMoney(w.total_pagado)}</span>
+                </div>
+                <div className="historial-worker-stat">
+                  <span className="historial-stat-label">A pagar</span>
+                  <span className="historial-stat-value">{formatMoney(w.total_a_pagar)}</span>
+                </div>
+                <div className="historial-worker-stat">
+                  <span className="historial-stat-label">Pagos</span>
+                  <span className="historial-stat-value">{w.pagos.length}</span>
+                </div>
+              </div>
+              <div className={`historial-worker-saldo ${w.saldo >= 0 ? 'saldo-favor' : 'saldo-pendiente'}`}>
+                {w.saldo >= 0 ? 'A favor: ' : 'Pendiente: '}
+                <strong>{formatMoney(Math.abs(w.saldo))}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Desktop: tabla */}
       <div className="card pagos-tabla-desktop">
         <div className="table-container">
@@ -899,7 +1122,15 @@ export default function PagoTrabajadores() {
                       </span>
                     )}
                   </td>
-                  <td className={esAnulado ? '' : 'valor-positivo'}><strong>{formatMoney(pago.total_pagar)}</strong></td>
+                  <td className={esAnulado ? '' : 'valor-positivo'}>
+                    <strong>{formatMoney(pago.valor_pagado != null && Number(pago.valor_pagado) !== 0 ? pago.valor_pagado : pago.total_pagar)}</strong>
+                    {!esAnulado && pago.valor_pagado != null && Number(pago.valor_pagado) !== 0 && Number(pago.valor_pagado) < Number(pago.total_pagar) && (
+                      <span className="badge-parcial">Parcial</span>
+                    )}
+                    {!esAnulado && pago.valor_pagado != null && Number(pago.valor_pagado) > Number(pago.total_pagar) && (
+                      <span className="badge-excede">Excede</span>
+                    )}
+                  </td>
                   <td className="acciones-cell">
                     {esAnulado ? (
                       <span className="estado-badge inactivo">Anulado</span>
@@ -941,7 +1172,15 @@ export default function PagoTrabajadores() {
                   <span className="pago-card-periodo">{periodo}</span>
                 </div>
                 <div className="pago-card-monto">
-                  <span className={`pago-card-total ${esAnulado ? '' : 'positivo'}`}>{formatMoney(pago.total_pagar)}</span>
+                  <span className={`pago-card-total ${esAnulado ? '' : 'positivo'}`}>
+                    {formatMoney(pago.valor_pagado != null && Number(pago.valor_pagado) !== 0 ? pago.valor_pagado : pago.total_pagar)}
+                  </span>
+                  {!esAnulado && pago.valor_pagado != null && Number(pago.valor_pagado) !== 0 && Number(pago.valor_pagado) < Number(pago.total_pagar) && (
+                    <span className="badge-parcial">Parcial</span>
+                  )}
+                  {!esAnulado && pago.valor_pagado != null && Number(pago.valor_pagado) > Number(pago.total_pagar) && (
+                    <span className="badge-excede">Excede</span>
+                  )}
                   {esAnulado && <span className="estado-badge inactivo">Anulado</span>}
                 </div>
               </div>
@@ -981,19 +1220,31 @@ export default function PagoTrabajadores() {
               <div className="form-grid">
                 <div className="form-group">
                   <label>Trabajador</label>
-                  <select
-                    value={formData.lavador_id}
-                    onChange={(e) => handleChange('lavador_id', e.target.value)}
-                    required
-                  >
-                    <option value="">Seleccionar</option>
-                    {lavadores.map(l => (
-                      <option key={l.id} value={l.id}>{l.nombre}{l.tipo_pago ? ` (${tipoPagoLabel(l.tipo_pago)})` : ''}</option>
-                    ))}
-                  </select>
+                  <Select
+                    value={lavadoresParaSelector.filter(l => l.id == formData.lavador_id).map(l => ({ value: l.id, label: l.nombre, tipo_pago: l.tipo_pago }))[0] || null}
+                    onChange={(opt) => handleChange('lavador_id', opt?.value || '')}
+                    options={lavadoresParaSelector.map(l => ({ value: l.id, label: l.nombre, tipo_pago: l.tipo_pago }))}
+                    placeholder="Buscar trabajador..."
+                    isClearable
+                    noOptionsMessage={() => 'Sin resultados'}
+                    formatOptionLabel={(opt) => (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>{opt.label}</span>
+                        {opt.tipo_pago && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{tipoPagoLabel(opt.tipo_pago)}</span>}
+                      </div>
+                    )}
+                    styles={{
+                      control: (base) => ({ ...base, background: 'var(--bg-hover)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', minHeight: '42px' }),
+                      menu: (base) => ({ ...base, background: 'var(--bg-card)', border: '1px solid var(--border-color)', zIndex: 10 }),
+                      option: (base, state) => ({ ...base, background: state.isFocused ? 'var(--bg-hover)' : 'transparent', color: 'var(--text-primary)' }),
+                      singleValue: (base) => ({ ...base, color: 'var(--text-primary)' }),
+                      input: (base) => ({ ...base, color: 'var(--text-primary)' }),
+                      placeholder: (base) => ({ ...base, color: 'var(--text-secondary)' }),
+                    }}
+                  />
                 </div>
 
-                {isAutoCalc() ? renderAutoForm() : renderManualForm()}
+                {renderAutoForm()}
               </div>
 
               <div className="modal-footer">
@@ -1021,6 +1272,8 @@ export default function PagoTrabajadores() {
           Continuar pago...
         </button>
       )}
+
+      {selectedWorker && renderWorkerDetailModal()}
     </div>
   )
 }

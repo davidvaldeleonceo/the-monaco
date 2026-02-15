@@ -19,7 +19,9 @@ import {
 registerLocale('es', es)
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-const COLORES = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+import { CHART_THEME } from '../config/constants'
+
+const COLORES = ['#62B6CB', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#BEE9E8', '#f97316']
 
 function fechaLocalStr(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -984,7 +986,7 @@ export default function Reportes() {
             <div className="chart-card chart-full">
               <h4 className="chart-title">Ventas diarias</h4>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={data.ventasDiarias}><CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" /><XAxis dataKey="dia" stroke="#a0a0a0" fontSize={12} /><YAxis stroke="#a0a0a0" fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Line type="monotone" dataKey="ventas" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 3 }} name="Ventas" /></LineChart>
+                <LineChart data={data.ventasDiarias}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="dia" stroke={CHART_THEME.axis} fontSize={12} /><YAxis stroke={CHART_THEME.axis} fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Line type="monotone" dataKey="ventas" stroke="#62B6CB" strokeWidth={2} dot={{ fill: '#62B6CB', r: 3 }} name="Ventas" /></LineChart>
               </ResponsiveContainer>
             </div>
 
@@ -992,13 +994,13 @@ export default function Reportes() {
               <div className="chart-card">
                 <h4 className="chart-title">Rendimiento por lavador</h4>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={data.rendLavadores}><CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" /><XAxis dataKey="nombre" stroke="#a0a0a0" fontSize={11} /><YAxis stroke="#a0a0a0" fontSize={12} /><Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload; return <div className="chart-tooltip"><p><strong>{d.nombre}</strong></p><p>Lavadas: {d.cantidad}</p><p>Total: {fmt(d.total)}</p></div> }} /><Bar dataKey="cantidad" name="Lavadas" radius={[4,4,0,0]}>{data.rendLavadores.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]} />)}</Bar></BarChart>
+                  <BarChart data={data.rendLavadores}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="nombre" stroke={CHART_THEME.axis} fontSize={11} /><YAxis stroke={CHART_THEME.axis} fontSize={12} /><Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload; return <div className="chart-tooltip"><p><strong>{d.nombre}</strong></p><p>Lavadas: {d.cantidad}</p><p>Total: {fmt(d.total)}</p></div> }} /><Bar dataKey="cantidad" name="Lavadas" radius={[4,4,0,0]}>{data.rendLavadores.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]} />)}</Bar></BarChart>
                 </ResponsiveContainer>
               </div>
               <div className="chart-card">
                 <h4 className="chart-title">Tipos de lavado</h4>
                 <ResponsiveContainer width="100%" height={300}>
-                  <PieChart><Pie data={data.tiposLavado} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value" label={renderLabel}><Cell fill="#3b82f6" /><Cell fill="#10b981" /></Pie><Tooltip content={<PieTooltip />} /><Legend /></PieChart>
+                  <PieChart><Pie data={data.tiposLavado} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value" label={renderLabel}><Cell fill="#3b82f6" /><Cell fill="#62B6CB" /></Pie><Tooltip content={<PieTooltip />} /><Legend /></PieChart>
                 </ResponsiveContainer>
               </div>
             </div>
@@ -1006,7 +1008,7 @@ export default function Reportes() {
             <div className="chart-grid">
               <div className="chart-card">
                 <h4 className="chart-title">Adicionales más vendidos</h4>
-                {data.adicionales.length > 0 ? <ResponsiveContainer width="100%" height={300}><BarChart data={data.adicionales} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" /><XAxis type="number" stroke="#a0a0a0" fontSize={12} /><YAxis type="category" dataKey="nombre" stroke="#a0a0a0" fontSize={11} width={120} /><Tooltip content={<ChartTooltip />} /><Bar dataKey="cantidad" name="Cantidad" fill="#f59e0b" radius={[0,4,4,0]} /></BarChart></ResponsiveContainer> : <div className="chart-empty">Sin datos</div>}
+                {data.adicionales.length > 0 ? <ResponsiveContainer width="100%" height={300}><BarChart data={data.adicionales} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis type="number" stroke={CHART_THEME.axis} fontSize={12} /><YAxis type="category" dataKey="nombre" stroke={CHART_THEME.axis} fontSize={11} width={120} /><Tooltip content={<ChartTooltip />} /><Bar dataKey="cantidad" name="Cantidad" fill="#f59e0b" radius={[0,4,4,0]} /></BarChart></ResponsiveContainer> : <div className="chart-empty">Sin datos</div>}
               </div>
               <div className="chart-card">
                 <h4 className="chart-title">Métodos de pago</h4>
@@ -1018,13 +1020,13 @@ export default function Reportes() {
               <h4 className="chart-title">Ticket promedio</h4>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={data.ticketData} margin={{ top: 30, right: 30, bottom: 20, left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" vertical={false} />
-                  <XAxis dataKey="nombre" stroke="#a0a0a0" fontSize={13} tickLine={false} axisLine={{ stroke: '#2a2a3a' }} />
-                  <YAxis stroke="#a0a0a0" fontSize={12} tickFormatter={v => `$${(v/1000).toFixed(0)}K`} domain={[0, dataMax => Math.ceil(dataMax * 1.2 / 10000) * 10000]} axisLine={false} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} vertical={false} />
+                  <XAxis dataKey="nombre" stroke={CHART_THEME.axis} fontSize={13} tickLine={false} axisLine={{ stroke: CHART_THEME.grid }} />
+                  <YAxis stroke={CHART_THEME.axis} fontSize={12} tickFormatter={v => `$${(v/1000).toFixed(0)}K`} domain={[0, dataMax => Math.ceil(dataMax * 1.2 / 10000) * 10000]} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTooltip formatter={fmt} />} />
                   <Bar dataKey="valor" name="Ticket promedio" maxBarSize={80} radius={[6,6,0,0]} label={{ position: 'top', fill: '#ffffff', fontSize: 14, fontWeight: 600, formatter: v => fmt(v) }}>
                     <Cell fill="#3b82f6" />
-                    <Cell fill="#10b981" />
+                    <Cell fill="#62B6CB" />
                     <Cell fill="#8b5cf6" />
                   </Bar>
                 </BarChart>
@@ -1076,7 +1078,7 @@ export default function Reportes() {
             <div className="chart-card chart-full">
               <h4 className="chart-title">Ingresos vs Egresos diarios</h4>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={data.ingEgDiario}><CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" /><XAxis dataKey="dia" stroke="#a0a0a0" fontSize={12} /><YAxis stroke="#a0a0a0" fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Line type="monotone" dataKey="ingresos" stroke="#10b981" strokeWidth={2} name="Ingresos" dot={false} /><Line type="monotone" dataKey="egresos" stroke="#ef4444" strokeWidth={2} name="Egresos" dot={false} /><Legend /></LineChart>
+                <LineChart data={data.ingEgDiario}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="dia" stroke={CHART_THEME.axis} fontSize={12} /><YAxis stroke={CHART_THEME.axis} fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Line type="monotone" dataKey="ingresos" stroke="#62B6CB" strokeWidth={2} name="Ingresos" dot={false} /><Line type="monotone" dataKey="egresos" stroke="#ef4444" strokeWidth={2} name="Egresos" dot={false} /><Legend /></LineChart>
               </ResponsiveContainer>
             </div>
 
@@ -1108,25 +1110,25 @@ export default function Reportes() {
             <div className="chart-card chart-full">
               <h4 className="chart-title">Ingresos, Egresos y Balance - Últimos 6 meses</h4>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={data.tend6}><CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" /><XAxis dataKey="mes" stroke="#a0a0a0" fontSize={12} /><YAxis stroke="#a0a0a0" fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Line type="monotone" dataKey="ingresos" stroke="#10b981" strokeWidth={2} name="Ingresos" /><Line type="monotone" dataKey="egresos" stroke="#ef4444" strokeWidth={2} name="Egresos" /><Line type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2} name="Balance" strokeDasharray="5 5" /><Legend /></LineChart>
+                <LineChart data={data.tend6}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="mes" stroke={CHART_THEME.axis} fontSize={12} /><YAxis stroke={CHART_THEME.axis} fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Line type="monotone" dataKey="ingresos" stroke="#62B6CB" strokeWidth={2} name="Ingresos" /><Line type="monotone" dataKey="egresos" stroke="#ef4444" strokeWidth={2} name="Egresos" /><Line type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2} name="Balance" strokeDasharray="5 5" /><Legend /></LineChart>
               </ResponsiveContainer>
             </div>
 
             <div className="chart-grid">
               <div className="chart-card">
                 <h4 className="chart-title">Top 5 días con más ventas</h4>
-                {data.topDias.length > 0 ? <ResponsiveContainer width="100%" height={300}><BarChart data={data.topDias}><CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" /><XAxis dataKey="fecha" stroke="#a0a0a0" fontSize={10} /><YAxis stroke="#a0a0a0" fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Bar dataKey="total" name="Ventas" fill="#10b981" radius={[4,4,0,0]} /></BarChart></ResponsiveContainer> : <div className="chart-empty">Sin datos</div>}
+                {data.topDias.length > 0 ? <ResponsiveContainer width="100%" height={300}><BarChart data={data.topDias}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="fecha" stroke={CHART_THEME.axis} fontSize={10} /><YAxis stroke={CHART_THEME.axis} fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Bar dataKey="total" name="Ventas" fill="#62B6CB" radius={[4,4,0,0]} /></BarChart></ResponsiveContainer> : <div className="chart-empty">Sin datos</div>}
               </div>
               <div className="chart-card">
                 <h4 className="chart-title">Ranking lavadores por ingresos</h4>
-                {data.rankLavadores.length > 0 ? <ResponsiveContainer width="100%" height={300}><BarChart data={data.rankLavadores}><CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" /><XAxis dataKey="nombre" stroke="#a0a0a0" fontSize={11} /><YAxis stroke="#a0a0a0" fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload; return <div className="chart-tooltip"><p><strong>{d.nombre}</strong></p><p>Ingresos: {fmt(d.total)}</p><p>Lavadas: {d.cantidad}</p></div> }} /><Bar dataKey="total" name="Ingresos" radius={[4,4,0,0]}>{data.rankLavadores.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]} />)}</Bar></BarChart></ResponsiveContainer> : <div className="chart-empty">Sin datos</div>}
+                {data.rankLavadores.length > 0 ? <ResponsiveContainer width="100%" height={300}><BarChart data={data.rankLavadores}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="nombre" stroke={CHART_THEME.axis} fontSize={11} /><YAxis stroke={CHART_THEME.axis} fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload; return <div className="chart-tooltip"><p><strong>{d.nombre}</strong></p><p>Ingresos: {fmt(d.total)}</p><p>Lavadas: {d.cantidad}</p></div> }} /><Bar dataKey="total" name="Ingresos" radius={[4,4,0,0]}>{data.rankLavadores.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]} />)}</Bar></BarChart></ResponsiveContainer> : <div className="chart-empty">Sin datos</div>}
               </div>
             </div>
 
             <div className="chart-card chart-full">
               <h4 className="chart-title">Tendencia ticket promedio - Últimos 6 meses</h4>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={data.tend6}><CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" /><XAxis dataKey="mes" stroke="#a0a0a0" fontSize={12} /><YAxis stroke="#a0a0a0" fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Line type="monotone" dataKey="ticket" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: '#8b5cf6', r: 4 }} name="Ticket promedio" /></LineChart>
+                <LineChart data={data.tend6}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="mes" stroke={CHART_THEME.axis} fontSize={12} /><YAxis stroke={CHART_THEME.axis} fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={<ChartTooltip formatter={fmt} />} /><Line type="monotone" dataKey="ticket" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: '#8b5cf6', r: 4 }} name="Ticket promedio" /></LineChart>
               </ResponsiveContainer>
             </div>
 
@@ -1166,9 +1168,9 @@ export default function Reportes() {
               {data.clientesDiarios.some(d => d.nuevos > 0) ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={data.clientesDiarios}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
-                    <XAxis dataKey="dia" stroke="#a0a0a0" fontSize={11} />
-                    <YAxis stroke="#a0a0a0" fontSize={12} allowDecimals={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} />
+                    <XAxis dataKey="dia" stroke={CHART_THEME.axis} fontSize={11} />
+                    <YAxis stroke={CHART_THEME.axis} fontSize={12} allowDecimals={false} />
                     <Tooltip content={<ChartTooltip formatter={(v) => `${v} clientes`} />} />
                     <Bar dataKey="nuevos" name="Nuevos" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                   </BarChart>

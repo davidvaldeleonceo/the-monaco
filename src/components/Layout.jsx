@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useTenant } from './TenantContext'
+import { useTheme } from './ThemeContext'
 import { canAccess } from './RoleGuard'
 import {
+  Home,
   LayoutDashboard,
   Droplets,
   Users,
@@ -17,12 +19,15 @@ import {
   Menu,
   X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Sun,
+  Moon
 } from 'lucide-react'
 
 export default function Layout({ user }) {
   const navigate = useNavigate()
   const { negocioNombre, userProfile } = useTenant()
+  const { theme, toggleTheme } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
@@ -34,6 +39,7 @@ export default function Layout({ user }) {
   const rol = userProfile?.rol || 'admin'
 
   const allMenuItems = [
+    { to: '/home', icon: Home, label: 'Home' },
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/lavadas', icon: Droplets, label: 'Servicios' },
     { to: '/clientes', icon: Users, label: 'Clientes' },
@@ -102,9 +108,14 @@ export default function Layout({ user }) {
 
         <div className="sidebar-footer">
           {sidebarCollapsed ? (
-            <button onClick={handleLogout} className="logout-button" title="Cerrar sesión">
-              <LogOut size={20} />
-            </button>
+            <>
+              <button onClick={toggleTheme} className="theme-toggle-btn" title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
+                {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+              </button>
+              <button onClick={handleLogout} className="logout-button" title="Cerrar sesión">
+                <LogOut size={20} />
+              </button>
+            </>
           ) : (
             <>
               <div className="user-info">
@@ -116,6 +127,10 @@ export default function Layout({ user }) {
                   <span className="user-role">{userProfile?.rol || 'Administrador'}</span>
                 </div>
               </div>
+              <button onClick={toggleTheme} className="theme-toggle-btn" title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
+                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                <span>{theme === 'dark' ? 'Claro' : 'Oscuro'}</span>
+              </button>
               <button onClick={handleLogout} className="logout-button" title="Cerrar sesión">
                 <LogOut size={20} />
               </button>

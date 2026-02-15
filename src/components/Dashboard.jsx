@@ -8,7 +8,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from 'recharts'
 import { formatMoney, formatMoneyShort } from '../utils/money'
-import { ESTADO_COLORS, ESTADO_LABELS } from '../config/constants'
+import { ESTADO_COLORS, ESTADO_LABELS, CHART_THEME } from '../config/constants'
 
 const DAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
@@ -463,16 +463,16 @@ export default function Dashboard() {
                     type="category"
                     dataKey="name"
                     width={80}
-                    tick={{ fill: '#a0a0a0', fontSize: 12 }}
+                    tick={{ fill: CHART_THEME.axis, fontSize: 12 }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <Tooltip
-                    contentStyle={{ background: '#1a1a24', border: '1px solid #2a2a3a', borderRadius: 8, color: '#fff' }}
-                    cursor={{ fill: 'rgba(255, 255, 255, 0.04)' }}
+                    contentStyle={{ background: CHART_THEME.tooltipBg, border: `1px solid ${CHART_THEME.tooltipBorder}`, borderRadius: 8, color: '#fff' }}
+                    cursor={{ fill: CHART_THEME.cursorFill }}
                     formatter={(v) => [v, 'Servicios']}
                   />
-                  <Bar dataKey="value" fill="#10b981" radius={[0, 4, 4, 0]} barSize={16} />
+                  <Bar dataKey="value" fill="#62B6CB" radius={[0, 4, 4, 0]} barSize={16} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -486,12 +486,12 @@ export default function Dashboard() {
               <BarChart data={ingresosBarData} margin={{ left: 0, right: 5, top: 5, bottom: 5 }}>
                 <XAxis
                   dataKey="name"
-                  tick={{ fill: '#a0a0a0', fontSize: 11 }}
+                  tick={{ fill: CHART_THEME.axis, fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fill: '#a0a0a0', fontSize: 11 }}
+                  tick={{ fill: CHART_THEME.axis, fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={formatMoneyShort}

@@ -12,9 +12,11 @@ import Reportes from './components/Reportes'
 import Tareas from './components/Tareas'
 import PagoTrabajadores from './components/PagoTrabajadores'
 import Configuracion from './components/Configuracion'
+import Home from './components/Home'
 import Membresias from './components/Membresias'
 import { DataProvider } from './components/DataContext'
 import { TenantProvider, useTenant } from './components/TenantContext'
+import { ThemeProvider } from './components/ThemeContext'
 import Onboarding from './components/Onboarding'
 import RoleGuard from './components/RoleGuard'
 import './App.css'
@@ -33,8 +35,9 @@ function AuthenticatedApp({ session }) {
   return (
     <DataProvider>
       <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<Navigate to="/home" replace />} />
         <Route element={<Layout user={session.user} />}>
+          <Route path="/home" element={<RoleGuard path="/home"><Home /></RoleGuard>} />
           <Route path="/dashboard" element={<RoleGuard path="/dashboard"><Dashboard /></RoleGuard>} />
           <Route path="/lavadas" element={<RoleGuard path="/lavadas"><Lavadas /></RoleGuard>} />
           <Route path="/clientes" element={<RoleGuard path="/clientes"><Clientes /></RoleGuard>} />
@@ -45,7 +48,7 @@ function AuthenticatedApp({ session }) {
           <Route path="/membresias" element={<RoleGuard path="/membresias"><Membresias /></RoleGuard>} />
           <Route path="/configuracion" element={<RoleGuard path="/configuracion"><Configuracion /></RoleGuard>} />
         </Route>
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </DataProvider>
   )
@@ -73,26 +76,28 @@ function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        {!session ? (
-          <>
-            <Route path="/registro" element={<Register />} />
-            <Route path="/" element={<Login />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </>
-        ) : (
-          <Route
-            path="*"
-            element={
-              <TenantProvider session={session}>
-                <AuthenticatedApp session={session} />
-              </TenantProvider>
-            }
-          />
-        )}
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <Routes>
+          {!session ? (
+            <>
+              <Route path="/registro" element={<Register />} />
+              <Route path="/" element={<Login />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </>
+          ) : (
+            <Route
+              path="*"
+              element={
+                <TenantProvider session={session}>
+                  <AuthenticatedApp session={session} />
+                </TenantProvider>
+              }
+            />
+          )}
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   )
 }
 

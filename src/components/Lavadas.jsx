@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
-import Timer from './common/Timer'
+import { useServiceHandlers } from '../hooks/useServiceHandlers'
+import ServiceCard from './ServiceCard'
 import { formatMoney } from '../utils/money'
-import { ESTADO_LABELS, ESTADO_CLASSES } from '../config/constants'
-import { Plus, Search, X, MessageCircle, Calendar, Trash2, ChevronDown, SlidersHorizontal, CheckCircle2, Upload, Download, CheckSquare, RefreshCw } from 'lucide-react'
+import { Plus, Search, X, Trash2, SlidersHorizontal, Upload, Download, CheckSquare, RefreshCw } from 'lucide-react'
 import Select from 'react-select'
 import * as XLSX from 'xlsx'
 import DatePicker from 'react-datepicker'
@@ -58,11 +58,7 @@ export default function Lavadas() {
   const [fechaDesde, setFechaDesde] = useState(filtrosIniciales.desde)
   const [fechaHasta, setFechaHasta] = useState(filtrosIniciales.hasta)
   const [filtroRapido, setFiltroRapido] = useState(filtrosIniciales.rapido)
-  const [expandedCards, setExpandedCards] = useState({})
   const [showFilters, setShowFilters] = useState(false)
-  const [editingPago, setEditingPago] = useState(null)
-  const [validationErrors, setValidationErrors] = useState({})
-  const [collapsingCards, setCollapsingCards] = useState({})
 
   // Import CSV states
   const [showImportModal, setShowImportModal] = useState(false)
@@ -80,24 +76,27 @@ export default function Lavadas() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [updatingCards, setUpdatingCards] = useState(new Set())
 
-  const smoothCollapse = (lavadaId) => {
-    setCollapsingCards(prev => ({ ...prev, [lavadaId]: true }))
-    setTimeout(() => {
-      setExpandedCards(prev => ({ ...prev, [lavadaId]: false }))
-      setCollapsingCards(prev => { const n = { ...prev }; delete n[lavadaId]; return n })
-    }, 350)
-  }
-
-  const withCardUpdate = async (lavadaId, fn) => {
-    setUpdatingCards(prev => new Set(prev).add(lavadaId))
-    try {
-      await fn()
-    } finally {
-      setUpdatingCards(prev => { const next = new Set(prev); next.delete(lavadaId); return next })
-    }
-  }
+  const {
+    expandedCards, setExpandedCards,
+    editingPago, setEditingPago,
+    validationErrors, setValidationErrors,
+    collapsingCards,
+    updatingCards,
+    smoothCollapse,
+    getTimerProps,
+    hasActiveTimer,
+    getEstadoClass,
+    calcularValor,
+    autoAddIncluidos,
+    handleEstadoChange,
+    handleLavadorChange,
+    handleTipoLavadoChangeInline,
+    handlePagosChange,
+    handleAdicionalChange,
+    handleEliminarLavada,
+    enviarWhatsApp,
+  } = useServiceHandlers()
 
   // Guardar filtros en localStorage cuando cambien
   useEffect(() => {
@@ -110,28 +109,6 @@ export default function Lavadas() {
     }))
   }, [filtroEstado, filtroLavador, fechaDesde, fechaHasta, filtroRapido])
 
-  const getTimerProps = (lavada, tipo) => {
-    if (tipo === 'espera') {
-      if (lavada.duracion_espera != null) return { duration: lavada.duracion_espera }
-      if (lavada.estado === 'EN ESPERA' && lavada.tiempo_espera_inicio) return { startTime: lavada.tiempo_espera_inicio }
-      return { duration: 0 }
-    }
-    if (tipo === 'lavado') {
-      if (lavada.duracion_lavado != null) return { duration: lavada.duracion_lavado }
-      if (lavada.estado === 'EN LAVADO' && lavada.tiempo_lavado_inicio) return { startTime: lavada.tiempo_lavado_inicio }
-      return { duration: 0 }
-    }
-    if (tipo === 'terminado') {
-      if (lavada.duracion_terminado != null) return { duration: lavada.duracion_terminado }
-      if (lavada.estado === 'TERMINADO' && lavada.tiempo_terminado_inicio) return { startTime: lavada.tiempo_terminado_inicio }
-      return { duration: 0 }
-    }
-    return { duration: 0 }
-  }
-
-  const hasActiveTimer = (lavada) => {
-    return lavada.estado === 'EN ESPERA' || lavada.estado === 'EN LAVADO' || lavada.estado === 'TERMINADO'
-  }
 
   const [clienteSearch, setClienteSearch] = useState('')
   const [showClienteDropdown, setShowClienteDropdown] = useState(false)
@@ -171,29 +148,6 @@ export default function Lavadas() {
     })
   }
 
-  const calcularValor = (tipoId, adicionales) => {
-    const tipo = tiposLavado.find(t => t.id == tipoId)
-    let total = Number(tipo?.precio || 0)
-    const incluidos = tipo?.adicionales_incluidos || []
-    if (adicionales && adicionales.length > 0) {
-      total += adicionales
-        .filter(a => !incluidos.includes(a.id))
-        .reduce((sum, a) => sum + Number(a.precio || 0), 0)
-    }
-    return total
-  }
-
-  const autoAddIncluidos = (tipo, adicionalesActuales) => {
-    const incluidos = tipo?.adicionales_incluidos || []
-    const nuevos = [...adicionalesActuales]
-    incluidos.forEach(id => {
-      if (!nuevos.some(a => a.id === id)) {
-        const s = serviciosAdicionales.find(s => s.id === id)
-        if (s) nuevos.push({ id: s.id, nombre: s.nombre, precio: Number(s.precio) })
-      }
-    })
-    return nuevos
-  }
 
   const handleClienteChange = (clienteId) => {
     const cliente = clientes.find(c => c.id == clienteId)
@@ -351,151 +305,6 @@ export default function Lavadas() {
     }
   }
 
-  const handleEstadoChange = async (lavadaId, nuevoEstado) => {
-    const lavada = lavadas.find(l => l.id === lavadaId)
-    if (lavada.estado === nuevoEstado) return
-    await withCardUpdate(lavadaId, async () => {
-      const estadoAnterior = lavada.estado
-      const ahora = new Date()
-      const ahoraISO = ahora.toISOString()
-      let updates = { estado: nuevoEstado }
-
-      if (nuevoEstado === 'EN ESPERA') {
-        updates.tiempo_espera_inicio = ahoraISO
-        updates.duracion_espera = null
-        updates.tiempo_lavado_inicio = null
-        updates.duracion_lavado = null
-        updates.tiempo_terminado_inicio = null
-        updates.duracion_terminado = null
-      } else {
-        if (estadoAnterior === 'EN ESPERA' && lavada.tiempo_espera_inicio) {
-          updates.duracion_espera = Math.round((ahora - new Date(lavada.tiempo_espera_inicio)) / 1000)
-        }
-        if (estadoAnterior === 'EN LAVADO' && lavada.tiempo_lavado_inicio) {
-          updates.duracion_lavado = Math.round((ahora - new Date(lavada.tiempo_lavado_inicio)) / 1000)
-        }
-        if (estadoAnterior === 'TERMINADO' && lavada.tiempo_terminado_inicio) {
-          updates.duracion_terminado = Math.round((ahora - new Date(lavada.tiempo_terminado_inicio)) / 1000)
-        }
-
-        if (nuevoEstado === 'EN LAVADO') {
-          updates.tiempo_lavado_inicio = ahoraISO
-          updates.duracion_lavado = null
-        }
-        if (nuevoEstado === 'TERMINADO') {
-          updates.tiempo_terminado_inicio = ahoraISO
-          updates.duracion_terminado = null
-        }
-      }
-
-      const { error } = await supabase
-        .from('lavadas')
-        .update(updates)
-        .eq('id', lavadaId)
-
-      if (error) {
-        alert('Error al cambiar estado: ' + error.message)
-        return
-      }
-      updateLavadaLocal(lavadaId, updates)
-    })
-  }
-
-  const handleLavadorChange = async (lavadaId, lavadorId) => {
-    await withCardUpdate(lavadaId, async () => {
-      const { error } = await supabase
-        .from('lavadas')
-        .update({ lavador_id: lavadorId || null })
-        .eq('id', lavadaId)
-
-      if (error) {
-        alert('Error al cambiar lavador: ' + error.message)
-        return
-      }
-      const lavador = lavadores.find(l => l.id == lavadorId)
-      updateLavadaLocal(lavadaId, { lavador_id: lavadorId, lavador: lavador ? { nombre: lavador.nombre } : null })
-    })
-  }
-
-  const handleTipoLavadoChangeInline = async (lavadaId, tipoId) => {
-    await withCardUpdate(lavadaId, async () => {
-      const tipo = tiposLavado.find(t => t.id == tipoId)
-      const lavada = lavadas.find(l => l.id === lavadaId)
-      const nuevosAdicionales = autoAddIncluidos(tipo, lavada.adicionales || [])
-      const nuevoValor = calcularValor(tipoId, nuevosAdicionales)
-
-      const { error } = await supabase
-        .from('lavadas')
-        .update({ tipo_lavado_id: tipoId, adicionales: nuevosAdicionales, valor: nuevoValor })
-        .eq('id', lavadaId)
-
-      if (error) {
-        alert('Error al cambiar tipo de lavado: ' + error.message)
-        return
-      }
-      updateLavadaLocal(lavadaId, {
-        tipo_lavado_id: tipoId,
-        tipo_lavado: tipo ? { nombre: tipo.nombre } : null,
-        adicionales: nuevosAdicionales,
-        valor: nuevoValor
-      })
-    })
-  }
-
-  const handlePagosChange = async (lavadaId, nuevosPagos) => {
-    // Sanitize: convert '' or undefined to null for FK, ensure numeric valor
-    const pagosSanitized = nuevosPagos.map(p => ({
-      ...p,
-      metodo_pago_id: p.metodo_pago_id || null,
-      valor: Number(p.valor) || 0
-    }))
-    const metodoCompatible = (pagosSanitized.length > 0 && pagosSanitized[0].metodo_pago_id)
-      ? pagosSanitized[0].metodo_pago_id
-      : null
-
-    await withCardUpdate(lavadaId, async () => {
-      const { error } = await supabase
-        .from('lavadas')
-        .update({ pagos: pagosSanitized, metodo_pago_id: metodoCompatible })
-        .eq('id', lavadaId)
-
-      if (error) {
-        alert('Error al actualizar pagos: ' + error.message)
-        return
-      }
-      updateLavadaLocal(lavadaId, { pagos: pagosSanitized, metodo_pago_id: metodoCompatible })
-    })
-  }
-
-  const handleAdicionalChange = async (lavadaId, servicio, checked) => {
-    await withCardUpdate(lavadaId, async () => {
-      const lavada = lavadas.find(l => l.id === lavadaId)
-      const adicionalesActuales = lavada.adicionales || []
-
-      let nuevosAdicionales
-      if (checked) {
-        nuevosAdicionales = [...adicionalesActuales, { id: servicio.id, nombre: servicio.nombre, precio: Number(servicio.precio) }]
-      } else {
-        nuevosAdicionales = adicionalesActuales.filter(a => a.id !== servicio.id)
-      }
-
-      const nuevoValor = calcularValor(lavada.tipo_lavado_id, nuevosAdicionales)
-
-      const { error } = await supabase
-        .from('lavadas')
-        .update({ adicionales: nuevosAdicionales, valor: nuevoValor })
-        .eq('id', lavadaId)
-
-      if (error) {
-        alert('Error al actualizar adicionales: ' + error.message)
-        return
-      }
-      updateLavadaLocal(lavadaId, {
-        adicionales: nuevosAdicionales,
-        valor: nuevoValor
-      })
-    })
-  }
 
   const aplicarFiltroRapido = (tipo) => {
     setFiltroRapido(tipo)
@@ -537,22 +346,6 @@ export default function Lavadas() {
     }
   }
 
-  const handleEliminarLavada = async (lavadaId) => {
-    if (confirm('¿Estás seguro de eliminar este servicio?')) {
-      await withCardUpdate(lavadaId, async () => {
-        const { error } = await supabase
-          .from('lavadas')
-          .delete()
-          .eq('id', lavadaId)
-
-        if (error) {
-          alert('Error al eliminar servicio: ' + error.message)
-          return
-        }
-        deleteLavadaLocal(lavadaId)
-      })
-    }
-  }
 
   const toggleSelectLavada = (id) => {
     setSelectedLavadas(prev => {
@@ -593,19 +386,6 @@ export default function Lavadas() {
     if (eliminados > 0) alert(`Se eliminaron ${eliminados} servicios`)
   }
 
-  const enviarWhatsApp = (lavada) => {
-    const cliente = clientes.find(c => c.id == lavada.cliente_id)
-    if (!cliente?.telefono) {
-      alert('El cliente no tiene número de teléfono registrado')
-      return
-    }
-
-    const telefono = cliente.telefono.replace(/\D/g, '')
-    const mensaje = `Hola ${cliente.nombre}, tu moto de placa *${lavada.placa}* ya está lista. ¡Puedes venir a recogerla! 🏍️`
-    const url = `https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(mensaje)}`
-
-    window.open(url, '_blank')
-  }
 
   const descargarPlantilla = () => {
     const bom = '\uFEFF'
@@ -919,8 +699,6 @@ export default function Lavadas() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  const getEstadoClass = (estado) => ESTADO_CLASSES[estado] || ''
-
   const lavadasFiltradas = lavadas.filter(l => {
     const matchPlaca = l.placa.toLowerCase().includes(searchPlaca.toLowerCase())
     const matchEstado = !filtroEstado || l.estado === filtroEstado
@@ -1020,7 +798,7 @@ export default function Lavadas() {
             placeholder="Lavador"
             formatOptionLabel={(opt) => (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: opt.activo !== false ? '#10b981' : '#666', flexShrink: 0 }} />
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: opt.activo !== false ? '#62B6CB' : '#666', flexShrink: 0 }} />
                 {opt.label}
               </div>
             )}
@@ -1117,318 +895,38 @@ export default function Lavadas() {
         {lavadasFiltradas.length === 0 && (
           <div className="empty-card">No hay servicios registrados</div>
         )}
-        {lavadasFiltradas.map((lavada) => {
-          const pagos = lavada.pagos || []
-          const isExpanded = expandedCards[lavada.id]
-
-          // Shared payment validation (single source of truth)
-          const total = Math.round(lavada.valor || 0)
-          const sumaPagos = Math.round(pagos.reduce((s, p) => s + (Number(p.valor) || 0), 0))
-          const diff = sumaPagos - total
-          const pagosOk = total === 0 ? (pagos.length === 0 || Math.abs(diff) < 1) : (pagos.length > 0 && Math.abs(diff) < 1)
-          const allMetodosSet = pagos.length === 0 || pagos.every(p => p.metodo_pago_id)
-          const tipoOk = !!lavada.tipo_lavado_id
-          const lavadorOk = !!lavada.lavador_id
-          const canComplete = pagosOk && allMetodosSet && tipoOk && lavadorOk
-          const yaEntregado = lavada.estado === 'ENTREGADO'
-          const isEditingThisLavada = editingPago?.lavadaId === lavada.id
-
-          const pagoStatus = pagosOk ? 'pagado' : sumaPagos > 0 ? 'parcial' : 'sin-pagar'
-          const pagoLabel = pagoStatus === 'pagado' ? 'Pagado' : pagoStatus === 'parcial' ? 'Parcial' : 'Sin pagar'
-          const vErrs = validationErrors[lavada.id] || {}
-          const isCollapsing = collapsingCards[lavada.id]
-          const showBody = isExpanded || isCollapsing
-          return (
-            <div key={lavada.id} className={`lavada-card ${getEstadoClass(lavada.estado)}-border ${isExpanded && !isCollapsing ? 'expanded' : ''} ${selectedLavadas.has(lavada.id) ? 'card-selected' : ''} ${updatingCards.has(lavada.id) ? 'card-updating' : ''}`}>
-              <div
-                className="lavada-card-header"
-                onClick={() => modoSeleccion ? toggleSelectLavada(lavada.id) : setExpandedCards(prev => ({ ...prev, [lavada.id]: !prev[lavada.id] }))}
-              >
-                <div className="lavada-card-cliente">
-                  {modoSeleccion && (
-                    <label className="custom-check" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selectedLavadas.has(lavada.id)}
-                        onChange={() => toggleSelectLavada(lavada.id)}
-                      />
-                      <span className="checkmark"></span>
-                    </label>
-                  )}
-                  <span className="lavada-card-nombre">{lavada.cliente?.nombre || 'No encontrado'} <span className="lavada-card-fecha">{new Date(lavada.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}</span></span>
-                  <span className="lavada-card-placa">{lavada.placa}</span>
-                </div>
-                <div className="lavada-card-summary">
-                  <span className={`pago-badge pago-badge-${pagoStatus}`}>{pagoLabel}</span>
-                  <span className={`estado-badge-mini ${getEstadoClass(lavada.estado)}`}>{ESTADO_LABELS[lavada.estado] || lavada.estado}</span>
-                  {hasActiveTimer(lavada) && (
-                    <span className={`lavada-card-timer ${getEstadoClass(lavada.estado)}`}>
-                      <Timer {...getTimerProps(lavada, lavada.estado === 'EN ESPERA' ? 'espera' : lavada.estado === 'EN LAVADO' ? 'lavado' : 'terminado')} />
-                    </span>
-                  )}
-                  <span className="lavada-card-valor-mini">{formatMoney(lavada.valor)}</span>
-                  <ChevronDown size={16} className={`lavada-card-chevron ${isExpanded ? 'rotated' : ''}`} />
-                </div>
-              </div>
-
-              {showBody && (
-                <div className={`lavada-card-body ${isCollapsing ? 'collapsing' : ''}`}>
-                  <div className="estado-flow">
-                    <button
-                      className={`estado-step-btn estado-espera-bg ${lavada.estado === 'EN ESPERA' ? 'active' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); handleEstadoChange(lavada.id, 'EN ESPERA') }}
-                    >
-                      <span className="estado-step-label">Espera</span>
-                      <span className="estado-step-time"><Timer {...getTimerProps(lavada, 'espera')} /></span>
-                    </button>
-                    <button
-                      className={`estado-step-btn estado-lavado-bg ${lavada.estado === 'EN LAVADO' ? 'active' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); handleEstadoChange(lavada.id, 'EN LAVADO') }}
-                    >
-                      <span className="estado-step-label">Lavado</span>
-                      <span className="estado-step-time"><Timer {...getTimerProps(lavada, 'lavado')} /></span>
-                    </button>
-                    <button
-                      className={`estado-step-btn estado-terminado-bg ${lavada.estado === 'TERMINADO' ? 'active' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); handleEstadoChange(lavada.id, 'TERMINADO') }}
-                    >
-                      <span className="estado-step-label">Terminado</span>
-                      <span className="estado-step-time"><Timer {...getTimerProps(lavada, 'terminado')} /></span>
-                    </button>
-                    <button
-                      className={`estado-step-btn estado-entregado-bg ${yaEntregado ? 'active' : ''} ${!canComplete && !yaEntregado ? 'disabled-look' : ''}`}
-                      title={yaEntregado ? 'Entregado' : (canComplete ? 'Marcar como entregado' : (
-                        !tipoOk ? 'Falta tipo de lavado' :
-                          !lavadorOk ? 'Falta asignar lavador' :
-                            pagos.length === 0 ? 'Agrega al menos un pago' :
-                              !allMetodosSet ? 'Todos los pagos necesitan método' :
-                                !pagosOk ? (diff > 0 ? `Pagos exceden ${formatMoney(diff)}` : `Faltan ${formatMoney(Math.abs(diff))}`) : ''
-                      ))}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (!canComplete) {
-                          const errs = {}
-                          if (!tipoOk) errs.tipo = true
-                          if (!lavadorOk) errs.lavador = true
-                          if (!pagosOk || !allMetodosSet) errs.pagos = true
-                          setValidationErrors(prev => ({ ...prev, [lavada.id]: errs }))
-                          setTimeout(() => setValidationErrors(prev => { const n = { ...prev }; delete n[lavada.id]; return n }), 2000)
-                          return
-                        }
-                        handleEstadoChange(lavada.id, 'ENTREGADO')
-                        smoothCollapse(lavada.id)
-                      }}
-                    >
-                      <span className="estado-step-label">Entregado</span>
-                    </button>
-                  </div>
-
-                  <div className="lavada-card-tipo-adic">
-                    <div className="lavada-card-field">
-                      <label>Tipo</label>
-                      <select
-                        value={lavada.tipo_lavado_id || ''}
-                        onChange={(e) => handleTipoLavadoChangeInline(lavada.id, e.target.value)}
-                        className={`tipo-lavado-select ${vErrs.tipo ? 'field-error' : ''}`}
-                      >
-                        <option value="">Seleccionar</option>
-                        {tiposLavado.map(t => (
-                          <option key={t.id} value={t.id}>{t.nombre}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {serviciosAdicionales.length > 0 && (
-                      <div className="lavada-card-adicionales">
-                        <label>Adicionales</label>
-                        <div className="lavada-card-checks">
-                          {serviciosAdicionales.map(s => {
-                            const adicionalesLavada = lavada.adicionales || []
-                            const checked = adicionalesLavada.some(a => a.id === s.id)
-                            return (
-                              <label key={s.id} className="adicional-check">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) => handleAdicionalChange(lavada.id, s, e.target.checked)}
-                                />
-                                <span>{s.nombre}</span>
-                              </label>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="lavada-card-row">
-                    <div className="lavada-card-field full">
-                      <label>Lavador</label>
-                      <select
-                        value={lavada.lavador_id || ''}
-                        onChange={(e) => handleLavadorChange(lavada.id, e.target.value)}
-                        className={`lavador-select ${vErrs.lavador ? 'field-error' : ''}`}
-                      >
-                        <option value="">Sin asignar</option>
-                        {lavadores.map(l => (
-                          <option key={l.id} value={l.id}>{l.nombre}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="lavada-card-footer">
-                    <div className={`lavada-card-valor ${pagos.length > 0 ? (pagosOk ? 'pago-ok' : 'pago-error') : ''}`}>
-                      {formatMoney(total)}
-                    </div>
-                    <div className={`lavada-card-pagos-pills ${vErrs.pagos ? 'field-error' : ''}`}>
-                      {pagos.length === 0 && lavada.metodo_pago?.nombre && (
-                        <span className="pago-pill legacy">{lavada.metodo_pago.nombre}</span>
-                      )}
-                      {pagos.map((p, idx) => {
-                        const isEditing = isEditingThisLavada && editingPago.idx === idx
-                        const metodoNombre = p.nombre || metodosPago.find(m => m.id == p.metodo_pago_id)?.nombre
-
-                        if (isEditing || !p.metodo_pago_id) {
-                          return (
-                            <div key={idx} className="pago-pill editing">
-                              <select
-                                value={p.metodo_pago_id || ''}
-                                onChange={(e) => {
-                                  const metodo = metodosPago.find(m => m.id == e.target.value)
-                                  const nuevosPagos = pagos.map((pg, i) =>
-                                    i === idx ? { ...pg, metodo_pago_id: e.target.value, nombre: metodo?.nombre || '' } : pg
-                                  )
-                                  handlePagosChange(lavada.id, nuevosPagos)
-                                  if (e.target.value && p.valor > 0) setEditingPago(null)
-                                }}
-                                className="pago-pill-select"
-                                autoFocus
-                              >
-                                <option value="">Método</option>
-                                {metodosPago.map(m => (
-                                  <option key={m.id} value={m.id}>{m.nombre}</option>
-                                ))}
-                              </select>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={p.valor === 0 ? '' : Number(p.valor).toLocaleString('es-CO')}
-                                onChange={(e) => {
-                                  const val = e.target.value.replace(/\D/g, '')
-                                  const nuevosPagos = pagos.map((pg, i) =>
-                                    i === idx ? { ...pg, valor: val === '' ? 0 : Number(val) } : pg
-                                  )
-                                  handlePagosChange(lavada.id, nuevosPagos)
-                                }}
-                                onKeyDown={(e) => { if (e.key === 'Enter' && p.metodo_pago_id) setEditingPago(null) }}
-                                className="pago-pill-input"
-                                placeholder="$0"
-                              />
-                              <button
-                                className="pago-pill-x"
-                                onClick={() => {
-                                  const nuevosPagos = pagos.filter((_, i) => i !== idx)
-                                  handlePagosChange(lavada.id, nuevosPagos)
-                                  setEditingPago(null)
-                                }}
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          )
-                        }
-
-                        return (
-                          <div
-                            key={idx}
-                            className="pago-pill"
-                            onClick={() => setEditingPago({ lavadaId: lavada.id, idx })}
-                          >
-                            <span className="pago-pill-metodo">{metodoNombre}</span>
-                            <span className="pago-pill-valor">{formatMoney(p.valor)}</span>
-                            <button
-                              className="pago-pill-x"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                const nuevosPagos = pagos.filter((_, i) => i !== idx)
-                                handlePagosChange(lavada.id, nuevosPagos)
-                              }}
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        )
-                      })}
-                      <button
-                        className="pago-pill-add"
-                        onClick={() => {
-                          const restante = total - sumaPagos
-                          const nuevosPagos = [...pagos, { metodo_pago_id: '', nombre: '', valor: restante > 0 ? restante : 0 }]
-                          handlePagosChange(lavada.id, nuevosPagos)
-                          setEditingPago({ lavadaId: lavada.id, idx: pagos.length })
-                        }}
-                      >
-                        <Plus size={14} />
-                      </button>
-                      {pagos.length > 0 && !pagosOk && (
-                        <span className="pago-diff-msg">
-                          {diff > 0
-                            ? `Excede ${formatMoney(diff)}`
-                            : `Falta ${formatMoney(Math.abs(diff))}`}
-                        </span>
-                      )}
-                    </div>
-                    <div className="lavada-card-actions">
-                      <button
-                        className="btn-whatsapp"
-                        onClick={() => enviarWhatsApp(lavada)}
-                        title="Enviar WhatsApp"
-                        disabled={!pagosOk}
-                      >
-                        <MessageCircle size={18} />
-                      </button>
-                      <button
-                        className="btn-eliminar-card"
-                        onClick={() => handleEliminarLavada(lavada.id)}
-                        title="Eliminar"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                    <button
-                      className={`btn-completar-servicio ${yaEntregado ? 'completado' : ''} ${!canComplete && !yaEntregado ? 'error' : ''}`}
-                      title={yaEntregado ? 'Servicio entregado' : (canComplete ? 'Marcar como completado' : (
-                        !tipoOk ? 'Falta tipo de lavado' :
-                          !lavadorOk ? 'Falta asignar lavador' :
-                            pagos.length === 0 ? 'Agrega al menos un pago' :
-                              !allMetodosSet ? 'Todos los pagos necesitan método' :
-                                !pagosOk ? (diff > 0 ? `Pagos exceden ${formatMoney(diff)}` : `Faltan ${formatMoney(Math.abs(diff))}`) : ''
-                      ))}
-                      onClick={() => {
-                        if (yaEntregado) return
-                        if (!canComplete) {
-                          const errs = {}
-                          if (!tipoOk) errs.tipo = true
-                          if (!lavadorOk) errs.lavador = true
-                          if (!pagosOk || !allMetodosSet) errs.pagos = true
-                          setValidationErrors(prev => ({ ...prev, [lavada.id]: errs }))
-                          setTimeout(() => setValidationErrors(prev => { const n = { ...prev }; delete n[lavada.id]; return n }), 2000)
-                          return
-                        }
-                        handleEstadoChange(lavada.id, 'ENTREGADO')
-                        smoothCollapse(lavada.id)
-                      }}
-                    >
-                      <CheckCircle2 size={16} />
-                      {yaEntregado ? 'Completado' : 'Completar'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
+        {lavadasFiltradas.map((lavada) => (
+          <ServiceCard
+            key={lavada.id}
+            lavada={lavada}
+            onEstadoChange={handleEstadoChange}
+            onTipoLavadoChange={handleTipoLavadoChangeInline}
+            onAdicionalChange={handleAdicionalChange}
+            onLavadorChange={handleLavadorChange}
+            onPagosChange={handlePagosChange}
+            onEliminar={handleEliminarLavada}
+            onWhatsApp={enviarWhatsApp}
+            isExpanded={expandedCards[lavada.id]}
+            isCollapsing={collapsingCards[lavada.id]}
+            isUpdating={updatingCards.has(lavada.id)}
+            editingPago={editingPago}
+            validationErrors={validationErrors[lavada.id]}
+            onToggleExpand={() => setExpandedCards(prev => ({ ...prev, [lavada.id]: !prev[lavada.id] }))}
+            onSetEditingPago={setEditingPago}
+            onSetValidationErrors={(errs) => errs ? setValidationErrors(prev => ({ ...prev, [lavada.id]: errs })) : setValidationErrors(prev => { const n = { ...prev }; delete n[lavada.id]; return n })}
+            onSmoothCollapse={smoothCollapse}
+            tiposLavado={tiposLavado}
+            serviciosAdicionales={serviciosAdicionales}
+            lavadores={lavadores}
+            metodosPago={metodosPago}
+            getTimerProps={getTimerProps}
+            hasActiveTimer={hasActiveTimer}
+            getEstadoClass={getEstadoClass}
+            selectionMode={modoSeleccion}
+            isSelected={selectedLavadas.has(lavada.id)}
+            onToggleSelect={toggleSelectLavada}
+          />
+        ))}
       </div>
 
       {modoSeleccion && selectedLavadas.size > 0 && (

@@ -78,7 +78,7 @@ export default function Register() {
               left: `${Math.random() * 100}%`,
               animationDelay: `${Math.random() * 3}s`,
               animationDuration: `${2 + Math.random() * 3}s`,
-              backgroundColor: ['#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'][i % 6],
+              backgroundColor: ['#f59e0b', '#62B6CB', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'][i % 6],
             }} />
           ))}
         </div>

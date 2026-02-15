@@ -257,4 +257,5 @@ DO $$ BEGIN
   ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS hora_inicio_lavado TIMESTAMPTZ;
   ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS tiempo_lavado INTEGER;
   ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS tipo_membresia_id UUID REFERENCES tipos_membresia(id) ON DELETE SET NULL;
+  ALTER TABLE pago_trabajadores ADD COLUMN IF NOT EXISTS valor_pagado NUMERIC DEFAULT 0;
 END $$;

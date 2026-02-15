@@ -3,6 +3,7 @@ import { ShieldAlert } from 'lucide-react'
 
 // Role hierarchy: admin > trabajador > viewer
 const ROLE_ACCESS = {
+  '/home':          ['admin', 'trabajador', 'viewer'],
   '/dashboard':     ['admin', 'trabajador', 'viewer'],
   '/lavadas':       ['admin', 'trabajador'],
   '/clientes':      ['admin', 'trabajador'],
