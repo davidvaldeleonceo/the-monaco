@@ -40,10 +40,10 @@ router.post('/register_negocio', async (req, res, next) => {
       [p_user_id, negocio.id, p_nombre_usuario || p_email?.split('@')[0] || '']
     )
 
-    await client.query('COMMIT')
+    // Seed default data (inside transaction)
+    await seedNegocio(negocio.id, client)
 
-    // Seed default data
-    await seedNegocio(negocio.id)
+    await client.query('COMMIT')
 
     // Return new session with negocio_id embedded in JWT
     const session = issueNewSession(p_user_id, p_email, negocio.id)
@@ -86,10 +86,10 @@ router.post('/crear_negocio_y_perfil', async (req, res, next) => {
       [userId, negocio.id, p_email?.split('@')[0] || '']
     )
 
-    await client.query('COMMIT')
+    // Seed default data (inside transaction)
+    await seedNegocio(negocio.id, client)
 
-    // Seed default data
-    await seedNegocio(negocio.id)
+    await client.query('COMMIT')
 
     // Return new session with negocio_id embedded in JWT
     const session = issueNewSession(userId, req.user.email, negocio.id)

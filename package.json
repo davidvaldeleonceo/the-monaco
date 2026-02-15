@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:prod": "API_TARGET=https://themonaco.com.co vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:connect": "sh scripts/db-tunnel.sh"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

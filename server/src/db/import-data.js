@@ -56,6 +56,14 @@ async function importTable(client, table, rows) {
   for (const row of rows) {
     const values = columns.map(col => {
       const val = row[col]
+
+      // Known PostgreSQL Array columns (should NOT be stringified)
+      const ARRAY_COLUMNS = ['dias_semana', 'adicionales_incluidos']
+
+      if (ARRAY_COLUMNS.includes(col)) {
+        return val // Pass raw array to pg driver
+      }
+
       // Convert objects/arrays to JSON strings for JSONB columns
       if (val !== null && typeof val === 'object') {
         return JSON.stringify(val)

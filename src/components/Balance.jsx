@@ -6,6 +6,7 @@ import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
+import { formatMoney } from '../utils/money'
 
 registerLocale('es', es)
 
@@ -331,13 +332,6 @@ export default function Balance() {
     fetchData()
   }
 
-  const formatMoney = (value) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0
-    }).format(value)
-  }
 
   const formatFecha = (fechaStr) => {
     const f = fechaStr?.split('T')[0]

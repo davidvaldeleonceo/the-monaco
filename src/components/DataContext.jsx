@@ -1,11 +1,18 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 import { useTenant } from './TenantContext'
+import { LAVADAS_SELECT, CLIENTES_SELECT } from '../config/constants'
 
 const DataContext = createContext()
 
 export function useData() {
   return useContext(DataContext)
+}
+
+function getCutoff60Days() {
+  const d = new Date()
+  d.setDate(d.getDate() - 60)
+  return d.toISOString()
 }
 
 export function DataProvider({ children }) {
@@ -18,19 +25,19 @@ export function DataProvider({ children }) {
   const [tiposMembresia, setTiposMembresia] = useState([])
   const [serviciosAdicionales, setServiciosAdicionales] = useState([])
   const [transacciones, setTransacciones] = useState([])
-  const [reservas, setReservas] = useState([])
   const [loading, setLoading] = useState(true)
-  const [initialized, setInitialized] = useState(false)
+  const [lavadasAllLoaded, setLavadasAllLoaded] = useState(false)
+
+  const fetchingRef = useRef(false)
+  const debounceRef = useRef(null)
 
   const fetchAllData = async () => {
-    if (initialized) {
-      setLoading(false)
-      return
-    }
-
+    if (fetchingRef.current) return
+    fetchingRef.current = true
     setLoading(true)
 
     try {
+      const cutoff = getCutoff60Days()
       const [
         clientesRes,
         lavadasRes,
@@ -39,16 +46,14 @@ export function DataProvider({ children }) {
         metodosPagoRes,
         tiposMembresiaRes,
         serviciosAdicionalesRes,
-        reservasRes
       ] = await Promise.all([
-        supabase.from('clientes').select('*, membresia:tipos_membresia(nombre)').order('nombre'),
-        supabase.from('lavadas').select('*, cliente:clientes(nombre), tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre)').order('fecha', { ascending: false }),
+        supabase.from('clientes').select(CLIENTES_SELECT).order('nombre'),
+        supabase.from('lavadas').select(LAVADAS_SELECT).gte('fecha', cutoff).order('fecha', { ascending: false }).limit(500),
         supabase.from('tipos_lavado').select('*').eq('activo', true),
         supabase.from('lavadores').select('*').eq('activo', true),
         supabase.from('metodos_pago').select('*').eq('activo', true),
         supabase.from('tipos_membresia').select('*').eq('activo', true),
-        supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre'),
-        supabase.from('reservas').select('*').order('fecha_hora', { ascending: true })
+        supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre')
       ])
 
       if (clientesRes.error) console.error('Error clientes:', clientesRes.error)
@@ -58,31 +63,41 @@ export function DataProvider({ children }) {
       if (metodosPagoRes.error) console.error('Error metodos_pago:', metodosPagoRes.error)
       if (tiposMembresiaRes.error) console.error('Error tipos_membresia:', tiposMembresiaRes.error)
       if (serviciosAdicionalesRes.error) console.error('Error servicios_adicionales:', serviciosAdicionalesRes.error)
-      if (reservasRes.error) console.error('Error reservas:', reservasRes.error)
 
       setClientes(clientesRes.data || [])
       setLavadas(lavadasRes.data || [])
+      setLavadasAllLoaded(false)
       setTiposLavado(tiposLavadoRes.data || [])
       setLavadores(lavadoresRes.data || [])
       setMetodosPago(metodosPagoRes.data || [])
       setTiposMembresia(tiposMembresiaRes.data || [])
       setServiciosAdicionales(serviciosAdicionalesRes.data || [])
-      setReservas(reservasRes.data || [])
-      setInitialized(true)
     } catch (error) {
       console.error('Error fetching data:', error)
     } finally {
       setLoading(false)
+      fetchingRef.current = false
     }
   }
 
   const refreshLavadas = async () => {
-    const { data } = await supabase
-      .from('lavadas')
-      .select('*, cliente:clientes(nombre), tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre)')
-      .order('fecha', { ascending: false })
+    const cutoff = getCutoff60Days()
+    const query = lavadasAllLoaded
+      ? supabase.from('lavadas').select(LAVADAS_SELECT).order('fecha', { ascending: false })
+      : supabase.from('lavadas').select(LAVADAS_SELECT).gte('fecha', cutoff).order('fecha', { ascending: false }).limit(500)
+    const { data } = await query
     setLavadas(data || [])
   }
+
+  const loadAllLavadas = useCallback(async () => {
+    if (lavadasAllLoaded) return
+    const { data } = await supabase
+      .from('lavadas')
+      .select(LAVADAS_SELECT)
+      .order('fecha', { ascending: false })
+    setLavadas(data || [])
+    setLavadasAllLoaded(true)
+  }, [lavadasAllLoaded])
 
   const refreshClientes = async () => {
     const { data } = await supabase
@@ -131,49 +146,31 @@ export function DataProvider({ children }) {
     setLavadas(prev => prev.filter(l => l.id !== lavadaId))
   }
 
-  const refreshReservas = async () => {
-    const { data } = await supabase
-      .from('reservas')
-      .select('*')
-      .order('fecha_hora', { ascending: true })
-    setReservas(data || [])
-  }
-
-  const addReservaLocal = (nuevaReserva) => {
-    setReservas(prev => [...prev, nuevaReserva].sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora)))
-  }
-
-  const updateReservaLocal = (reservaId, updates) => {
-    setReservas(prev => prev.map(r => r.id === reservaId ? { ...r, ...updates } : r))
-  }
-
-  const deleteReservaLocal = (reservaId) => {
-    setReservas(prev => prev.filter(r => r.id !== reservaId))
-  }
-
   useEffect(() => {
-    setInitialized(false)
+    fetchingRef.current = false
+    setLavadasAllLoaded(false)
     fetchAllData()
   }, [negocioId])
 
-  // Supabase Realtime subscription for lavadas
+  // Supabase Realtime subscription for lavadas — debounced
   useEffect(() => {
     if (!negocioId) return
 
     const channel = supabase
       .channel('lavadas-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lavadas' }, () => {
-        refreshLavadas()
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, () => {
-        refreshReservas()
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        debounceRef.current = setTimeout(() => {
+          refreshLavadas()
+        }, 300)
       })
       .subscribe()
 
     return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
       supabase.removeChannel(channel)
     }
-  }, [negocioId])
+  }, [negocioId, lavadasAllLoaded])
 
   const value = {
     negocioId,
@@ -185,10 +182,12 @@ export function DataProvider({ children }) {
     tiposMembresia,
     serviciosAdicionales,
     loading,
+    lavadasAllLoaded,
     fetchAllData,
     refreshLavadas,
     refreshClientes,
     refreshConfig,
+    loadAllLavadas,
     updateLavadaLocal,
     addLavadaLocal,
     addClienteLocal,
@@ -196,11 +195,6 @@ export function DataProvider({ children }) {
     deleteClienteLocal,
     deleteLavadaLocal,
     setLavadas,
-    reservas,
-    refreshReservas,
-    addReservaLocal,
-    updateReservaLocal,
-    deleteReservaLocal,
   }
 
   return (

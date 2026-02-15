@@ -8,6 +8,7 @@ import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
+import { formatMoney, formatMoneyShort } from '../utils/money'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import {
@@ -26,8 +27,8 @@ function fechaLocalStr(date) {
 function fmtFecha(date) {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`
 }
-const fmt = (v) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v)
-const fmtCorto = (v) => { if (v >= 1e6) return `$${(v/1e6).toFixed(1)}M`; if (v >= 1e3) return `$${(v/1e3).toFixed(0)}K`; return `$${v}` }
+const fmt = formatMoney
+const fmtCorto = formatMoneyShort
 const pct = (v, t) => t > 0 ? `${((v / t) * 100).toFixed(1)}%` : '0%'
 const pctNum = (v, t) => t > 0 ? ((v / t) * 100).toFixed(1) : 0
 

@@ -38,7 +38,7 @@ export function parseSelect(table, selectStr) {
       if (col === '*') {
         columns.push(`"${table}".*`)
       } else {
-        columns.push(`"${table}".${col}`)
+        columns.push(`"${table}"."${col}"`)
       }
     }
   }
@@ -56,11 +56,11 @@ export function parseSelect(table, selectStr) {
     const fkColumn = `${alias}_id`
 
     joins.push(
-      `LEFT JOIN "${joinTable}" "${tableAlias}" ON "${tableAlias}".id = "${table}".${fkColumn}`
+      `LEFT JOIN "${joinTable}" "${tableAlias}" ON "${tableAlias}"."id" = "${table}"."${fkColumn}"`
     )
 
     // Build json_build_object for the joined fields
-    const jsonParts = fields.map(f => `'${f}', "${tableAlias}".${f}`).join(', ')
+    const jsonParts = fields.map(f => `'${f}', "${tableAlias}"."${f}"`).join(', ')
     columns.push(`json_build_object(${jsonParts}) AS "${alias}"`)
 
     aliases[alias] = { table: joinTable, fields, tableAlias }

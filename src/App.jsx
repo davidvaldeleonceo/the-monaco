@@ -13,8 +13,6 @@ import Tareas from './components/Tareas'
 import PagoTrabajadores from './components/PagoTrabajadores'
 import Configuracion from './components/Configuracion'
 import Membresias from './components/Membresias'
-import Reservas from './components/Reservas'
-import AuditLog from './components/AuditLog'
 import { DataProvider } from './components/DataContext'
 import { TenantProvider, useTenant } from './components/TenantContext'
 import Onboarding from './components/Onboarding'
@@ -45,9 +43,7 @@ function AuthenticatedApp({ session }) {
           <Route path="/tareas" element={<RoleGuard path="/tareas"><Tareas /></RoleGuard>} />
           <Route path="/pagos" element={<RoleGuard path="/pagos"><PagoTrabajadores /></RoleGuard>} />
           <Route path="/membresias" element={<RoleGuard path="/membresias"><Membresias /></RoleGuard>} />
-          <Route path="/reservas" element={<RoleGuard path="/reservas"><Reservas /></RoleGuard>} />
           <Route path="/configuracion" element={<RoleGuard path="/configuracion"><Configuracion /></RoleGuard>} />
-          <Route path="/auditoria" element={<RoleGuard path="/auditoria"><AuditLog /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

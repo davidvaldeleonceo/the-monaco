@@ -8,6 +8,15 @@
 
 import { parseSelect } from './joinResolver.js'
 
+const COLUMN_NAME_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+function validateColumnName(col) {
+  if (!COLUMN_NAME_REGEX.test(col)) {
+    throw new Error(`Invalid column name: "${col}"`)
+  }
+  return col
+}
+
 const ALLOWED_TABLES = new Set([
   'users', 'negocios', 'user_profiles', 'clientes', 'lavadas',
   'tipos_lavado', 'tipos_membresia', 'lavadores', 'metodos_pago',
@@ -31,6 +40,8 @@ function parseFilters(query, table) {
   for (const [key, rawValue] of Object.entries(query)) {
     // Skip meta params
     if (['select', 'order', 'limit', 'offset', 'or', 'single'].includes(key)) continue
+
+    validateColumnName(key)
 
     const val = String(rawValue)
     const dotIdx = val.indexOf('.')
@@ -127,6 +138,8 @@ function parseOr(orParam, table, startIdx) {
     const firstDot = cond.indexOf('.')
     if (firstDot === -1) continue
     const column = cond.substring(0, firstDot)
+    validateColumnName(column)
+
     const rest = cond.substring(firstDot + 1)
     const secondDot = rest.indexOf('.')
     if (secondDot === -1) continue
@@ -206,6 +219,7 @@ export function buildSelectQuery(table, query, negocioId, isScoped) {
   if (query.order) {
     const orders = query.order.split(',').map(o => {
       const [col, dir] = o.split('.')
+      validateColumnName(col)
       return `"${table}"."${col}" ${dir === 'desc' ? 'DESC' : 'ASC'}`
     })
     sql += ' ORDER BY ' + orders.join(', ')
@@ -228,7 +242,14 @@ export function buildSelectQuery(table, query, negocioId, isScoped) {
  * Build an INSERT query. Returns the full row with optional select/joins.
  */
 export function buildInsertQuery(table, body, negocioId, isScoped, selectStr) {
-  const data = Array.isArray(body) ? body[0] : body
+  const raw = Array.isArray(body) ? body[0] : body
+
+  // Strip undefined values and convert empty-string FK columns to null
+  const data = {}
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === undefined) continue
+    data[k] = (v === '' && k.endsWith('_id')) ? null : v
+  }
 
   // Add negocio_id if scoped and not already present
   if (isScoped && negocioId && !data.negocio_id) {
@@ -236,6 +257,9 @@ export function buildInsertQuery(table, body, negocioId, isScoped, selectStr) {
   }
 
   const keys = Object.keys(data)
+  // Simple validation for keys to ensure they are valid columns
+  keys.forEach(k => validateColumnName(k))
+
   const values = Object.values(data).map(v =>
     v !== null && typeof v === 'object' ? JSON.stringify(v) : v
   )
@@ -252,16 +276,29 @@ export function buildInsertQuery(table, body, negocioId, isScoped, selectStr) {
  * Build an UPDATE query.
  */
 export function buildUpdateQuery(table, body, filters, negocioId, isScoped) {
-  const keys = Object.keys(body)
-  const values = Object.values(body).map(v =>
+  // Strip undefined values and convert empty strings to null for FK columns
+  const cleanBody = {}
+  for (const [k, v] of Object.entries(body)) {
+    if (v === undefined) continue
+    cleanBody[k] = (v === '' && k.endsWith('_id')) ? null : v
+  }
+
+  const keys = Object.keys(cleanBody)
+  if (keys.length === 0) {
+    throw new Error('No valid columns to update')
+  }
+
+  const values = Object.values(cleanBody).map(v =>
     v !== null && typeof v === 'object' ? JSON.stringify(v) : v
   )
 
+  keys.forEach(k => validateColumnName(k))
   const setClauses = keys.map((k, i) => `"${k}" = $${i + 1}`)
   let paramIdx = keys.length + 1
 
   const whereClauses = []
   for (const [key, rawValue] of Object.entries(filters)) {
+    validateColumnName(key)
     const val = String(rawValue)
     const dotIdx = val.indexOf('.')
     if (dotIdx === -1) continue
@@ -296,6 +333,7 @@ export function buildDeleteQuery(table, filters, negocioId, isScoped) {
   let paramIdx = 1
 
   for (const [key, rawValue] of Object.entries(filters)) {
+    validateColumnName(key)
     const val = String(rawValue)
     const dotIdx = val.indexOf('.')
     if (dotIdx === -1) continue

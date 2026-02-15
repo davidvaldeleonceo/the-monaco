@@ -10,10 +10,8 @@ const ROLE_ACCESS = {
   '/reportes':      ['admin'],
   '/tareas':        ['admin', 'trabajador'],
   '/membresias':    ['admin'],
-  '/reservas':      ['admin', 'trabajador'],
   '/pagos':         ['admin'],
   '/configuracion': ['admin'],
-  '/auditoria':     ['admin'],
 }
 
 export function getAccessibleRoutes(rol) {

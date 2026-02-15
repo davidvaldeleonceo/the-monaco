@@ -10,11 +10,7 @@
  */
 
 import { io } from 'socket.io-client'
-
-// ─── Config ────────────────────────────────────────────────────────
-const API_URL = import.meta.env.VITE_API_URL || ''  // empty = same origin (proxied by vite)
-const TOKEN_KEY = 'monaco_auth_token'
-const SESSION_KEY = 'monaco_auth_session'
+import { API_URL, TOKEN_KEY, SESSION_KEY } from './config/constants'
 
 // ─── Token helpers ─────────────────────────────────────────────────
 function getToken() {

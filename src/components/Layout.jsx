@@ -12,8 +12,6 @@ import {
   CheckSquare,
   Wallet,
   CreditCard,
-  CalendarClock,
-  ScrollText,
   Settings,
   LogOut,
   Menu,
@@ -43,9 +41,7 @@ export default function Layout({ user }) {
     { to: '/reportes', icon: FileText, label: 'Reportes' },
     { to: '/tareas', icon: CheckSquare, label: 'Control Tareas' },
     { to: '/membresias', icon: CreditCard, label: 'Membresías' },
-    { to: '/reservas', icon: CalendarClock, label: 'Reservas' },
     { to: '/pagos', icon: Wallet, label: 'Pago Trabajadores' },
-    { to: '/auditoria', icon: ScrollText, label: 'Auditoría' },
     { to: '/configuracion', icon: Settings, label: 'Configuración' },
   ]
 

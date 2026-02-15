@@ -7,20 +7,8 @@ import {
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from 'recharts'
-
-const ESTADO_COLORS = {
-  'EN ESPERA': '#f59e0b',
-  'EN LAVADO': '#3b82f6',
-  'NOTIFICADO': '#8b5cf6',
-  'ENTREGADO': '#10b981'
-}
-
-const ESTADO_LABELS = {
-  'EN ESPERA': 'Espera',
-  'EN LAVADO': 'Lavado',
-  'NOTIFICADO': 'Notificado',
-  'ENTREGADO': 'Entregado'
-}
+import { formatMoney, formatMoneyShort } from '../utils/money'
+import { ESTADO_COLORS, ESTADO_LABELS } from '../config/constants'
 
 const DAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
@@ -30,17 +18,6 @@ const PERIODO_LABELS = {
   semana: 'Semana',
   mes: 'Mes',
   ano: 'Año'
-}
-
-const formatMoney = (value) =>
-  new Intl.NumberFormat('es-CO', {
-    style: 'currency', currency: 'COP', minimumFractionDigits: 0
-  }).format(value)
-
-const formatMoneyShort = (value) => {
-  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`
-  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`
-  return `$${value}`
 }
 
 const CustomTooltip = ({ active, payload, label }) => {

@@ -2,7 +2,6 @@ import { useState, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
-import { logAudit } from '../utils/auditLog'
 import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -120,7 +119,6 @@ export default function Clientes() {
 
       if (!error && data) {
         updateClienteLocal(editando, data)
-        logAudit({ tabla: 'clientes', accion: 'update', registro_id: editando, despues: { nombre: data.nombre, placa: data.placa }, descripcion: `Cliente actualizado: ${data.nombre}`, usuario_email: userEmail, negocio_id: negocioId })
       }
     } else {
       const { data, error } = await supabase
@@ -131,7 +129,6 @@ export default function Clientes() {
 
       if (!error && data) {
         addClienteLocal(data)
-        logAudit({ tabla: 'clientes', accion: 'create', registro_id: data.id, despues: { nombre: data.nombre, placa: data.placa }, descripcion: `Nuevo cliente: ${data.nombre} (${data.placa})`, usuario_email: userEmail, negocio_id: negocioId })
       }
     }
 
@@ -186,7 +183,6 @@ export default function Clientes() {
       } else {
         deleteClienteLocal(id)
         setSelectedClientes(prev => { const next = new Set(prev); next.delete(id); return next })
-        logAudit({ tabla: 'clientes', accion: 'delete', registro_id: id, antes: cliente ? { nombre: cliente.nombre, placa: cliente.placa } : null, descripcion: `Cliente eliminado: ${cliente?.nombre || id}`, usuario_email: userEmail, negocio_id: negocioId })
       }
     }
   }

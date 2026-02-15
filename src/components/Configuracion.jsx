@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { Plus, X, Edit, Trash2, Settings, ChevronDown } from 'lucide-react'
+import { formatMoney } from '../utils/money'
 
 export default function Configuracion() {
   const { refreshConfig, serviciosAdicionales, negocioId } = useData()
@@ -12,6 +13,9 @@ export default function Configuracion() {
   const [formData, setFormData] = useState({})
   const [expandedCard, setExpandedCard] = useState(null)
   const [showBulkModal, setShowBulkModal] = useState(false)
+  // Adicionales inline editing (inside lavados tab)
+  const [adicionalEdit, setAdicionalEdit] = useState(null) // { id, nombre, precio } or { id: null, nombre, precio } for new
+  const [showAdicionales, setShowAdicionales] = useState(true)
   const [bulkForm, setBulkForm] = useState({
     tipo_pago: null,
     pago_porcentaje: '',
@@ -25,10 +29,9 @@ export default function Configuracion() {
 
   const tabs = [
     { id: 'membresias', label: 'Tipos de Cliente', table: 'tipos_membresia' },
-    { id: 'lavados', label: 'Tipos de Lavado', table: 'tipos_lavado' },
+    { id: 'lavados', label: 'Tipos de Servicio', table: 'tipos_lavado' },
     { id: 'metodos', label: 'Métodos de Pago', table: 'metodos_pago' },
     { id: 'lavadores', label: 'Lavadores', table: 'lavadores' },
-    { id: 'servicios', label: 'Servicios', table: 'servicios_adicionales' }
   ]
 
   useEffect(() => {
@@ -56,8 +59,6 @@ export default function Configuracion() {
         return { nombre: '', activo: true }
       case 'lavadores':
         return { nombre: '', telefono: '', activo: true, tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null }
-      case 'servicios':
-        return { nombre: '', precio: '', activo: true }
       default:
         return {}
     }
@@ -73,8 +74,6 @@ export default function Configuracion() {
         return ['nombre', 'activo']
       case 'lavadores':
         return ['nombre', 'telefono', 'activo', 'tipo_pago', 'pago_porcentaje', 'pago_sueldo_base', 'pago_por_lavada', 'pago_por_adicional', 'pago_porcentaje_lavada', 'pago_adicional_fijo', 'pago_adicionales_detalle']
-      case 'servicios':
-        return ['nombre', 'precio', 'activo']
       default:
         return []
     }
@@ -217,12 +216,35 @@ export default function Configuracion() {
     }
   }
 
-  const formatMoney = (value) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0
-    }).format(value)
+
+  // ─── Adicionales CRUD ─────────────────────────────────────────────
+  const handleAdicionalSave = async () => {
+    if (!adicionalEdit || !adicionalEdit.nombre.trim()) return
+    const payload = { nombre: adicionalEdit.nombre.trim(), precio: Number(adicionalEdit.precio) || 0, activo: true }
+    let error
+    if (adicionalEdit.id) {
+      const res = await supabase.from('servicios_adicionales').update(payload).eq('id', adicionalEdit.id)
+      error = res.error
+    } else {
+      const res = await supabase.from('servicios_adicionales').insert([{ ...payload, negocio_id: negocioId }])
+      error = res.error
+    }
+    if (error) { alert('Error: ' + error.message); return }
+    setAdicionalEdit(null)
+    refreshConfig()
+  }
+
+  const handleAdicionalDelete = async (id) => {
+    if (!confirm('¿Eliminar este adicional?')) return
+    const { error } = await supabase.from('servicios_adicionales').delete().eq('id', id)
+    if (error) { alert('Error: ' + error.message); return }
+    refreshConfig()
+  }
+
+  const handleAdicionalToggle = async (item) => {
+    const { error } = await supabase.from('servicios_adicionales').update({ activo: !item.activo }).eq('id', item.id)
+    if (error) { alert('Error: ' + error.message); return }
+    refreshConfig()
   }
 
   const formatPct = (v) => (Number(v) || 0) + '%'
@@ -268,209 +290,251 @@ export default function Configuracion() {
     }))
   }
 
+  const renderAdicionalesSection = () => (
+    <div key="adicionales-section" className="adicionales-section">
+      <div className="adicionales-section-header" onClick={() => setShowAdicionales(!showAdicionales)}>
+        <h3>Servicios Adicionales ({serviciosAdicionales.length})</h3>
+        <ChevronDown size={16} className={showAdicionales ? 'rotated' : ''} />
+      </div>
+      {showAdicionales && (
+        <div className="adicionales-section-body">
+          {serviciosAdicionales.map(s => (
+            <div key={s.id} className="adicional-row">
+              {adicionalEdit?.id === s.id ? (
+                <>
+                  <input
+                    type="text"
+                    className="adicional-input"
+                    value={adicionalEdit.nombre}
+                    onChange={(e) => setAdicionalEdit({ ...adicionalEdit, nombre: e.target.value })}
+                    placeholder="Nombre"
+                    autoFocus
+                  />
+                  <input
+                    type="number"
+                    className="adicional-input adicional-input-precio"
+                    value={adicionalEdit.precio}
+                    onChange={(e) => setAdicionalEdit({ ...adicionalEdit, precio: e.target.value })}
+                    placeholder="Precio"
+                  />
+                  <button className="btn-icon" onClick={handleAdicionalSave} title="Guardar"><Plus size={16} style={{ transform: 'rotate(45deg)' }} /></button>
+                  <button className="btn-icon" onClick={() => setAdicionalEdit(null)} title="Cancelar"><X size={16} /></button>
+                </>
+              ) : (
+                <>
+                  <span className="adicional-nombre">{s.nombre}</span>
+                  <span className="adicional-precio">{formatMoney(s.precio)}</span>
+                  <label className="switch switch-sm" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={s.activo} onChange={() => handleAdicionalToggle(s)} />
+                    <span className="slider"></span>
+                  </label>
+                  <button className="btn-icon" onClick={() => setAdicionalEdit({ id: s.id, nombre: s.nombre, precio: s.precio })} title="Editar"><Edit size={14} /></button>
+                  <button className="btn-icon delete" onClick={() => handleAdicionalDelete(s.id)} title="Eliminar"><Trash2 size={14} /></button>
+                </>
+              )}
+            </div>
+          ))}
+          {adicionalEdit?.id === null ? (
+            <div className="adicional-row adicional-row-new">
+              <input
+                type="text"
+                className="adicional-input"
+                value={adicionalEdit.nombre}
+                onChange={(e) => setAdicionalEdit({ ...adicionalEdit, nombre: e.target.value })}
+                placeholder="Nombre del adicional"
+                autoFocus
+              />
+              <input
+                type="number"
+                className="adicional-input adicional-input-precio"
+                value={adicionalEdit.precio}
+                onChange={(e) => setAdicionalEdit({ ...adicionalEdit, precio: e.target.value })}
+                placeholder="Precio"
+              />
+              <button className="btn-icon" onClick={handleAdicionalSave} title="Guardar"><Plus size={16} /></button>
+              <button className="btn-icon" onClick={() => setAdicionalEdit(null)} title="Cancelar"><X size={16} /></button>
+            </div>
+          ) : (
+            <button className="btn-add-adicional" onClick={() => setAdicionalEdit({ id: null, nombre: '', precio: '' })}>
+              <Plus size={14} /> Agregar adicional
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
   const renderTable = () => {
     switch (activeTab) {
       case 'membresias':
         return (
           <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Precio</th>
-                <th>Descuento</th>
-                <th>Duración</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(item => (
-                <tr key={item.id}>
-                  <td>{item.nombre}</td>
-                  <td>{formatMoney(item.precio)}</td>
-                  <td>{(item.descuento * 100).toFixed(0)}%</td>
-                  <td>{item.duracion_dias === 1 ? '1 mes' : `${item.duracion_dias} meses`}</td>
-                  <td>
-                    <label className="switch">
-                      <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
-                      <span className="slider"></span>
-                    </label>
-                  </td>
-                  <td>
-                    <div className="acciones">
-                      <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                      <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
-                    </div>
-                  </td>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Precio</th>
+                  <th>Descuento</th>
+                  <th>Duración</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td>{formatMoney(item.precio)}</td>
+                    <td>{(item.descuento * 100).toFixed(0)}%</td>
+                    <td>{item.duracion_dias === 1 ? '1 mes' : `${item.duracion_dias} meses`}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )
       case 'lavados':
         return (
-          <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Precio</th>
-                <th>Incluye</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(item => {
-                const inclNames = (item.adicionales_incluidos || [])
-                  .map(id => serviciosAdicionales.find(s => s.id === id)?.nombre)
-                  .filter(Boolean)
-                return (
-                <tr key={item.id}>
-                  <td>{item.nombre}</td>
-                  <td>{formatMoney(item.precio)}</td>
-                  <td style={{ fontSize: '0.85em', color: inclNames.length ? 'inherit' : '#999' }}>
-                    {inclNames.length ? inclNames.join(', ') : '—'}
-                  </td>
-                  <td>
-                    <label className="switch">
-                      <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
-                      <span className="slider"></span>
-                    </label>
-                  </td>
-                  <td>
-                    <div className="acciones">
-                      <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                      <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
-                    </div>
-                  </td>
-                </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          </div>
+          <>
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Precio</th>
+                    <th>Incluye</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map(item => {
+                    const inclNames = (item.adicionales_incluidos || [])
+                      .map(id => serviciosAdicionales.find(s => s.id === id)?.nombre)
+                      .filter(Boolean)
+                    return (
+                      <tr key={item.id}>
+                        <td>{item.nombre}</td>
+                        <td>{formatMoney(item.precio)}</td>
+                        <td style={{ fontSize: '0.85em', color: inclNames.length ? 'inherit' : '#999' }}>
+                          {inclNames.length ? inclNames.join(', ') : '—'}
+                        </td>
+                        <td>
+                          <label className="switch">
+                            <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                            <span className="slider"></span>
+                          </label>
+                        </td>
+                        <td>
+                          <div className="acciones">
+                            <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                            <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {renderAdicionalesSection()}
+          </>
         )
       case 'metodos':
         return (
           <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(item => (
-                <tr key={item.id}>
-                  <td>{item.nombre}</td>
-                  <td>
-                    <label className="switch">
-                      <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
-                      <span className="slider"></span>
-                    </label>
-                  </td>
-                  <td>
-                    <div className="acciones">
-                      <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                      <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
-                    </div>
-                  </td>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )
       case 'lavadores':
         return (
           <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Teléfono</th>
-                <th>Modo de Pago</th>
-                <th>Detalle</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(item => (
-                <tr key={item.id}>
-                  <td>{item.nombre}</td>
-                  <td>{item.telefono || '-'}</td>
-                  <td>
-                    <select
-                      value={item.tipo_pago || ''}
-                      onChange={(e) => handleTipoPagoInline(item, e.target.value)}
-                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border, #ddd)', fontSize: '0.85em', width: '100%' }}
-                    >
-                      <option value="">Sin configurar</option>
-                      <option value="porcentaje">Porcentaje</option>
-                      <option value="sueldo_fijo">Sueldo fijo</option>
-                      <option value="porcentaje_lavada">% de lavada + adic.</option>
-                    </select>
-                  </td>
-                  <td style={{ fontSize: '0.85em', color: item.tipo_pago ? 'inherit' : '#999' }}>
-                    {getDetallePago(item)}
-                  </td>
-                  <td>
-                    <label className="switch">
-                      <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
-                      <span className="slider"></span>
-                    </label>
-                  </td>
-                  <td>
-                    <div className="acciones">
-                      <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                      <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
-                    </div>
-                  </td>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Teléfono</th>
+                  <th>Modo de Pago</th>
+                  <th>Detalle</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        )
-      case 'servicios':
-        return (
-          <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Precio</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(item => (
-                <tr key={item.id}>
-                  <td>{item.nombre}</td>
-                  <td>{formatMoney(item.precio)}</td>
-                  <td>
-                    <label className="switch">
-                      <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
-                      <span className="slider"></span>
-                    </label>
-                  </td>
-                  <td>
-                    <div className="acciones">
-                      <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                      <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td className="lavador-telefono">{item.telefono || '-'}</td>
+                    <td>
+                      <select
+                        value={item.tipo_pago || ''}
+                        onChange={(e) => handleTipoPagoInline(item, e.target.value)}
+                        className="config-inline-select"
+                      >
+                        <option value="">Sin configurar</option>
+                        <option value="porcentaje">Porcentaje</option>
+                        <option value="sueldo_fijo">Sueldo fijo</option>
+                        <option value="porcentaje_lavada">% de lavada + adic.</option>
+                      </select>
+                    </td>
+                    <td className={`lavador-detalle ${!item.tipo_pago ? 'muted' : ''}`}>
+                      {getDetallePago(item)}
+                    </td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )
       default:
@@ -557,36 +621,7 @@ export default function Configuracion() {
               )}
             </div>
           )
-        })
-      case 'servicios':
-        return data.map(item => {
-          const isExpanded = expandedCard === item.id
-          return (
-            <div key={item.id} className={`config-card ${isExpanded ? 'expanded' : ''}`}>
-              <div className="config-card-header" onClick={() => setExpandedCard(isExpanded ? null : item.id)}>
-                <div className="config-card-left">
-                  <span className="config-card-nombre">{item.nombre}</span>
-                  <span className="config-card-sub">{formatMoney(item.precio)}</span>
-                </div>
-                <div className="config-card-right">
-                  <label className="switch" onClick={e => e.stopPropagation()}>
-                    <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
-                    <span className="slider"></span>
-                  </label>
-                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
-                </div>
-              </div>
-              {isExpanded && (
-                <div className="config-card-body">
-                  <div className="cliente-card-actions">
-                    <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
-                    <button className="btn-secondary btn-danger-outline" onClick={() => handleDelete(item.id)}><Trash2 size={16} /> Eliminar</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })
+        }).concat(renderAdicionalesSection())
       case 'metodos':
         return data.map(item => (
           <div key={item.id} className="config-card">
@@ -643,7 +678,7 @@ export default function Configuracion() {
                   </div>
                   <div className="cliente-card-row">
                     <span className="cliente-card-label">Detalle</span>
-                    <span className="cliente-card-value" style={{ fontSize: '0.8rem', textAlign: 'right' }}>{getDetallePago(item)}</span>
+                    <span className={`cliente-card-value lavador-detalle ${!item.tipo_pago ? 'muted' : ''}`}>{getDetallePago(item)}</span>
                   </div>
                   <div className="cliente-card-actions">
                     <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
@@ -716,16 +751,61 @@ export default function Configuracion() {
           )}
           {getModoAdicional(formObj) === 'por_servicio' && (
             <>
-              {serviciosAdicionales.map(s => (
-                <div className="form-group" key={s.id}>
-                  <label>{s.nombre}</label>
-                  <input
-                    type="number"
-                    value={numVal(formObj.pago_adicionales_detalle?.[s.id])}
-                    onChange={(e) => handleDetalleAdicionalChange(setFn, s.id, e.target.value)}
-                  />
-                </div>
-              ))}
+              <div className="adicionales-config-list">
+                {Object.keys(formObj.pago_adicionales_detalle || {}).map(id => {
+                  const s = serviciosAdicionales.find(serv => serv.id === id)
+                  if (!s) return null
+                  return (
+                    <div className="form-group-row" key={id}>
+                      <label style={{ flex: 1 }}>{s.nombre}</label>
+                      <input
+                        type="number"
+                        style={{ width: '100px' }}
+                        value={numVal(formObj.pago_adicionales_detalle[id])}
+                        onChange={(e) => handleDetalleAdicionalChange(setFn, id, e.target.value)}
+                        placeholder="$0"
+                      />
+                      <button
+                        type="button"
+                        className="btn-icon delete"
+                        onClick={() => {
+                          const newDetalle = { ...formObj.pago_adicionales_detalle }
+                          delete newDetalle[id]
+                          setFn(prev => ({ ...prev, pago_adicionales_detalle: newDetalle }))
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="form-group">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const id = e.target.value
+                    if (id) {
+                      setFn(prev => ({
+                        ...prev,
+                        pago_adicionales_detalle: {
+                          ...prev.pago_adicionales_detalle,
+                          [id]: 0
+                        }
+                      }))
+                    }
+                  }}
+                  className="add-service-select"
+                >
+                  <option value="">+ Agregar servicio adicional</option>
+                  {serviciosAdicionales
+                    .filter(s => !formObj.pago_adicionales_detalle?.[s.id])
+                    .map(s => (
+                      <option key={s.id} value={s.id}>{s.nombre}</option>
+                    ))}
+                </select>
+              </div>
             </>
           )}
         </>
@@ -826,22 +906,6 @@ export default function Configuracion() {
             {renderPagoFields(formData, setFormData, numChange)}
             <div className="form-group checkbox-group">
               <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData(prev => ({ ...prev, activo: e.target.checked }))} /> Activo</label>
-            </div>
-          </>
-        )
-      case 'servicios':
-        return (
-          <>
-            <div className="form-group">
-              <label>Nombre</label>
-              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
-            </div>
-            <div className="form-group">
-              <label>Precio</label>
-              <input type="number" value={numVal(formData.precio)} onChange={numChange('precio')} required />
-            </div>
-            <div className="form-group checkbox-group">
-              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
             </div>
           </>
         )

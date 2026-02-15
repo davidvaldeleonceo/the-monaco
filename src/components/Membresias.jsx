@@ -7,6 +7,7 @@ import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
+import { formatMoney } from '../utils/money'
 
 registerLocale('es', es)
 
@@ -306,13 +307,6 @@ export default function Membresias() {
     }
   }
 
-  const formatMoney = (value) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0
-    }).format(value)
-  }
 
   const pagosFiltrados = pagos.filter(p => {
     const matchSearch = !searchCliente ||

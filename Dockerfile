@@ -10,15 +10,21 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 
-# Copy server
+# Install build deps for bcrypt (native addon)
+RUN apk add --no-cache python3 make g++
+
+# Copy server package files and install
 COPY server/package.json server/package-lock.json* ./server/
 WORKDIR /app/server
 RUN npm install --production
 
+# Remove build deps to keep image small
+RUN apk del python3 make g++
+
 # Copy server source
 COPY server/src ./src
 
-# Copy built frontend
+# Copy built frontend from stage 1
 COPY --from=frontend-build /app/dist /app/dist
 
 ENV NODE_ENV=production
@@ -26,5 +32,5 @@ ENV PORT=3000
 
 EXPOSE 3000
 
-# Run migrations then start server
+# Run migrations (safe — all IF NOT EXISTS), then start server
 CMD ["sh", "-c", "node src/db/migrate.js && node src/index.js"]

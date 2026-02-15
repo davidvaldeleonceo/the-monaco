@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
-import { logAudit } from '../utils/auditLog'
 import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash, Minus } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
+import { formatMoney } from '../utils/money'
 
 registerLocale('es', es)
 
@@ -499,7 +499,6 @@ export default function PagoTrabajadores() {
     }
 
     const lavadorNombre = lavador?.nombre || 'Trabajador'
-    logAudit({ tabla: 'pago_trabajadores', accion: editandoId ? 'update' : 'create', registro_id: editandoId || 'nuevo', despues: { lavador: lavadorNombre, total: formData.total_pagar, periodo }, descripcion: `Pago ${editandoId ? 'editado' : 'creado'}: ${lavadorNombre} - $${formData.total_pagar?.toLocaleString()}`, usuario_email: userEmail, negocio_id: negocioId })
 
     setShowModal(false)
     setModalMinimized(false)
@@ -531,7 +530,6 @@ export default function PagoTrabajadores() {
       .ilike('placa_o_persona', nombreLavador)
       .ilike('descripcion', `%${descripcionBuscada}%`)
 
-    logAudit({ tabla: 'pago_trabajadores', accion: 'delete', registro_id: pago.id, antes: { lavador: nombreLavador, total: pago.total_pagar, periodo }, descripcion: `Pago anulado: ${nombreLavador}`, usuario_email: userEmail, negocio_id: negocioId })
 
     fetchData()
   }
@@ -543,13 +541,6 @@ export default function PagoTrabajadores() {
     return `${d}/${m}/${y}`
   }
 
-  const formatMoney = (value) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0
-    }).format(value)
-  }
 
   const pagosActivos = pagos.filter(p => !p.anulado)
   const totalPagadoMes = pagosActivos.reduce((sum, p) => sum + Number(p.total_pagar), 0)
@@ -624,9 +615,9 @@ export default function PagoTrabajadores() {
         {detalle.length === 0 && (
           <span className="descuentos-empty">Sin descuentos</span>
         )}
-        <div className="pago-linea-total" style={{ marginTop: '0.5rem' }}>
+        <div className="pago-linea-total descuentos-total-line">
           <span>Total descuentos</span>
-          <strong style={{ color: 'var(--accent-red)' }}>{formatMoney(formData.descuentos)}</strong>
+          <strong className="descuentos-total-valor">{formatMoney(formData.descuentos)}</strong>
         </div>
       </div>
     )
@@ -652,8 +643,8 @@ export default function PagoTrabajadores() {
     const lavador = getSelectedLavador()
     return (
       <>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '1rem' }}>
-          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+        <div className="pago-form-fechas">
+          <div className="form-group">
             <label>Fecha Desde</label>
             <DatePicker
               selected={parseDateStr(formData.fecha_desde)}
@@ -666,7 +657,7 @@ export default function PagoTrabajadores() {
               highlightDates={highlightPagados}
             />
           </div>
-          <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+          <div className="form-group">
             <label>Fecha Hasta</label>
             <DatePicker
               selected={parseDateStr(formData.fecha_hasta)}
@@ -684,42 +675,42 @@ export default function PagoTrabajadores() {
 
         {renderMetodoPagoSelect()}
 
-        {calculando && <p style={{ color: '#888', fontStyle: 'italic' }}>Calculando...</p>}
+        {calculando && <p className="pago-calculando">Calculando...</p>}
 
         {!calculando && formData.fecha_desde && formData.fecha_hasta && (
-          <div style={{ background: 'var(--bg-secondary, #f5f5f5)', padding: '12px', borderRadius: '8px', marginBottom: '12px', gridColumn: '1 / -1' }}>
-            <p style={{ margin: '0 0 8px', fontWeight: '600' }}>Resumen ({tipoPagoLabel(lavador?.tipo_pago)})</p>
-            <p style={{ margin: '4px 0' }}>Servicios en período: <strong>{formData.lavadas_cantidad}</strong></p>
-            <p style={{ margin: '4px 0' }}>Adicionales: <strong>{formData.adicionales_cantidad}</strong></p>
+          <div className="pago-resumen pago-form-fullwidth">
+            <p className="pago-resumen-titulo">Resumen ({tipoPagoLabel(lavador?.tipo_pago)})</p>
+            <p className="pago-resumen-linea">Servicios en período: <strong>{formData.lavadas_cantidad}</strong></p>
+            <p className="pago-resumen-linea">Adicionales: <strong>{formData.adicionales_cantidad}</strong></p>
             {lavadasExcluidas > 0 && (
-              <p style={{ margin: '4px 0', color: 'var(--accent-yellow)', fontSize: '0.85em' }}>
+              <p className="pago-resumen-excluidos">
                 {lavadasExcluidas} servicio{lavadasExcluidas > 1 ? 's' : ''} excluido{lavadasExcluidas > 1 ? 's' : ''} (días ya pagados)
               </p>
             )}
             {lavador?.tipo_pago === 'porcentaje' && (
-              <p style={{ margin: '4px 0' }}>Valor total servicios: <strong>{formatMoney(formData.detalle?.suma_valor_lavadas || 0)}</strong> x {lavador.pago_porcentaje || 0}%</p>
+              <p className="pago-resumen-linea">Valor total servicios: <strong>{formatMoney(formData.detalle?.suma_valor_lavadas || 0)}</strong> x {lavador.pago_porcentaje || 0}%</p>
             )}
             {lavador?.tipo_pago === 'sueldo_fijo' && (
               <>
-                <p style={{ margin: '4px 0' }}>Sueldo base: <strong>{formatMoney(lavador.pago_sueldo_base || 0)}</strong></p>
-                <p style={{ margin: '4px 0' }}>+ {formData.lavadas_cantidad} servicios x {formatMoney(lavador.pago_por_lavada || 0)}</p>
-                <p style={{ margin: '4px 0' }}>+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_por_adicional || 0)}</p>
+                <p className="pago-resumen-linea">Sueldo base: <strong>{formatMoney(lavador.pago_sueldo_base || 0)}</strong></p>
+                <p className="pago-resumen-linea">+ {formData.lavadas_cantidad} servicios x {formatMoney(lavador.pago_por_lavada || 0)}</p>
+                <p className="pago-resumen-linea">+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_por_adicional || 0)}</p>
               </>
             )}
             {lavador?.tipo_pago === 'porcentaje_lavada' && (
               <>
-                <p style={{ margin: '4px 0' }}>% por tipo de servicio: {lavador.pago_porcentaje_lavada || 0}%</p>
-                <p style={{ margin: '4px 0' }}>+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_adicional_fijo || 0)}</p>
+                <p className="pago-resumen-linea">% por tipo de servicio: {lavador.pago_porcentaje_lavada || 0}%</p>
+                <p className="pago-resumen-linea">+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_adicional_fijo || 0)}</p>
               </>
             )}
-            <div className="pago-linea-total" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+            <div className="pago-linea-total pago-resumen-subtotal">
               <span>Subtotal</span>
               <strong>{formatMoney(formData.total)}</strong>
             </div>
           </div>
         )}
 
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div className="pago-form-fullwidth">
           {renderDescuentosSection()}
           <div className="pago-linea-total pago-linea-final">
             <span>Total a Pagar</span>
@@ -784,7 +775,7 @@ export default function PagoTrabajadores() {
           />
         </div>
 
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div className="pago-form-fullwidth">
           <div className="pago-linea-total">
             <span>Total</span>
             <strong>{formatMoney(formData.total)}</strong>
@@ -872,14 +863,14 @@ export default function PagoTrabajadores() {
         </div>
       </div>
 
-      <div className="card">
+      {/* Desktop: tabla */}
+      <div className="card pagos-tabla-desktop">
         <div className="table-container">
         <table className="data-table">
           <thead>
             <tr>
               <th>Fecha</th>
               <th>Trabajador</th>
-              <th>Tipo Pago</th>
               <th>Período</th>
               <th>Servicios</th>
               <th>Total</th>
@@ -890,46 +881,32 @@ export default function PagoTrabajadores() {
           </thead>
           <tbody>
             {pagos.map((pago) => {
-              const esAuto = !!pago.detalle
               const esAnulado = !!pago.anulado
               return (
                 <tr key={pago.id} className={esAnulado ? 'fila-anulada' : ''}>
                   <td>{formatFechaLocal(pago.fecha)}</td>
                   <td>{pago.lavador?.nombre}</td>
-                  <td>{esAuto ? tipoPagoLabel(pago.detalle?.tipo_pago) : 'Manual'}</td>
-                  <td>{pago.fecha_desde && pago.fecha_hasta
+                  <td className="pagos-periodo">{pago.fecha_desde && pago.fecha_hasta
                     ? `${formatFechaLocal(pago.fecha_desde)} - ${formatFechaLocal(pago.fecha_hasta)}`
                     : '-'}</td>
                   <td>{pago.lavadas_cantidad || 0}</td>
                   <td>{formatMoney(pago.total)}</td>
-                  <td className="valor-negativo" title={(pago.descuentos_detalle || []).map(d => `${d.concepto}: ${formatMoney(d.valor)}`).join('\n')}>
+                  <td className="valor-negativo">
                     {formatMoney(pago.descuentos)}
                     {(pago.descuentos_detalle || []).length > 0 && (
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block' }}>
+                      <span className="descuento-conceptos">
                         {(pago.descuentos_detalle || []).map(d => d.concepto).filter(Boolean).join(', ')}
                       </span>
                     )}
                   </td>
                   <td className={esAnulado ? '' : 'valor-positivo'}><strong>{formatMoney(pago.total_pagar)}</strong></td>
-                  <td style={{ textAlign: 'center' }}>
+                  <td className="acciones-cell">
                     {esAnulado ? (
                       <span className="estado-badge inactivo">Anulado</span>
                     ) : (
                       <div className="acciones">
-                        <button
-                          className="btn-icon"
-                          onClick={() => handleEditar(pago)}
-                          title="Editar pago"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          className="btn-icon delete"
-                          onClick={() => handleAnular(pago)}
-                          title="Anular pago"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <button className="btn-icon" onClick={() => handleEditar(pago)} title="Editar"><Pencil size={16} /></button>
+                        <button className="btn-icon delete" onClick={() => handleAnular(pago)} title="Anular"><Trash2 size={16} /></button>
                       </div>
                     )}
                   </td>
@@ -938,7 +915,7 @@ export default function PagoTrabajadores() {
             })}
             {pagos.length === 0 && (
               <tr>
-                <td colSpan="9" className="empty">No hay pagos registrados en este período</td>
+                <td colSpan="8" className="empty">No hay pagos registrados en este período</td>
               </tr>
             )}
           </tbody>
@@ -946,12 +923,52 @@ export default function PagoTrabajadores() {
         </div>
       </div>
 
+      {/* Mobile: cards */}
+      <div className="pagos-cards-mobile">
+        {pagos.length === 0 && (
+          <div className="clientes-cards-empty">No hay pagos registrados en este período</div>
+        )}
+        {pagos.map((pago) => {
+          const esAnulado = !!pago.anulado
+          const periodo = pago.fecha_desde && pago.fecha_hasta
+            ? `${formatFechaLocal(pago.fecha_desde)} - ${formatFechaLocal(pago.fecha_hasta)}`
+            : formatFechaLocal(pago.fecha)
+          return (
+            <div key={pago.id} className={`pago-card ${esAnulado ? 'anulado' : ''}`}>
+              <div className="pago-card-top">
+                <div className="pago-card-info">
+                  <span className="pago-card-nombre">{pago.lavador?.nombre}</span>
+                  <span className="pago-card-periodo">{periodo}</span>
+                </div>
+                <div className="pago-card-monto">
+                  <span className={`pago-card-total ${esAnulado ? '' : 'positivo'}`}>{formatMoney(pago.total_pagar)}</span>
+                  {esAnulado && <span className="estado-badge inactivo">Anulado</span>}
+                </div>
+              </div>
+              <div className="pago-card-bottom">
+                <div className="pago-card-details">
+                  <span>{pago.lavadas_cantidad || 0} servicios</span>
+                  <span>Total {formatMoney(pago.total)}</span>
+                  {pago.descuentos > 0 && <span className="valor-negativo">-{formatMoney(pago.descuentos)}</span>}
+                </div>
+                {!esAnulado && (
+                  <div className="acciones">
+                    <button className="btn-icon" onClick={() => handleEditar(pago)} title="Editar"><Pencil size={16} /></button>
+                    <button className="btn-icon delete" onClick={() => handleAnular(pago)} title="Anular"><Trash2 size={16} /></button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
       {showModal && !modalMinimized && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
               <h2>{editandoId ? 'Editar Pago' : 'Nuevo Pago'}</h2>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <div className="pago-modal-header-actions">
                 <button className="btn-close" onClick={() => setModalMinimized(true)} title="Minimizar">
                   <Minus size={20} />
                 </button>
@@ -983,7 +1000,7 @@ export default function PagoTrabajadores() {
                 <button type="button" className="btn-secondary" onClick={() => setModalMinimized(true)}>
                   Minimizar
                 </button>
-                <button type="button" className="btn-secondary" style={{ color: 'var(--accent-red)' }} onClick={() => { setShowModal(false); setModalMinimized(false); setEditandoId(null); resetForm() }}>
+                <button type="button" className="btn-secondary btn-descartar" onClick={() => { setShowModal(false); setModalMinimized(false); setEditandoId(null); resetForm() }}>
                   Descartar
                 </button>
                 <button type="submit" className="btn-primary">
