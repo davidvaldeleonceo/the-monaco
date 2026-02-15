@@ -15,20 +15,20 @@ input[type="number"] {
 }
 
 :root {
-  --bg-primary: #0B1F3B;
-  --bg-secondary: #0F2847;
-  --bg-card: #133253;
-  --bg-hover: #1B4965;
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-card: #1a1a24;
+  --bg-hover: #22222e;
   --text-primary: #ffffff;
-  --text-secondary: #8BA7BF;
-  --accent-green: #62B6CB;
+  --text-secondary: #a0a0a0;
+  --accent-green: #10b981;
   --accent-blue: #3b82f6;
   --accent-yellow: #f59e0b;
   --accent-red: #ef4444;
   --accent-purple: #8b5cf6;
-  --border-color: #1E3A5F;
+  --border-color: #2a2a3a;
   --overlay-dark: rgba(0, 0, 0, 0.6);
-  --shadow-green: rgba(98, 182, 203, 0.15);
+  --shadow-green: rgba(16, 185, 129, 0.15);
   --shadow-red: rgba(239, 68, 68, 0.15);
   --shadow-blue: rgba(59, 130, 246, 0.15);
   --card-shadow: none;
