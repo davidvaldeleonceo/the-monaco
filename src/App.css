@@ -4885,10 +4885,20 @@ input:checked + .slider:before {
 /* Section Title */
 .home-section-title { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; padding: 0 1rem; margin-bottom: 0.5rem; }
 
+.home-section-header { display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; margin-bottom: 0.5rem; }
+.home-section-header .home-section-title { padding: 0; margin-bottom: 0; }
+
+.home-filter-btn { display: flex; align-items: center; justify-content: center; background: none; border: 1.5px solid var(--border-color); border-radius: 8px; color: var(--text-secondary); cursor: pointer; padding: 0.35rem; transition: all 0.2s; }
+.home-filter-btn.active { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+
+.home-filters-panel { display: flex; gap: 0.5rem; padding: 0 1rem; margin-bottom: 0.75rem; }
+.home-filters-panel select { flex: 1; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1.5px solid var(--border-color); background: var(--bg-card); color: var(--text-primary); font-size: 0.8rem; }
+
 /* Recent Cards List */
 .home-recent-list { display: flex; flex-direction: column; gap: 0.5rem; padding: 0 1rem; }
 .home-recent-card { display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); border-radius: 12px; padding: 0.875rem 1rem; cursor: pointer; transition: transform 0.15s; }
 .home-recent-card:active { transform: scale(0.98); }
+.home-recent-card.card-selected { border: 1.5px solid var(--accent-green); background: rgba(98, 182, 203, 0.05); }
 .home-recent-card-left { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1; }
 .home-recent-placa { font-weight: 700; font-size: 0.95rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .home-recent-desc { font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -4944,6 +4954,8 @@ input:checked + .slider:before {
   .home-period-pills { margin: 1.5rem 0; max-width: 300px; }
   .home-tab-pills { margin: 0 0 1.5rem; max-width: 300px; }
   .home-section-title { padding: 0; }
+  .home-section-header { padding: 0; }
+  .home-filters-panel { padding: 0; }
   .home-recent-list { padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
   .home-show-more { grid-column: 1 / -1; }
   .home-show-more-group { grid-column: 1 / -1; }

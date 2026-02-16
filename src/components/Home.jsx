@@ -6,11 +6,11 @@ import { useServiceHandlers } from '../hooks/useServiceHandlers'
 import ServiceCard from './ServiceCard'
 import { formatMoney } from '../utils/money'
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../config/constants'
-import { Plus, Droplets, DollarSign, X, Search } from 'lucide-react'
+import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2 } from 'lucide-react'
 
 export default function Home() {
   const navigate = useNavigate()
-  const { lavadas, metodosPago, negocioId, clientes } = useData()
+  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal } = useData()
 
   const {
     expandedCards, setExpandedCards,
@@ -53,7 +53,16 @@ export default function Home() {
   const [visibleCount, setVisibleCount] = useState({ servicios: 10, productos: 10, movimientos: 10 })
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [filtroEstado, setFiltroEstado] = useState('')
+  const [filtroLavador, setFiltroLavador] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [filtroMetodoPago, setFiltroMetodoPago] = useState('')
   const searchInputRef = useRef(null)
+  const [modoSeleccion, setModoSeleccion] = useState(false)
+  const [selectedItems, setSelectedItems] = useState(new Set())
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Bubble animation refs
   const pillRefs = useRef({})
@@ -201,12 +210,26 @@ export default function Home() {
   })
 
   // Recent items
-  const allServicios = lavadasFiltradas
+  const allServicios = lavadasFiltradas.filter(l => {
+    if (filtroEstado && l.estado !== filtroEstado) return false
+    if (filtroLavador && l.lavador_id != filtroLavador) return false
+    return true
+  })
   const allProductos = transacciones
     .filter(t => t.categoria === 'MEMBRESIA')
+    .filter(t => {
+      if (filtroTipo && t.tipo !== filtroTipo) return false
+      if (filtroMetodoPago && t.metodo_pago_id != filtroMetodoPago) return false
+      return true
+    })
     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
   const allMovimientos = todasEntradas
     .filter(t => !t._esLavada && t.categoria !== 'MEMBRESIA')
+    .filter(t => {
+      if (filtroTipo && t.tipo !== filtroTipo) return false
+      if (filtroMetodoPago && t.metodo_pago_id != filtroMetodoPago) return false
+      return true
+    })
     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
 
   const recentServicios = allServicios.slice(0, visibleCount.servicios)
@@ -219,6 +242,58 @@ export default function Home() {
 
   const handleShowLess = (tab) => {
     setVisibleCount(prev => ({ ...prev, [tab]: 10 }))
+  }
+
+  const toggleSelectItem = (id) => {
+    setSelectedItems(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const currentList = tab === 'servicios' ? allServicios
+    : tab === 'productos' ? allProductos : allMovimientos
+
+  const toggleSelectAll = () => {
+    if (selectedItems.size === currentList.length) {
+      setSelectedItems(new Set())
+    } else {
+      setSelectedItems(new Set(currentList.map(i => i.id)))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    setDeleting(true)
+    const ids = [...selectedItems]
+    let eliminados = 0
+
+    if (tab === 'servicios') {
+      for (const id of ids) {
+        const { error } = await supabase.from('lavadas').delete().eq('id', id)
+        if (!error) { deleteLavadaLocal(id); eliminados++ }
+      }
+    } else {
+      for (const id of ids) {
+        if (String(id).startsWith('lavada-')) continue
+        const { error } = await supabase.from('transacciones').delete().eq('id', id)
+        if (!error) eliminados++
+      }
+      if (eliminados > 0) {
+        let query = supabase.from('transacciones').select('*, metodo_pago:metodos_pago(nombre)').order('fecha', { ascending: false })
+        if (fechaDesde) query = query.gte('fecha', fechaLocalStr(fechaDesde))
+        if (fechaHasta) { const h = new Date(fechaHasta); h.setDate(h.getDate() + 1); query = query.lt('fecha', fechaLocalStr(h)) }
+        const { data } = await query
+        setTransacciones(data || [])
+      }
+    }
+
+    setDeleting(false)
+    setShowDeleteModal(false)
+    setSelectedItems(new Set())
+    setModoSeleccion(false)
+    if (eliminados > 0) alert(`Se eliminaron ${eliminados} elemento${eliminados > 1 ? 's' : ''}`)
   }
 
   // Global search
@@ -370,28 +445,79 @@ export default function Home() {
       <div className="home-tab-pills">
         <button
           className={`home-tab-pill ${tab === 'servicios' ? 'active' : ''}`}
-          onClick={() => setTab('servicios')}
+          onClick={() => { setTab('servicios'); setFiltroEstado(''); setFiltroLavador(''); setFiltroTipo(''); setFiltroMetodoPago(''); setModoSeleccion(false); setSelectedItems(new Set()) }}
         >
           Servicios
         </button>
         <button
           className={`home-tab-pill ${tab === 'productos' ? 'active' : ''}`}
-          onClick={() => setTab('productos')}
+          onClick={() => { setTab('productos'); setFiltroEstado(''); setFiltroLavador(''); setFiltroTipo(''); setFiltroMetodoPago(''); setModoSeleccion(false); setSelectedItems(new Set()) }}
         >
           Productos
         </button>
         <button
           className={`home-tab-pill ${tab === 'movimientos' ? 'active' : ''}`}
-          onClick={() => setTab('movimientos')}
+          onClick={() => { setTab('movimientos'); setFiltroEstado(''); setFiltroLavador(''); setFiltroTipo(''); setFiltroMetodoPago(''); setModoSeleccion(false); setSelectedItems(new Set()) }}
         >
           Movimientos
         </button>
       </div>
 
       {/* Recent Cards */}
-      <p className="home-section-title">
-        Recientes — {{ servicios: 'Servicios', productos: 'Productos', movimientos: 'Movimientos' }[tab]}
-      </p>
+      <div className="home-section-header">
+        <p className="home-section-title">
+          Recientes — {{ servicios: 'Servicios', productos: 'Productos', movimientos: 'Movimientos' }[tab]}
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            className={`home-filter-btn ${modoSeleccion ? 'active' : ''}`}
+            onClick={() => { setModoSeleccion(prev => !prev); setSelectedItems(new Set()) }}
+          >
+            <CheckSquare size={16} />
+          </button>
+          <button
+            className={`home-filter-btn ${showFilters ? 'active' : ''}`}
+            onClick={() => setShowFilters(prev => !prev)}
+          >
+            <SlidersHorizontal size={16} />
+          </button>
+        </div>
+      </div>
+      {showFilters && (
+        <div className="home-filters-panel">
+          {tab === 'servicios' && (
+            <>
+              <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}>
+                <option value="">Todos los estados</option>
+                {Object.entries(ESTADO_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+              <select value={filtroLavador} onChange={e => setFiltroLavador(e.target.value)}>
+                <option value="">Todos los lavadores</option>
+                {lavadores.map(l => (
+                  <option key={l.id} value={l.id}>{l.nombre}</option>
+                ))}
+              </select>
+            </>
+          )}
+          {(tab === 'productos' || tab === 'movimientos') && (
+            <>
+              <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}>
+                <option value="">Ingreso y Egreso</option>
+                <option value="INGRESO">Ingreso</option>
+                <option value="EGRESO">Egreso</option>
+              </select>
+              <select value={filtroMetodoPago} onChange={e => setFiltroMetodoPago(e.target.value)}>
+                <option value="">Todos los metodos</option>
+                {metodosPago.map(m => (
+                  <option key={m.id} value={m.id}>{m.nombre}</option>
+                ))}
+              </select>
+            </>
+          )}
+        </div>
+      )}
       <div className="home-recent-list">
         {tab === 'servicios' && (
           recentServicios.length > 0 ? (
@@ -423,6 +549,9 @@ export default function Home() {
                   getTimerProps={getTimerProps}
                   hasActiveTimer={hasActiveTimer}
                   getEstadoClass={getEstadoClass}
+                  selectionMode={modoSeleccion}
+                  isSelected={selectedItems.has(item.id)}
+                  onToggleSelect={toggleSelectItem}
                 />
               ))}
             </div>
@@ -450,7 +579,15 @@ export default function Home() {
         {tab === 'productos' && (
           recentProductos.length > 0 ? (
             recentProductos.map(item => (
-              <div key={item.id} className="home-recent-card" onClick={() => navigate('/balance')}>
+              <div key={item.id}
+                className={`home-recent-card ${modoSeleccion && selectedItems.has(item.id) ? 'card-selected' : ''}`}
+                onClick={() => modoSeleccion ? toggleSelectItem(item.id) : navigate('/balance')}>
+                {modoSeleccion && (
+                  <label className="custom-check" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={selectedItems.has(item.id)} onChange={() => toggleSelectItem(item.id)} />
+                    <span className="checkmark"></span>
+                  </label>
+                )}
                 <div className="home-recent-card-left">
                   <span className="home-recent-placa">{item.descripcion || item.placa_o_persona || item.categoria}</span>
                   <span className="home-recent-desc">{item.categoria} · {formatFechaRelativa(item.fecha)}</span>
@@ -487,7 +624,15 @@ export default function Home() {
         {tab === 'movimientos' && (
           recentMovimientos.length > 0 ? (
             recentMovimientos.map(item => (
-              <div key={item.id} className="home-recent-card" onClick={() => navigate('/balance')}>
+              <div key={item.id}
+                className={`home-recent-card ${modoSeleccion && selectedItems.has(item.id) ? 'card-selected' : ''}`}
+                onClick={() => modoSeleccion ? toggleSelectItem(item.id) : navigate('/balance')}>
+                {modoSeleccion && (
+                  <label className="custom-check" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={selectedItems.has(item.id)} onChange={() => toggleSelectItem(item.id)} />
+                    <span className="checkmark"></span>
+                  </label>
+                )}
                 <div className="home-recent-card-left">
                   <span className="home-recent-placa">{item.descripcion || item.placa_o_persona || item.categoria}</span>
                   <span className="home-recent-desc">{item.categoria} · {formatFechaRelativa(item.fecha)}</span>
@@ -522,6 +667,49 @@ export default function Home() {
           </button>
         )}
       </div>
+
+      {/* Bulk Action Bar */}
+      {modoSeleccion && selectedItems.size > 0 && (
+        <div className="bulk-action-bar">
+          <span>{selectedItems.size} seleccionado{selectedItems.size > 1 ? 's' : ''}</span>
+          <div className="bulk-action-buttons">
+            <button className="btn-secondary" onClick={toggleSelectAll}>
+              {selectedItems.size === currentList.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+            </button>
+            <button className="btn-secondary" onClick={() => { setSelectedItems(new Set()); setModoSeleccion(false) }}>
+              <X size={16} /> Cancelar
+            </button>
+            <button className="btn-danger" onClick={() => setShowDeleteModal(true)}>
+              <Trash2 size={16} /> Eliminar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h2>Confirmar eliminación</h2>
+              <button className="btn-close" onClick={() => setShowDeleteModal(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            <div style={{ padding: '1.5rem' }}>
+              <p style={{ color: 'var(--text-secondary)' }}>
+                Vas a eliminar <strong style={{ color: 'var(--accent-red, #ff4d4d)' }}>{selectedItems.size}</strong> elemento{selectedItems.size > 1 ? 's' : ''}. Esta acción no se puede deshacer.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowDeleteModal(false)} disabled={deleting}>Cancelar</button>
+              <button className="btn-danger" onClick={handleBulkDelete} disabled={deleting}>
+                <Trash2 size={16} /> {deleting ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search FAB */}
       {!showFabMenu && (
