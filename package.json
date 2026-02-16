@@ -9,7 +9,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "db:connect": "sh scripts/db-tunnel.sh"
+    "db:connect": "sh scripts/db-tunnel.sh",
+    "deploy": "sh scripts/deploy-frontend.sh"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

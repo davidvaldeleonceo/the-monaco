@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
@@ -19,13 +19,19 @@ registerLocale('es', es)
 export default function Lavadas() {
   const { lavadas: allLavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, tiposMembresia, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal, addClienteLocal, refreshLavadas, refreshClientes, negocioId, loadAllLavadas, lavadasAllLoaded } = useData()
   const { userProfile, userEmail } = useTenant()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Auto-open modal when navigating with ?new=1 (e.g. from Home FAB)
+  // Auto-open modal when navigating with ?new=1 or ?import=1 (e.g. from Home FAB)
   useEffect(() => {
     if (searchParams.get('new') === '1') {
       setShowModal(true)
       searchParams.delete('new')
+      setSearchParams(searchParams, { replace: true })
+    }
+    if (searchParams.get('import') === '1') {
+      setShowImportModal(true)
+      searchParams.delete('import')
       setSearchParams(searchParams, { replace: true })
     }
   }, [])
@@ -331,6 +337,7 @@ export default function Lavadas() {
         estado: 'EN ESPERA',
         notas: ''
       })
+      navigate('/home')
     }
   }
 

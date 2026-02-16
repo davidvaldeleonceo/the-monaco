@@ -40,8 +40,7 @@ export default function Layout({ user }) {
 
   const allMenuItems = [
     { to: '/home', icon: Home, label: 'Home' },
-    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/lavadas', icon: Droplets, label: 'Servicios' },
+    { to: '/dashboard', icon: LayoutDashboard, label: 'Análisis' },
     { to: '/clientes', icon: Users, label: 'Clientes' },
     { to: '/balance', icon: DollarSign, label: 'Balance' },
     { to: '/reportes', icon: FileText, label: 'Reportes' },
@@ -142,6 +141,25 @@ export default function Layout({ user }) {
       <main className="main-content">
         <Outlet />
       </main>
+
+      <nav className="floating-bottom-bar">
+        {[
+          { to: '/home', icon: Home, label: 'Home' },
+          { to: '/dashboard', icon: LayoutDashboard, label: 'Análisis' },
+          { to: '/clientes', icon: Users, label: 'Clientes' },
+          { to: '/pagos', icon: Wallet, label: 'Trabajadores' },
+          { to: '/configuracion', icon: Settings, label: 'Config' },
+        ].map(item => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) => `fbb-item ${isActive ? 'active' : ''}`}
+          >
+            <item.icon size={22} />
+            <span>{item.label}</span>
+          </NavLink>
+        ))}
+      </nav>
     </div>
   )
 }

@@ -150,6 +150,16 @@ CREATE TABLE IF NOT EXISTS transacciones (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS productos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre TEXT NOT NULL,
+  precio NUMERIC DEFAULT 0,
+  cantidad INTEGER DEFAULT 0,
+  activo BOOLEAN DEFAULT true,
+  negocio_id UUID NOT NULL REFERENCES negocios(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS tareas (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre TEXT NOT NULL,
@@ -232,6 +242,7 @@ CREATE INDEX IF NOT EXISTS idx_lavadas_cliente ON lavadas(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_lavadas_lavador ON lavadas(lavador_id);
 CREATE INDEX IF NOT EXISTS idx_transacciones_negocio ON transacciones(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_transacciones_fecha ON transacciones(fecha);
+CREATE INDEX IF NOT EXISTS idx_productos_negocio ON productos(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_tareas_negocio ON tareas(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_tareas_completadas_negocio ON tareas_completadas(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_tareas_completadas_fecha ON tareas_completadas(fecha);

@@ -20,8 +20,8 @@ function validateColumnName(col) {
 const ALLOWED_TABLES = new Set([
   'users', 'negocios', 'user_profiles', 'clientes', 'lavadas',
   'tipos_lavado', 'tipos_membresia', 'lavadores', 'metodos_pago',
-  'servicios_adicionales', 'transacciones', 'tareas', 'tareas_completadas',
-  'pago_trabajadores', 'reservas', 'audit_log',
+  'servicios_adicionales', 'transacciones', 'productos', 'tareas',
+  'tareas_completadas', 'pago_trabajadores', 'reservas', 'audit_log',
 ])
 
 export function isAllowedTable(table) {

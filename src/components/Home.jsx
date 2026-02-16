@@ -6,11 +6,12 @@ import { useServiceHandlers } from '../hooks/useServiceHandlers'
 import ServiceCard from './ServiceCard'
 import { formatMoney } from '../utils/money'
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../config/constants'
-import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2 } from 'lucide-react'
+import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 export default function Home() {
   const navigate = useNavigate()
-  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal } = useData()
+  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig } = useData()
 
   const {
     expandedCards, setExpandedCards,
@@ -48,6 +49,7 @@ export default function Home() {
     metodo_pago_id: '',
     categoria: 'MEMBRESIA',
     placa_o_persona: '',
+    producto_id: '',
   })
   const [submitting, setSubmitting] = useState(false)
   const [visibleCount, setVisibleCount] = useState({ servicios: 10, productos: 10, movimientos: 10 })
@@ -63,6 +65,16 @@ export default function Home() {
   const [selectedItems, setSelectedItems] = useState(new Set())
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // Import states
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importStep, setImportStep] = useState('upload')
+  const [importErrors, setImportErrors] = useState([])
+  const [importNuevos, setImportNuevos] = useState([])
+  const [importProgress, setImportProgress] = useState(0)
+  const [importResult, setImportResult] = useState(null)
+  const [importTipo, setImportTipo] = useState('')
+  const fileInputRef = useRef(null)
 
   // Bubble animation refs
   const pillRefs = useRef({})
@@ -130,6 +142,12 @@ export default function Home() {
     }
 
     fetchTransacciones()
+  }, [periodo])
+
+  useEffect(() => {
+    if (periodo === 'a' && !lavadasAllLoaded) {
+      loadAllLavadas()
+    }
   }, [periodo])
 
   // Persist periodo to localStorage
@@ -372,8 +390,17 @@ export default function Home() {
       negocio_id: negocioId,
     }])
 
+    // Deduct stock if a product was selected
+    if (ventaForm.producto_id) {
+      const producto = productos.find(p => p.id === ventaForm.producto_id)
+      if (producto) {
+        await supabase.from('productos').update({ cantidad: Math.max(0, producto.cantidad - 1) }).eq('id', producto.id)
+        refreshConfig()
+      }
+    }
+
     setShowVentaModal(false)
-    setVentaForm({ valor: '', descripcion: '', metodo_pago_id: '', categoria: 'MEMBRESIA', placa_o_persona: '' })
+    setVentaForm({ valor: '', descripcion: '', metodo_pago_id: '', categoria: 'MEMBRESIA', placa_o_persona: '', producto_id: '' })
     setSubmitting(false)
 
     // Refresh transacciones
@@ -399,6 +426,269 @@ export default function Home() {
     }
     const num = Number(limpio)
     setVentaForm(prev => ({ ...prev, valor: num.toLocaleString('es-CO') }))
+  }
+
+  // === Import functions ===
+  const descargarPlantilla = () => {
+    const bom = '\uFEFF'
+    let headers, ejemplo, instrucciones
+    if (importTipo === 'productos') {
+      headers = 'valor,metodo_pago,placa_o_persona,descripcion,fecha'
+      const metodos = metodosPago.map(m => m.nombre)
+      ejemplo = `25000,${metodos[0] || 'EFECTIVO'},ABC123,Descripción ejemplo,15-01-2026`
+      instrucciones = [
+        '\n# INSTRUCCIONES (borra estas líneas antes de importar)',
+        '# Columna obligatoria: valor (número sin puntos ni comas)',
+        `# metodo_pago: ${metodos.join(' | ') || '(ninguno configurado)'}`,
+        '# placa_o_persona: texto libre (opcional)',
+        '# descripcion: texto libre (opcional)',
+        '# fecha: formato DD-MM-AAAA o DD/MM/AAAA (opcional, default hoy)',
+        '# Tipo se asigna automáticamente como INGRESO, categoría como MEMBRESIA'
+      ]
+    } else {
+      headers = 'tipo,valor,categoria,metodo_pago,placa_o_persona,descripcion,fecha'
+      const metodos = metodosPago.map(m => m.nombre)
+      ejemplo = `INGRESO,25000,OTRO,${metodos[0] || 'EFECTIVO'},ABC123,Descripción ejemplo,15-01-2026`
+      instrucciones = [
+        '\n# INSTRUCCIONES (borra estas líneas antes de importar)',
+        '# Columnas obligatorias: tipo, valor, categoria',
+        '# tipo: INGRESO o EGRESO',
+        '# valor: número sin puntos ni comas',
+        '# categoria: MEMBRESIA | SERVICIO | ADICIONAL | OTRO | INSUMOS | SERVICIOS | ABONO A SUELDO | ARRIENDO | PAGO TRABAJADOR',
+        `# metodo_pago: ${metodos.join(' | ') || '(ninguno configurado)'} (opcional)`,
+        '# placa_o_persona: texto libre (opcional)',
+        '# descripcion: texto libre (opcional)',
+        '# fecha: formato DD-MM-AAAA o DD/MM/AAAA (opcional, default hoy)'
+      ]
+    }
+    const csv = bom + [headers, ejemplo, ...instrucciones].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `plantilla_${importTipo}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const parseFecha = (raw) => {
+    if (!raw) return fechaLocalStr(new Date()) + 'T12:00:00-05:00'
+    if (raw instanceof Date && !isNaN(raw.getTime())) {
+      const y = raw.getUTCFullYear()
+      const m = String(raw.getUTCMonth() + 1).padStart(2, '0')
+      const d = String(raw.getUTCDate()).padStart(2, '0')
+      return `${y}-${m}-${d}T12:00:00-05:00`
+    }
+    const str = raw.toString().trim()
+    const matchDMY = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
+    if (matchDMY) {
+      const dd = String(parseInt(matchDMY[1], 10)).padStart(2, '0')
+      const mm = String(parseInt(matchDMY[2], 10)).padStart(2, '0')
+      return `${matchDMY[3]}-${mm}-${dd}T12:00:00-05:00`
+    }
+    const matchISO = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (matchISO) return `${matchISO[1]}-${matchISO[2]}-${matchISO[3]}T12:00:00-05:00`
+    return null
+  }
+
+  const handleImportFileUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const isCSV = file.name.toLowerCase().endsWith('.csv')
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      let wb
+      if (isCSV) {
+        wb = XLSX.read(evt.target.result, { type: 'string', cellDates: true })
+      } else {
+        const data = new Uint8Array(evt.target.result)
+        wb = XLSX.read(data, { type: 'array', cellDates: true })
+      }
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true })
+
+      const errors = []
+      const nuevos = []
+      const categoriasValidas = ['MEMBRESIA', 'SERVICIO', 'ADICIONAL', 'OTRO', 'INSUMOS', 'SERVICIOS', 'ABONO A SUELDO', 'ARRIENDO', 'PAGO TRABAJADOR']
+
+      rows.forEach((row, idx) => {
+        const fila = idx + 2
+        const n = {}
+        Object.keys(row).forEach(key => {
+          n[key.toLowerCase().trim().replace(/\s+/g, '_')] = row[key]
+        })
+
+        if (importTipo === 'productos') {
+          const valorRaw = (n.valor || '').toString().trim()
+          if (!valorRaw) {
+            errors.push({ fila, problema: 'La columna "valor" está vacía', tipo: 'error' })
+            return
+          }
+          const valor = Number(valorRaw.replace(/[^\d]/g, ''))
+          if (!valor || isNaN(valor)) {
+            errors.push({ fila, problema: `Valor "${valorRaw}" no es numérico`, tipo: 'error' })
+            return
+          }
+
+          const fecha = parseFecha(n.fecha instanceof Date ? n.fecha : (n.fecha || '').toString().trim())
+          if (fecha === null) {
+            errors.push({ fila, problema: `Fecha "${n.fecha}" no tiene formato válido`, tipo: 'error' })
+            return
+          }
+
+          let metodo_pago_id = null
+          let metodo_pago_nombre = ''
+          const mpNombre = (n.metodo_pago || n.metodo_de_pago || '').toString().trim()
+          if (mpNombre) {
+            const metodo = metodosPago.find(m => m.nombre.toLowerCase() === mpNombre.toLowerCase())
+            if (metodo) {
+              metodo_pago_id = metodo.id
+              metodo_pago_nombre = metodo.nombre
+            } else {
+              errors.push({ fila, problema: `Método de pago "${mpNombre}" no existe → se importará sin método`, tipo: 'warning' })
+            }
+          }
+
+          nuevos.push({
+            tipo: 'INGRESO',
+            valor,
+            categoria: 'MEMBRESIA',
+            metodo_pago_id,
+            metodo_pago_nombre,
+            placa_o_persona: (n.placa_o_persona || '').toString().trim(),
+            descripcion: (n.descripcion || '').toString().trim(),
+            fecha
+          })
+        } else {
+          // Movimientos
+          const tipoRaw = (n.tipo || '').toString().trim().toUpperCase()
+          const valorRaw = (n.valor || '').toString().trim()
+          const categoriaRaw = (n.categoria || '').toString().trim().toUpperCase()
+
+          const camposVacios = []
+          if (!tipoRaw) camposVacios.push('tipo')
+          if (!valorRaw) camposVacios.push('valor')
+          if (!categoriaRaw) camposVacios.push('categoria')
+          if (camposVacios.length > 0) {
+            errors.push({ fila, problema: `Columna "${camposVacios.join('", "')}" vacía`, tipo: 'error' })
+            return
+          }
+
+          if (!['INGRESO', 'EGRESO'].includes(tipoRaw)) {
+            errors.push({ fila, problema: `Tipo "${tipoRaw}" no válido (usa INGRESO o EGRESO)`, tipo: 'error' })
+            return
+          }
+
+          const valor = Number(valorRaw.replace(/[^\d]/g, ''))
+          if (!valor || isNaN(valor)) {
+            errors.push({ fila, problema: `Valor "${valorRaw}" no es numérico`, tipo: 'error' })
+            return
+          }
+
+          if (!categoriasValidas.includes(categoriaRaw)) {
+            errors.push({ fila, problema: `Categoría "${categoriaRaw}" no válida`, tipo: 'error' })
+            return
+          }
+
+          const fecha = parseFecha(n.fecha instanceof Date ? n.fecha : (n.fecha || '').toString().trim())
+          if (fecha === null) {
+            errors.push({ fila, problema: `Fecha "${n.fecha}" no tiene formato válido`, tipo: 'error' })
+            return
+          }
+
+          let metodo_pago_id = null
+          let metodo_pago_nombre = ''
+          const mpNombre = (n.metodo_pago || n.metodo_de_pago || '').toString().trim()
+          if (mpNombre) {
+            const metodo = metodosPago.find(m => m.nombre.toLowerCase() === mpNombre.toLowerCase())
+            if (metodo) {
+              metodo_pago_id = metodo.id
+              metodo_pago_nombre = metodo.nombre
+            } else {
+              errors.push({ fila, problema: `Método de pago "${mpNombre}" no existe → se importará sin método`, tipo: 'warning' })
+            }
+          }
+
+          nuevos.push({
+            tipo: tipoRaw,
+            valor,
+            categoria: categoriaRaw,
+            metodo_pago_id,
+            metodo_pago_nombre,
+            placa_o_persona: (n.placa_o_persona || '').toString().trim(),
+            descripcion: (n.descripcion || '').toString().trim(),
+            fecha
+          })
+        }
+      })
+
+      setImportErrors(errors)
+      setImportNuevos(nuevos)
+      setImportStep('preview')
+    }
+    if (isCSV) {
+      reader.readAsText(file, 'UTF-8')
+    } else {
+      reader.readAsArrayBuffer(file)
+    }
+  }
+
+  const ejecutarImportacion = async () => {
+    setImportStep('importing')
+    setImportProgress(0)
+
+    let insertados = 0
+    let errores = 0
+    const failedRows = []
+    const total = importNuevos.length
+    let procesados = 0
+
+    for (const row of importNuevos) {
+      const { error } = await supabase.from('transacciones').insert([{
+        tipo: row.tipo,
+        valor: row.valor,
+        categoria: row.categoria,
+        metodo_pago_id: row.metodo_pago_id,
+        placa_o_persona: row.placa_o_persona,
+        descripcion: row.descripcion,
+        fecha: row.fecha,
+        negocio_id: negocioId
+      }])
+      if (error) {
+        errores++
+        failedRows.push({ descripcion: row.descripcion || row.placa_o_persona || `Fila ${procesados + 1}`, error: error.message })
+      } else {
+        insertados++
+      }
+      procesados++
+      setImportProgress(Math.round((procesados / total) * 100))
+    }
+
+    // Refresh transacciones
+    let query = supabase.from('transacciones').select('*, metodo_pago:metodos_pago(nombre)').order('fecha', { ascending: false })
+    if (fechaDesde) query = query.gte('fecha', fechaLocalStr(fechaDesde))
+    if (fechaHasta) {
+      const hasta = new Date(fechaHasta)
+      hasta.setDate(hasta.getDate() + 1)
+      query = query.lt('fecha', fechaLocalStr(hasta))
+    }
+    const { data } = await query
+    setTransacciones(data || [])
+
+    setImportResult({ insertados, errores, failedRows })
+    setImportStep('done')
+  }
+
+  const resetImport = () => {
+    setShowImportModal(false)
+    setImportErrors([])
+    setImportNuevos([])
+    setImportStep('upload')
+    setImportProgress(0)
+    setImportResult(null)
+    setImportTipo('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const categorias = ['MEMBRESIA', 'OTRO']
@@ -711,6 +1001,214 @@ export default function Home() {
         </div>
       )}
 
+      {/* Import Modal */}
+      {showImportModal && (
+        <div className="modal-overlay">
+          <div className="modal import-modal">
+            <div className="modal-header">
+              <h2>Importar {importTipo === 'productos' ? 'Productos' : 'Movimientos'}</h2>
+              <button className="btn-close" onClick={resetImport}>
+                <X size={24} />
+              </button>
+            </div>
+            <div className="import-body">
+              {importStep === 'upload' && (
+                <>
+                  <button className="btn-secondary" onClick={descargarPlantilla} style={{ marginBottom: '1rem' }}>
+                    <Download size={18} /> Descargar Plantilla
+                  </button>
+                  <div
+                    className="import-drop-zone"
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      const file = e.dataTransfer.files[0]
+                      if (file) {
+                        const dt = new DataTransfer()
+                        dt.items.add(file)
+                        fileInputRef.current.files = dt.files
+                        handleImportFileUpload({ target: { files: [file] } })
+                      }
+                    }}
+                  >
+                    <Upload size={32} />
+                    <p>Arrastra un archivo o haz clic para seleccionar</p>
+                    <span className="import-drop-hint">.csv, .xlsx, .xls</span>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      onChange={handleImportFileUpload}
+                      style={{ display: 'none' }}
+                    />
+                  </div>
+                  <div className="import-instructions">
+                    {importTipo === 'productos' ? (
+                      <>
+                        <p>Columna obligatoria: <strong>valor</strong></p>
+                        <p>Opcionales: metodo_pago, placa_o_persona, descripcion, fecha</p>
+                      </>
+                    ) : (
+                      <>
+                        <p>Columnas obligatorias: <strong>tipo</strong>, <strong>valor</strong>, <strong>categoria</strong></p>
+                        <p>Opcionales: metodo_pago, placa_o_persona, descripcion, fecha</p>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {importStep === 'preview' && (
+                <>
+                  <div className="import-summary">
+                    <div className="import-stat stat-green">
+                      <span className="import-stat-value">{importNuevos.length}</span>
+                      <span className="import-stat-label">{importTipo === 'productos' ? 'Productos' : 'Movimientos'} válidos</span>
+                    </div>
+                    <div className="import-stat stat-red">
+                      <span className="import-stat-value">{importErrors.filter(e => e.tipo !== 'warning').length}</span>
+                      <span className="import-stat-label">Errores</span>
+                    </div>
+                  </div>
+
+                  {importErrors.filter(e => e.tipo !== 'warning').length > 0 && (
+                    <div className="import-errors">
+                      <h4>Errores — estas filas no se importarán</h4>
+                      {importErrors.filter(e => e.tipo !== 'warning').map((err, i) => (
+                        <div key={i} className="import-error-item">
+                          <div className="import-error-fila">Fila {err.fila}</div>
+                          <div className="import-error-problema">{err.problema}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {importErrors.filter(e => e.tipo === 'warning').length > 0 && (
+                    <div className="import-warnings">
+                      <h4>Advertencias — se importarán con ajustes</h4>
+                      {importErrors.filter(e => e.tipo === 'warning').map((err, i) => (
+                        <div key={i} className="import-warning-item">
+                          <div className="import-error-fila">Fila {err.fila}</div>
+                          <div className="import-error-problema">{err.problema}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {importNuevos.length > 0 && (
+                    <div className="import-preview-wrapper">
+                      <h4>Vista previa</h4>
+                      <div className="import-preview-table-wrapper">
+                        <table className="import-preview-table">
+                          <thead>
+                            <tr>
+                              {importTipo === 'productos' ? (
+                                <>
+                                  <th>Valor</th>
+                                  <th>Persona/Placa</th>
+                                  <th>Descripción</th>
+                                  <th>Fecha</th>
+                                  <th>M. Pago</th>
+                                </>
+                              ) : (
+                                <>
+                                  <th>Tipo</th>
+                                  <th>Valor</th>
+                                  <th>Categoría</th>
+                                  <th>Fecha</th>
+                                  <th>M. Pago</th>
+                                </>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importNuevos.slice(0, 10).map((row, i) => (
+                              <tr key={i}>
+                                {importTipo === 'productos' ? (
+                                  <>
+                                    <td>{formatMoney(row.valor)}</td>
+                                    <td>{row.placa_o_persona || '—'}</td>
+                                    <td>{row.descripcion || '—'}</td>
+                                    <td>{new Date(row.fecha).toLocaleDateString('es-CO')}</td>
+                                    <td>{row.metodo_pago_nombre || '—'}</td>
+                                  </>
+                                ) : (
+                                  <>
+                                    <td>{row.tipo}</td>
+                                    <td>{formatMoney(row.valor)}</td>
+                                    <td>{row.categoria}</td>
+                                    <td>{new Date(row.fecha).toLocaleDateString('es-CO')}</td>
+                                    <td>{row.metodo_pago_nombre || '—'}</td>
+                                  </>
+                                )}
+                              </tr>
+                            ))}
+                            {importNuevos.length > 10 && (
+                              <tr><td colSpan="5" className="import-more">... y {importNuevos.length - 10} más</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="modal-footer">
+                    <button className="btn-secondary" onClick={resetImport}>Cancelar</button>
+                    <button
+                      className="btn-primary"
+                      onClick={ejecutarImportacion}
+                      disabled={importNuevos.length === 0}
+                    >
+                      Importar {importNuevos.length} {importTipo === 'productos' ? 'productos' : 'movimientos'}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {importStep === 'importing' && (
+                <div className="import-progress-container">
+                  <p>Importando {importTipo === 'productos' ? 'productos' : 'movimientos'}...</p>
+                  <div className="import-progress-bar">
+                    <div className="import-progress-fill" style={{ width: `${importProgress}%` }}></div>
+                  </div>
+                  <span className="import-progress-text">{importProgress}%</span>
+                </div>
+              )}
+
+              {importStep === 'done' && importResult && (
+                <div className="import-done">
+                  <div className="import-summary">
+                    <div className="import-stat stat-green">
+                      <span className="import-stat-value">{importResult.insertados}</span>
+                      <span className="import-stat-label">Importados</span>
+                    </div>
+                    <div className="import-stat stat-red">
+                      <span className="import-stat-value">{importResult.errores}</span>
+                      <span className="import-stat-label">Errores</span>
+                    </div>
+                  </div>
+                  {importResult.failedRows?.length > 0 && (
+                    <div className="import-errors">
+                      <h4>Items que no se pudieron importar</h4>
+                      {importResult.failedRows.map((f, i) => (
+                        <div key={i} className="import-error-item">
+                          <div className="import-error-fila">{f.descripcion}</div>
+                          <div className="import-error-problema">{f.error}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="modal-footer">
+                    <button className="btn-primary" onClick={resetImport}>Cerrar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Search FAB */}
       {!showFabMenu && (
         <button className="home-search-fab" onClick={openSearch}>
@@ -735,6 +1233,17 @@ export default function Home() {
             <button onClick={() => { setShowFabMenu(false); setShowVentaModal(true) }}>
               <DollarSign size={18} /> Nueva Venta
             </button>
+            <button onClick={() => {
+              setShowFabMenu(false)
+              if (tab === 'servicios') {
+                navigate('/lavadas?import=1')
+              } else {
+                setImportTipo(tab)
+                setShowImportModal(true)
+              }
+            }}>
+              <Upload size={18} /> Importar {{ servicios: 'Servicios', productos: 'Productos', movimientos: 'Movimientos' }[tab]}
+            </button>
           </div>
         </>
       )}
@@ -750,6 +1259,31 @@ export default function Home() {
               </button>
             </div>
             <form onSubmit={handleVentaSubmit}>
+              {productos.filter(p => p.activo && p.cantidad > 0).length > 0 && (
+                <div className="form-group" style={{ padding: '0 1.5rem' }}>
+                  <label>Producto</label>
+                  <select
+                    value={ventaForm.producto_id}
+                    onChange={(e) => {
+                      const prodId = e.target.value
+                      if (prodId) {
+                        const prod = productos.find(p => p.id === prodId)
+                        if (prod) {
+                          const precioFormateado = Number(prod.precio).toLocaleString('es-CO')
+                          setVentaForm(prev => ({ ...prev, producto_id: prodId, valor: precioFormateado, descripcion: prod.nombre }))
+                        }
+                      } else {
+                        setVentaForm(prev => ({ ...prev, producto_id: '', valor: '', descripcion: '' }))
+                      }
+                    }}
+                  >
+                    <option value="">Manual (sin producto)</option>
+                    {productos.filter(p => p.activo && p.cantidad > 0).map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre} ({p.cantidad} disp.)</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="form-grid">
                 <div className="form-group">
                   <label>Valor *</label>

@@ -5,7 +5,7 @@ import { Plus, X, Edit, Trash2, Settings, ChevronDown } from 'lucide-react'
 import { formatMoney } from '../utils/money'
 
 export default function Configuracion() {
-  const { refreshConfig, serviciosAdicionales, negocioId } = useData()
+  const { refreshConfig, serviciosAdicionales, productos, negocioId } = useData()
   const [activeTab, setActiveTab] = useState('membresias')
   const [data, setData] = useState([])
   const [showModal, setShowModal] = useState(false)
@@ -32,6 +32,7 @@ export default function Configuracion() {
     { id: 'lavados', label: 'Tipos de Servicio', table: 'tipos_lavado' },
     { id: 'metodos', label: 'Métodos de Pago', table: 'metodos_pago' },
     { id: 'lavadores', label: 'Lavadores', table: 'lavadores' },
+    { id: 'productos', label: 'Productos', table: 'productos' },
   ]
 
   useEffect(() => {
@@ -59,6 +60,8 @@ export default function Configuracion() {
         return { nombre: '', activo: true }
       case 'lavadores':
         return { nombre: '', telefono: '', activo: true, tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null }
+      case 'productos':
+        return { nombre: '', precio: '', cantidad: '', activo: true }
       default:
         return {}
     }
@@ -74,6 +77,8 @@ export default function Configuracion() {
         return ['nombre', 'activo']
       case 'lavadores':
         return ['nombre', 'telefono', 'activo', 'tipo_pago', 'pago_porcentaje', 'pago_sueldo_base', 'pago_por_lavada', 'pago_por_adicional', 'pago_porcentaje_lavada', 'pago_adicional_fijo', 'pago_adicionales_detalle']
+      case 'productos':
+        return ['nombre', 'precio', 'cantidad', 'activo']
       default:
         return []
     }
@@ -537,6 +542,43 @@ export default function Configuracion() {
             </table>
           </div>
         )
+      case 'productos':
+        return (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Precio</th>
+                  <th>Cantidad</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td>{formatMoney(item.precio)}</td>
+                    <td>{item.cantidad}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       default:
         return null
     }
@@ -679,6 +721,43 @@ export default function Configuracion() {
                   <div className="cliente-card-row">
                     <span className="cliente-card-label">Detalle</span>
                     <span className={`cliente-card-value lavador-detalle ${!item.tipo_pago ? 'muted' : ''}`}>{getDetallePago(item)}</span>
+                  </div>
+                  <div className="cliente-card-actions">
+                    <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => handleDelete(item.id)}><Trash2 size={16} /> Eliminar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })
+      case 'productos':
+        return data.map(item => {
+          const isExpanded = expandedCard === item.id
+          return (
+            <div key={item.id} className={`config-card ${isExpanded ? 'expanded' : ''}`}>
+              <div className="config-card-header" onClick={() => setExpandedCard(isExpanded ? null : item.id)}>
+                <div className="config-card-left">
+                  <span className="config-card-nombre">{item.nombre}</span>
+                  <span className="config-card-sub">{formatMoney(item.precio)} · {item.cantidad} disp.</span>
+                </div>
+                <div className="config-card-right">
+                  <label className="switch" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                    <span className="slider"></span>
+                  </label>
+                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="config-card-body">
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Precio</span>
+                    <span className="cliente-card-value">{formatMoney(item.precio)}</span>
+                  </div>
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Cantidad</span>
+                    <span className="cliente-card-value">{item.cantidad}</span>
                   </div>
                   <div className="cliente-card-actions">
                     <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
@@ -909,6 +988,26 @@ export default function Configuracion() {
             </div>
           </>
         )
+      case 'productos':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+            </div>
+            <div className="form-group">
+              <label>Precio</label>
+              <input type="number" value={numVal(formData.precio)} onChange={numChange('precio')} required />
+            </div>
+            <div className="form-group">
+              <label>Cantidad disponible</label>
+              <input type="number" min="0" value={numVal(formData.cantidad)} onChange={numChange('cantidad')} required />
+            </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
+            </div>
+          </>
+        )
       default:
         return null
     }
@@ -935,7 +1034,17 @@ export default function Configuracion() {
         </div>
       </div>
 
-      <div className="tabs">
+      {/* Mobile: dropdown */}
+      <div className="config-tab-select-mobile">
+        <select value={activeTab} onChange={(e) => setActiveTab(e.target.value)}>
+          {tabs.map(t => (
+            <option key={t.id} value={t.id}>{t.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Desktop: tab buttons */}
+      <div className="tabs config-tabs-desktop">
         {tabs.map(tab => (
           <button
             key={tab.id}
