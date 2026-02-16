@@ -328,7 +328,10 @@ export default function ServiceCard({
                         !pagosOk ? (diff > 0 ? `Pagos exceden ${formatMoney(diff)}` : `Faltan ${formatMoney(Math.abs(diff))}`) : ''
               ))}
               onClick={() => {
-                if (yaEntregado) return
+                if (yaEntregado) {
+                  onSmoothCollapse(lavada.id)
+                  return
+                }
                 if (!canComplete) {
                   triggerValidationErrors()
                   return
