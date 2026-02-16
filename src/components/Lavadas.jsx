@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
@@ -18,6 +19,16 @@ registerLocale('es', es)
 export default function Lavadas() {
   const { lavadas: allLavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, tiposMembresia, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal, addClienteLocal, refreshLavadas, refreshClientes, negocioId, loadAllLavadas, lavadasAllLoaded } = useData()
   const { userProfile, userEmail } = useTenant()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Auto-open modal when navigating with ?new=1 (e.g. from Home FAB)
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setShowModal(true)
+      searchParams.delete('new')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [])
 
   // Trabajador role: only see their own services
   const lavadas = (() => {
@@ -69,6 +80,7 @@ export default function Lavadas() {
   const [importProgress, setImportProgress] = useState(0)
   const [importResult, setImportResult] = useState(null)
   const fileInputRef = useRef(null)
+  const clienteWrapperRef = useRef(null)
 
   // Bulk delete states
   const [modoSeleccion, setModoSeleccion] = useState(false)
@@ -115,6 +127,23 @@ export default function Lavadas() {
   const [showNuevoCliente, setShowNuevoCliente] = useState(false)
   const [nuevoClienteData, setNuevoClienteData] = useState({ nombre: '', placa: '', telefono: '' })
   const [creandoCliente, setCreandoCliente] = useState(false)
+
+  // Close cliente dropdown on click outside or touch outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (clienteWrapperRef.current && !clienteWrapperRef.current.contains(e.target)) {
+        setShowClienteDropdown(false)
+      }
+    }
+    if (showClienteDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener('touchstart', handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [showClienteDropdown])
 
   const [formData, setFormData] = useState({
     cliente_id: '',
@@ -1176,7 +1205,7 @@ export default function Lavadas() {
               <div className="form-grid">
                 <div className="form-group cliente-search-group">
                   <label>Cliente</label>
-                  <div className="cliente-search-wrapper">
+                  <div className="cliente-search-wrapper" ref={clienteWrapperRef}>
                     <input
                       type="text"
                       value={clienteSearch}
@@ -1188,6 +1217,12 @@ export default function Lavadas() {
                         }
                       }}
                       onFocus={() => setShowClienteDropdown(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setShowClienteDropdown(false)
+                          e.target.blur()
+                        }
+                      }}
                       placeholder="Buscar por nombre o placa..."
                       required={!formData.cliente_id}
                       autoComplete="off"
