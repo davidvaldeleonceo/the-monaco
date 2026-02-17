@@ -5,6 +5,7 @@ import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
 import { useServiceHandlers } from '../hooks/useServiceHandlers'
 import ServiceCard from './ServiceCard'
+import NuevoServicioSheet from './NuevoServicioSheet'
 import { formatMoney } from '../utils/money'
 import { Plus, Search, X, Trash2, SlidersHorizontal, Upload, Download, CheckSquare, RefreshCw } from 'lucide-react'
 import Select from 'react-select'
@@ -17,7 +18,7 @@ import es from 'date-fns/locale/es'
 registerLocale('es', es)
 
 export default function Lavadas() {
-  const { lavadas: allLavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, tiposMembresia, loading, updateLavadaLocal, addLavadaLocal, deleteLavadaLocal, addClienteLocal, refreshLavadas, refreshClientes, negocioId, loadAllLavadas, lavadasAllLoaded } = useData()
+  const { lavadas: allLavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, tiposMembresia, loading, updateLavadaLocal, deleteLavadaLocal, refreshLavadas, refreshClientes, negocioId, loadAllLavadas, lavadasAllLoaded } = useData()
   const { userProfile, userEmail } = useTenant()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -86,7 +87,6 @@ export default function Lavadas() {
   const [importProgress, setImportProgress] = useState(0)
   const [importResult, setImportResult] = useState(null)
   const fileInputRef = useRef(null)
-  const clienteWrapperRef = useRef(null)
 
   // Bulk delete states
   const [modoSeleccion, setModoSeleccion] = useState(false)
@@ -105,8 +105,6 @@ export default function Lavadas() {
     getTimerProps,
     hasActiveTimer,
     getEstadoClass,
-    calcularValor,
-    autoAddIncluidos,
     handleEstadoChange,
     handleLavadorChange,
     handleTipoLavadoChangeInline,
@@ -126,220 +124,6 @@ export default function Lavadas() {
       rapido: filtroRapido,
     }))
   }, [filtroEstado, filtroLavador, fechaDesde, fechaHasta, filtroRapido])
-
-
-  const [clienteSearch, setClienteSearch] = useState('')
-  const [showClienteDropdown, setShowClienteDropdown] = useState(false)
-  const [showNuevoCliente, setShowNuevoCliente] = useState(false)
-  const [nuevoClienteData, setNuevoClienteData] = useState({ nombre: '', placa: '', telefono: '' })
-  const [creandoCliente, setCreandoCliente] = useState(false)
-
-  // Close cliente dropdown on click outside or touch outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (clienteWrapperRef.current && !clienteWrapperRef.current.contains(e.target)) {
-        setShowClienteDropdown(false)
-      }
-    }
-    if (showClienteDropdown) {
-      document.addEventListener('mousedown', handleClickOutside)
-      document.addEventListener('touchstart', handleClickOutside)
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('touchstart', handleClickOutside)
-    }
-  }, [showClienteDropdown])
-
-  const [formData, setFormData] = useState({
-    cliente_id: '',
-    placa: '',
-    tipo_lavado_id: '',
-    lavador_id: '',
-    metodo_pago_id: '',
-    valor: 0,
-    adicionales: [],
-    pagos: [],
-    estado: 'EN ESPERA',
-    notas: ''
-  })
-
-  const clienteTieneMembresia = (cliente) => {
-    if (!cliente.membresia_id) return false
-    const nombreMembresia = cliente.membresia?.nombre?.toLowerCase() || ''
-    return !nombreMembresia.includes('sin ')
-  }
-
-  const detectarTipoLavado = (cliente) => {
-    if (clienteTieneMembresia(cliente)) {
-      return tiposLavado.find(t => {
-        const n = t.nombre.toLowerCase()
-        return (n.includes('membresia') || n.includes('membresía')) && !n.includes('sin ')
-      })
-    }
-    return tiposLavado.find(t => {
-      const n = t.nombre.toLowerCase()
-      return n.includes('sin membresia') || n.includes('sin membresía')
-    })
-  }
-
-
-  const handleClienteChange = (clienteId) => {
-    const cliente = clientes.find(c => c.id == clienteId)
-    if (cliente) {
-      const tipo = detectarTipoLavado(cliente)
-      const tipoId = tipo?.id || ''
-      const adicionales = autoAddIncluidos(tipo, formData.adicionales)
-      const valor = calcularValor(tipoId, adicionales)
-
-      setClienteSearch(`${cliente.nombre} - ${cliente.placa}`)
-      setShowClienteDropdown(false)
-      setFormData(prev => ({
-        ...prev,
-        cliente_id: clienteId,
-        placa: cliente.placa || '',
-        tipo_lavado_id: tipoId,
-        adicionales,
-        valor
-      }))
-    } else {
-      setClienteSearch('')
-      setFormData(prev => ({ ...prev, cliente_id: clienteId, placa: '', tipo_lavado_id: '', valor: 0 }))
-    }
-  }
-
-  const handleCrearCliente = async () => {
-    if (!nuevoClienteData.nombre || !nuevoClienteData.placa) return
-    setCreandoCliente(true)
-    const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
-    const hoy = new Date()
-    const fechaStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
-    const { data, error } = await supabase
-      .from('clientes')
-      .insert([{
-        nombre: nuevoClienteData.nombre,
-        placa: nuevoClienteData.placa.toUpperCase(),
-        telefono: nuevoClienteData.telefono || null,
-        membresia_id: sinMembresia?.id || null,
-        fecha_inicio_membresia: fechaStr,
-        fecha_fin_membresia: fechaStr,
-        estado: 'Activo',
-        negocio_id: negocioId
-      }])
-      .select('*, membresia:tipos_membresia(nombre)')
-      .single()
-    setCreandoCliente(false)
-    if (error) {
-      // Conflict: placa already exists — find and select existing client
-      const existente = clientes.find(c => c.placa?.toLowerCase() === nuevoClienteData.placa.toLowerCase())
-      if (existente) {
-        setShowNuevoCliente(false)
-        setNuevoClienteData({ nombre: '', placa: '', telefono: '' })
-        handleClienteChange(existente.id)
-        return
-      }
-      alert('Error al crear cliente: ' + (error.message || 'Error desconocido'))
-      return
-    }
-    if (data) {
-      addClienteLocal(data)
-      setShowNuevoCliente(false)
-      setNuevoClienteData({ nombre: '', placa: '', telefono: '' })
-      setClienteSearch(`${data.nombre} - ${data.placa}`)
-      setShowClienteDropdown(false)
-      const sinMembresiaType = tiposLavado.find(t => t.nombre?.toLowerCase().includes('sin memb'))
-      setFormData(prev => ({
-        ...prev,
-        cliente_id: data.id,
-        placa: data.placa || '',
-        tipo_lavado_id: sinMembresiaType?.id || '',
-        valor: sinMembresiaType?.precio || 0
-      }))
-    }
-  }
-
-  const handlePlacaSearch = (placa) => {
-    setFormData({ ...formData, placa })
-    const cliente = clientes.find(c => c.placa.toLowerCase() === placa.toLowerCase())
-    if (cliente) {
-      handleClienteChange(cliente.id)
-    }
-  }
-
-  const handleTipoLavadoChange = (tipoId) => {
-    const tipo = tiposLavado.find(t => t.id == tipoId)
-    const adicionales = autoAddIncluidos(tipo, formData.adicionales)
-    const valor = calcularValor(tipoId, adicionales)
-    setFormData(prev => ({
-      ...prev,
-      tipo_lavado_id: tipoId,
-      adicionales,
-      valor
-    }))
-  }
-
-  const handleFormAdicionalChange = (servicio, checked) => {
-    setFormData(prev => {
-      let nuevosAdicionales
-      if (checked) {
-        nuevosAdicionales = [...prev.adicionales, { id: servicio.id, nombre: servicio.nombre, precio: Number(servicio.precio) }]
-      } else {
-        nuevosAdicionales = prev.adicionales.filter(a => a.id !== servicio.id)
-      }
-      const valor = calcularValor(prev.tipo_lavado_id, nuevosAdicionales)
-      return { ...prev, adicionales: nuevosAdicionales, valor }
-    })
-  }
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-
-    if (!formData.cliente_id) {
-      alert('Selecciona un cliente antes de guardar')
-      return
-    }
-
-    const { adicionales, pagos, ...rest } = formData
-    const cleanData = Object.fromEntries(
-      Object.entries(rest).map(([key, value]) => [key, value === '' ? null : value])
-    )
-
-    const ahora = new Date().toISOString()
-    const dataToSend = {
-      ...cleanData,
-      adicionales: adicionales,
-      pagos: [],
-      metodo_pago_id: null,
-      fecha: ahora,
-      tiempo_espera_inicio: ahora,
-      negocio_id: negocioId
-    }
-
-    const { data, error } = await supabase
-      .from('lavadas')
-      .insert([dataToSend])
-      .select('*, cliente:clientes(nombre), tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre)')
-      .single()
-
-    if (!error && data) {
-      addLavadaLocal(data)
-      setShowModal(false)
-      setClienteSearch('')
-      setFormData({
-        cliente_id: '',
-        placa: '',
-        tipo_lavado_id: '',
-        lavador_id: '',
-        metodo_pago_id: '',
-        valor: 0,
-        adicionales: [],
-        pagos: [],
-        estado: 'EN ESPERA',
-        notas: ''
-      })
-      navigate('/home')
-    }
-  }
 
 
   const aplicarFiltroRapido = (tipo) => {
@@ -1191,214 +975,21 @@ export default function Lavadas() {
       )}
 
       {/* FAB for mobile */}
-      <button
-        className="fab-nuevo-servicio"
-        onClick={() => setShowModal(true)}
-        title="Nuevo Servicio"
-      >
-        <Plus size={24} />
-      </button>
-
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h2>Nuevo Servicio</h2>
-              <button className="btn-close" onClick={() => setShowModal(false)}>
-                <X size={24} />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="form-grid">
-                <div className="form-group cliente-search-group">
-                  <label>Cliente</label>
-                  <div className="cliente-search-wrapper" ref={clienteWrapperRef}>
-                    <input
-                      type="text"
-                      value={clienteSearch}
-                      onChange={(e) => {
-                        setClienteSearch(e.target.value)
-                        setShowClienteDropdown(true)
-                        if (!e.target.value) {
-                          setFormData(prev => ({ ...prev, cliente_id: '', placa: '', tipo_lavado_id: '', valor: 0 }))
-                        }
-                      }}
-                      onFocus={() => setShowClienteDropdown(true)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
-                          setShowClienteDropdown(false)
-                          e.target.blur()
-                        }
-                      }}
-                      placeholder="Buscar por nombre o placa..."
-                      required={!formData.cliente_id}
-                      autoComplete="off"
-                    />
-                    {formData.cliente_id && (
-                      <button
-                        type="button"
-                        className="cliente-search-clear"
-                        onClick={() => {
-                          setClienteSearch('')
-                          setShowClienteDropdown(false)
-                          setFormData(prev => ({ ...prev, cliente_id: '', placa: '', tipo_lavado_id: '', valor: 0, adicionales: [] }))
-                        }}
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                    {showClienteDropdown && !formData.cliente_id && (
-                      <div className="cliente-search-dropdown">
-                        {clientes
-                          .filter(c => {
-                            const q = clienteSearch.toLowerCase()
-                            return !q || c.nombre?.toLowerCase().includes(q) || c.placa?.toLowerCase().includes(q)
-                          })
-                          .slice(0, 8)
-                          .map(c => (
-                            <div
-                              key={c.id}
-                              className="cliente-search-option"
-                              onMouseDown={() => handleClienteChange(c.id)}
-                            >
-                              <span className="cliente-search-nombre">{c.nombre}</span>
-                              <span className="cliente-search-placa">{c.placa}</span>
-                              {!clienteTieneMembresia(c) && <span className="cliente-search-tag">Sin membresía</span>}
-                            </div>
-                          ))}
-                        {clientes.filter(c => {
-                          const q = clienteSearch.toLowerCase()
-                          return !q || c.nombre?.toLowerCase().includes(q) || c.placa?.toLowerCase().includes(q)
-                        }).length === 0 && (
-                            <div className="cliente-search-empty">
-                              No se encontraron clientes
-                              <button
-                                type="button"
-                                className="btn-nuevo-cliente-inline"
-                                onMouseDown={() => {
-                                  setShowNuevoCliente(true)
-                                  setShowClienteDropdown(false)
-                                  setNuevoClienteData({ nombre: clienteSearch, placa: '', telefono: '' })
-                                }}
-                              >
-                                <Plus size={14} /> Agregar cliente
-                              </button>
-                            </div>
-                          )}
-                      </div>
-                    )}
-                    {showNuevoCliente && (
-                      <div className="nuevo-cliente-inline">
-                        <div className="nuevo-cliente-inline-header">
-                          <span>Nuevo cliente</span>
-                          <button type="button" onClick={() => setShowNuevoCliente(false)}><X size={14} /></button>
-                        </div>
-                        <input
-                          type="text"
-                          placeholder="Nombre"
-                          value={nuevoClienteData.nombre}
-                          onChange={(e) => setNuevoClienteData(prev => ({ ...prev, nombre: e.target.value }))}
-                          autoFocus
-                        />
-                        <input
-                          type="text"
-                          placeholder="Placa"
-                          value={nuevoClienteData.placa}
-                          onChange={(e) => setNuevoClienteData(prev => ({ ...prev, placa: e.target.value }))}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Teléfono (opcional)"
-                          value={nuevoClienteData.telefono}
-                          onChange={(e) => setNuevoClienteData(prev => ({ ...prev, telefono: e.target.value }))}
-                        />
-                        <button
-                          type="button"
-                          className="btn-primary btn-crear-cliente"
-                          onClick={handleCrearCliente}
-                          disabled={creandoCliente || !nuevoClienteData.nombre || !nuevoClienteData.placa}
-                        >
-                          {creandoCliente ? 'Creando...' : 'Crear y seleccionar'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Tipo de Lavado</label>
-                  <select
-                    value={formData.tipo_lavado_id}
-                    onChange={(e) => handleTipoLavadoChange(e.target.value)}
-                  >
-                    <option value="">Seleccionar tipo</option>
-                    {tiposLavado.map(t => (
-                      <option key={t.id} value={t.id}>{t.nombre} - {formatMoney(t.precio)}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Lavador</label>
-                  <select
-                    value={formData.lavador_id}
-                    onChange={(e) => setFormData({ ...formData, lavador_id: e.target.value })}
-                  >
-                    <option value="">Seleccionar lavador</option>
-                    {lavadores.map(l => (
-                      <option key={l.id} value={l.id}>{l.nombre}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Valor</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={formData.valor === 0 ? '' : formData.valor}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '')
-                      setFormData({ ...formData, valor: val === '' ? 0 : Number(val) })
-                    }}
-                  />
-                </div>
-
-                {serviciosAdicionales.map(s => (
-                  <div key={s.id} className="form-group checkbox-group">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={formData.adicionales.some(a => a.id === s.id)}
-                        onChange={(e) => handleFormAdicionalChange(s, e.target.checked)}
-                      />
-                      {s.nombre} (+{formatMoney(s.precio)})
-                    </label>
-                  </div>
-                ))}
-              </div>
-
-              <div className="form-group">
-                <label>Notas</label>
-                <textarea
-                  value={formData.notas}
-                  onChange={(e) => setFormData({ ...formData, notas: e.target.value })}
-                  rows="3"
-                ></textarea>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn-primary">
-                  Guardar Servicio
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {!modoSeleccion && (
+        <button
+          className="fab-nuevo-servicio"
+          onClick={() => setShowModal(true)}
+          title="Nuevo Servicio"
+        >
+          <Plus size={24} />
+        </button>
       )}
+
+      <NuevoServicioSheet
+        isOpen={showModal}
+        onClose={() => { setShowModal(false); navigate('/home') }}
+        onSuccess={() => { setShowModal(false); navigate('/home') }}
+      />
     </div>
   )
 }

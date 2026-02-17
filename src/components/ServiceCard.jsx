@@ -37,6 +37,8 @@ export default function ServiceCard({
   selectionMode = false,
   isSelected = false,
   onToggleSelect,
+  // Highlight
+  isHighlighted = false,
 }) {
   const pagos = lavada.pagos || []
 
@@ -66,7 +68,7 @@ export default function ServiceCard({
   }
 
   return (
-    <div className={`lavada-card ${getEstadoClass(lavada.estado)}-border ${isExpanded && !isCollapsing ? 'expanded' : ''} ${isSelected ? 'card-selected' : ''} ${isUpdating ? 'card-updating' : ''}`}>
+    <div data-id={lavada.id} className={`lavada-card ${getEstadoClass(lavada.estado)}-border ${isExpanded && !isCollapsing ? 'expanded' : ''} ${isSelected ? 'card-selected' : ''} ${isUpdating ? 'card-updating' : ''} ${isHighlighted ? 'card-highlight' : ''}`}>
       <div
         className="lavada-card-header"
         onClick={() => selectionMode && onToggleSelect ? onToggleSelect(lavada.id) : onToggleExpand()}

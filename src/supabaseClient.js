@@ -72,7 +72,7 @@ class QueryBuilder {
     this._table = table
     this._method = 'GET'
     this._body = null
-    this._filters = {}
+    this._filters = []
     this._select = '*'
     this._order = null
     this._limit = null
@@ -104,52 +104,52 @@ class QueryBuilder {
   }
 
   eq(column, value) {
-    this._filters[column] = `eq.${value}`
+    this._filters.push([column, `eq.${value}`])
     return this
   }
 
   neq(column, value) {
-    this._filters[column] = `neq.${value}`
+    this._filters.push([column, `neq.${value}`])
     return this
   }
 
   gt(column, value) {
-    this._filters[column] = `gt.${value}`
+    this._filters.push([column, `gt.${value}`])
     return this
   }
 
   gte(column, value) {
-    this._filters[column] = `gte.${value}`
+    this._filters.push([column, `gte.${value}`])
     return this
   }
 
   lt(column, value) {
-    this._filters[column] = `lt.${value}`
+    this._filters.push([column, `lt.${value}`])
     return this
   }
 
   lte(column, value) {
-    this._filters[column] = `lte.${value}`
+    this._filters.push([column, `lte.${value}`])
     return this
   }
 
   like(column, value) {
-    this._filters[column] = `like.${value}`
+    this._filters.push([column, `like.${value}`])
     return this
   }
 
   ilike(column, value) {
-    this._filters[column] = `ilike.${value}`
+    this._filters.push([column, `ilike.${value}`])
     return this
   }
 
   is(column, value) {
-    this._filters[column] = `is.${value}`
+    this._filters.push([column, `is.${value}`])
     return this
   }
 
   in(column, values) {
-    this._filters[column] = `in.(${values.join(',')})`
+    this._filters.push([column, `in.(${values.join(',')})`])
     return this
   }
 
@@ -186,8 +186,8 @@ class QueryBuilder {
       params.set('select', this._select)
     }
 
-    for (const [key, value] of Object.entries(this._filters)) {
-      params.set(key, value)
+    for (const [key, value] of this._filters) {
+      params.append(key, value)
     }
 
     if (this._or) {

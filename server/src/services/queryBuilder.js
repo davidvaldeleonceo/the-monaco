@@ -43,70 +43,76 @@ function parseFilters(query, table) {
 
     validateColumnName(key)
 
-    const val = String(rawValue)
-    const dotIdx = val.indexOf('.')
-    if (dotIdx === -1) continue
+    // Handle array values (multiple filters on same column, e.g. fecha=gte.X&fecha=lt.Y)
+    const rawValues = Array.isArray(rawValue) ? rawValue : [rawValue]
 
-    const op = val.substring(0, dotIdx)
-    const operand = val.substring(dotIdx + 1)
+    for (const rv of rawValues) {
+      const val = String(rv)
+      const dotIdx = val.indexOf('.')
+      if (dotIdx === -1) continue
 
-    switch (op) {
-      case 'eq':
-        if (operand === 'true') {
-          filters.push(`"${table}"."${key}" = true`)
-        } else if (operand === 'false') {
-          filters.push(`"${table}"."${key}" = false`)
-        } else if (operand === 'null') {
-          filters.push(`"${table}"."${key}" IS NULL`)
-        } else {
-          filters.push(`"${table}"."${key}" = $${paramIdx++}`)
+      const op = val.substring(0, dotIdx)
+      const operand = val.substring(dotIdx + 1)
+
+      switch (op) {
+        case 'eq':
+          if (operand === 'true') {
+            filters.push(`"${table}"."${key}" = true`)
+          } else if (operand === 'false') {
+            filters.push(`"${table}"."${key}" = false`)
+          } else if (operand === 'null') {
+            filters.push(`"${table}"."${key}" IS NULL`)
+          } else {
+            filters.push(`"${table}"."${key}" = $${paramIdx++}`)
+            values.push(operand)
+          }
+          break
+        case 'neq':
+          filters.push(`"${table}"."${key}" != $${paramIdx++}`)
           values.push(operand)
+          break
+        case 'gt':
+          filters.push(`"${table}"."${key}" > $${paramIdx++}`)
+          values.push(operand)
+          break
+        case 'gte':
+          filters.push(`"${table}"."${key}" >= $${paramIdx++}`)
+          values.push(operand)
+          break
+        case 'lt':
+          filters.push(`"${table}"."${key}" < $${paramIdx++}`)
+          values.push(operand)
+          break
+        case 'lte':
+          filters.push(`"${table}"."${key}" <= $${paramIdx++}`)
+          values.push(operand)
+          break
+        case 'like':
+          filters.push(`"${table}"."${key}" LIKE $${paramIdx++}`)
+          values.push(operand)
+          break
+        case 'ilike':
+          filters.push(`"${table}"."${key}" ILIKE $${paramIdx++}`)
+          values.push(operand)
+          break
+        case 'is':
+          if (operand === 'null') {
+            filters.push(`"${table}"."${key}" IS NULL`)
+          } else if (operand === 'true') {
+            filters.push(`"${table}"."${key}" IS TRUE`)
+          } else if (operand === 'false') {
+            filters.push(`"${table}"."${key}" IS FALSE`)
+          }
+          break
+        case 'in': {
+          // Format: in.(val1,val2,val3)
+          const inValues = operand.replace(/^\(/, '').replace(/\)$/, '').split(',')
+          const placeholders = inValues.map(() => `$${paramIdx++}`)
+          filters.push(`"${table}"."${key}" IN (${placeholders.join(',')})`)
+          values.push(...inValues)
+          break
         }
-        break
-      case 'neq':
-        filters.push(`"${table}"."${key}" != $${paramIdx++}`)
-        values.push(operand)
-        break
-      case 'gt':
-        filters.push(`"${table}"."${key}" > $${paramIdx++}`)
-        values.push(operand)
-        break
-      case 'gte':
-        filters.push(`"${table}"."${key}" >= $${paramIdx++}`)
-        values.push(operand)
-        break
-      case 'lt':
-        filters.push(`"${table}"."${key}" < $${paramIdx++}`)
-        values.push(operand)
-        break
-      case 'lte':
-        filters.push(`"${table}"."${key}" <= $${paramIdx++}`)
-        values.push(operand)
-        break
-      case 'like':
-        filters.push(`"${table}"."${key}" LIKE $${paramIdx++}`)
-        values.push(operand)
-        break
-      case 'ilike':
-        filters.push(`"${table}"."${key}" ILIKE $${paramIdx++}`)
-        values.push(operand)
-        break
-      case 'is':
-        if (operand === 'null') {
-          filters.push(`"${table}"."${key}" IS NULL`)
-        } else if (operand === 'true') {
-          filters.push(`"${table}"."${key}" IS TRUE`)
-        } else if (operand === 'false') {
-          filters.push(`"${table}"."${key}" IS FALSE`)
-        }
-        break
-      case 'in':
-        // Format: in.(val1,val2,val3)
-        const inValues = operand.replace(/^\(/, '').replace(/\)$/, '').split(',')
-        const placeholders = inValues.map(() => `$${paramIdx++}`)
-        filters.push(`"${table}"."${key}" IN (${placeholders.join(',')})`)
-        values.push(...inValues)
-        break
+      }
     }
   }
 

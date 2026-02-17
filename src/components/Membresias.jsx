@@ -37,6 +37,7 @@ export default function Membresias() {
   const [password, setPassword] = useState('')
   const [errorPassword, setErrorPassword] = useState('')
   const [nuevoCliente, setNuevoCliente] = useState(false)
+  const [minFechaActivacion, setMinFechaActivacion] = useState(null)
   const [clienteData, setClienteData] = useState({
     nombre: '',
     placa: '',
@@ -44,6 +45,27 @@ export default function Membresias() {
     cedula: '',
     moto: ''
   })
+
+  const checkMembresiaActiva = (cliente) => {
+    if (!cliente?.fecha_fin_membresia) {
+      setMinFechaActivacion(null)
+      return
+    }
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    const finMembresia = new Date(cliente.fecha_fin_membresia + 'T00:00:00')
+    if (finMembresia >= hoy) {
+      const minDate = new Date(finMembresia)
+      minDate.setDate(minDate.getDate() + 1)
+      setMinFechaActivacion(minDate)
+      setFormData(prev => {
+        const currentActivacion = prev.fecha_activacion || new Date()
+        return { ...prev, fecha_activacion: currentActivacion < minDate ? minDate : currentActivacion }
+      })
+    } else {
+      setMinFechaActivacion(null)
+    }
+  }
 
   const fetchPagos = async () => {
     const { data } = await supabase
@@ -206,6 +228,7 @@ export default function Membresias() {
 
     setShowModal(false)
     setNuevoCliente(false)
+    setMinFechaActivacion(null)
     setClienteData({ nombre: '', placa: '', telefono: '', cedula: '', moto: '' })
     setFormData({ cliente_id: '', membresia_id: '', metodo_pago_id: '', valor: 0, fecha_activacion: new Date() })
     fetchPagos()
@@ -537,6 +560,7 @@ export default function Membresias() {
                         setNuevoCliente(!nuevoCliente)
                         setFormData(prev => ({ ...prev, cliente_id: '' }))
                         setClienteData({ nombre: '', placa: '', telefono: '', cedula: '', moto: '' })
+                        setMinFechaActivacion(null)
                       }}
                     >
                       {nuevoCliente ? 'Seleccionar existente' : '+ Nuevo cliente'}
@@ -545,7 +569,15 @@ export default function Membresias() {
                   {!nuevoCliente ? (
                     <Select
                       value={clientes.filter(c => c.id === formData.cliente_id).map(c => ({ value: c.id, label: `${c.nombre} - ${c.placa}` }))[0] || null}
-                      onChange={(opt) => setFormData({ ...formData, cliente_id: opt?.value || '' })}
+                      onChange={(opt) => {
+                        setFormData({ ...formData, cliente_id: opt?.value || '' })
+                        const cliente = clientes.find(c => c.id === opt?.value)
+                        if (cliente) {
+                          checkMembresiaActiva(cliente)
+                        } else {
+                          setMinFechaActivacion(null)
+                        }
+                      }}
                       options={clientes.map(c => ({ value: c.id, label: `${c.nombre} - ${c.placa}` }))}
                       placeholder="Buscar cliente..."
                       isClearable
@@ -575,7 +607,16 @@ export default function Membresias() {
                         <input
                           type="text"
                           value={clienteData.placa}
-                          onChange={(e) => setClienteData({ ...clienteData, placa: e.target.value.toUpperCase() })}
+                          onChange={(e) => {
+                            const placa = e.target.value.toUpperCase()
+                            setClienteData({ ...clienteData, placa })
+                            const clienteExistente = clientes.find(c => c.placa?.toLowerCase() === placa.toLowerCase())
+                            if (clienteExistente) {
+                              checkMembresiaActiva(clienteExistente)
+                            } else {
+                              setMinFechaActivacion(null)
+                            }
+                          }}
                           required
                         />
                       </div>
@@ -648,7 +689,20 @@ export default function Membresias() {
                     dateFormat="dd/MM/yyyy"
                     locale="es"
                     placeholderText="Seleccionar fecha"
+                    minDate={minFechaActivacion}
                   />
+                  {minFechaActivacion && (
+                    <span style={{ color: '#f59e0b', fontSize: '0.8rem', marginTop: '0.35rem', display: 'block' }}>
+                      Cliente tiene membresía activa hasta {(() => {
+                        const fin = new Date(minFechaActivacion)
+                        fin.setDate(fin.getDate() - 1)
+                        const d = String(fin.getDate()).padStart(2, '0')
+                        const m = String(fin.getMonth() + 1).padStart(2, '0')
+                        const y = fin.getFullYear()
+                        return `${d}/${m}/${y}`
+                      })()}
+                    </span>
+                  )}
                 </div>
               </div>
 

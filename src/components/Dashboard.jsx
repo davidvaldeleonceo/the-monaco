@@ -54,6 +54,15 @@ export default function Dashboard() {
   const [allTransacciones, setAllTransacciones] = useState([])
   const [transLoading, setTransLoading] = useState(true)
   const [periodo, setPeriodo] = useState('dia')
+  const [chartsReady, setChartsReady] = useState(false)
+
+  useEffect(() => {
+    if (!loading && !transLoading) {
+      const raf = requestAnimationFrame(() => setChartsReady(true))
+      return () => cancelAnimationFrame(raf)
+    }
+    setChartsReady(false)
+  }, [loading, transLoading])
 
   useEffect(() => {
     const fetchTransacciones = async () => {
@@ -173,6 +182,7 @@ export default function Dashboard() {
 
   // Donut: motos por estado in period
   const estadoData = useMemo(() => {
+    if (!chartsReady) return []
     const counts = {}
     lavadasPeriodo.forEach(l => {
       counts[l.estado] = (counts[l.estado] || 0) + 1
@@ -182,10 +192,11 @@ export default function Dashboard() {
       value,
       color: ESTADO_COLORS[name] || '#666'
     }))
-  }, [lavadasPeriodo])
+  }, [lavadasPeriodo, chartsReady])
 
   // Horizontal bars: lavadas por lavador in period
   const lavadorData = useMemo(() => {
+    if (!chartsReady) return []
     const counts = {}
     lavadasPeriodo.forEach(l => {
       const nombre = l.lavador?.nombre || 'Sin asignar'
@@ -195,10 +206,11 @@ export default function Dashboard() {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5)
-  }, [lavadasPeriodo])
+  }, [lavadasPeriodo, chartsReady])
 
   // Generate virtual entries from ALL lavadas (not just period-filtered) for chart use
   const allPagosLavadas = useMemo(() => {
+    if (!chartsReady) return []
     return lavadas.flatMap(l => {
       const pagos = l.pagos || []
       if (pagos.length === 0) return []
@@ -209,16 +221,18 @@ export default function Dashboard() {
         fecha: fechaStr
       }))
     })
-  }, [lavadas])
+  }, [lavadas, chartsReady])
 
   // Combined income sources for charts
   const allIngresos = useMemo(() => {
+    if (!chartsReady) return []
     const fromTrans = allTransacciones.filter(t => t.tipo === 'INGRESO')
     return [...fromTrans, ...allPagosLavadas]
-  }, [allTransacciones, allPagosLavadas])
+  }, [allTransacciones, allPagosLavadas, chartsReady])
 
   // Vertical bars: ingresos breakdown by sub-periods
   const ingresosBarData = useMemo(() => {
+    if (!chartsReady) return []
     const result = []
 
     if (periodo === 'dia') {
@@ -269,11 +283,12 @@ export default function Dashboard() {
     }
 
     return result
-  }, [periodo, desde, allIngresos])
+  }, [periodo, desde, allIngresos, chartsReady])
 
   // --- Lists ---
 
   const topClientes = useMemo(() => {
+    if (!chartsReady) return []
     const counts = {}
     lavadasPeriodo.forEach(l => {
       const id = l.cliente_id
@@ -283,9 +298,10 @@ export default function Dashboard() {
       counts[id].total += Number(l.valor || 0)
     })
     return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, 5)
-  }, [lavadasPeriodo])
+  }, [lavadasPeriodo, chartsReady])
 
   const topServicios = useMemo(() => {
+    if (!chartsReady) return []
     const counts = {}
     lavadasPeriodo.forEach(l => {
       const nombre = l.tipo_lavado?.nombre || 'Sin tipo'
@@ -295,9 +311,10 @@ export default function Dashboard() {
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5)
-  }, [lavadasPeriodo])
+  }, [lavadasPeriodo, chartsReady])
 
   const tiempoEspera = useMemo(() => {
+    if (!chartsReady) return { promedio: 0, max: 0, count: 0 }
     const conEspera = lavadasPeriodo.filter(l => l.duracion_espera > 0)
     if (conEspera.length === 0) return { promedio: 0, max: 0, count: 0 }
     const total = conEspera.reduce((s, l) => s + l.duracion_espera, 0)
@@ -307,7 +324,7 @@ export default function Dashboard() {
       max,
       count: conEspera.length
     }
-  }, [lavadasPeriodo])
+  }, [lavadasPeriodo, chartsReady])
 
   const formatSeg = (seg) => {
     if (seg < 60) return `${seg}s`
@@ -412,7 +429,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* FILA 2: Charts */}
+      {/* FILA 2: Charts + FILA 3: Lists */}
+      {chartsReady ? (
+      <>
       <div className="dash-charts">
         <div className="dash-chart-card">
           <h3 className="dash-chart-title">Motos por Estado</h3>
@@ -564,6 +583,10 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+      </>
+      ) : (
+        <div className="loading">Cargando gráficas...</div>
+      )}
     </div>
   )
 }

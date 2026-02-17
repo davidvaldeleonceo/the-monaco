@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "db:connect": "sh scripts/db-tunnel.sh",
-    "deploy": "sh scripts/deploy-frontend.sh"
+    "deploy": "sh scripts/deploy-frontend.sh",
+    "deploy:api": "sh scripts/deploy-backend.sh"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

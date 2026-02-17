@@ -167,8 +167,9 @@ export default function Balance() {
     const pagos = l.pagos || []
     if (pagos.length === 0) return []
 
-    const fechaLavada = new Date(l.fecha)
-    fechaLavada.setHours(0, 0, 0, 0)
+    const dateOnly = typeof l.fecha === 'string' ? l.fecha.split('T')[0] : null
+    const fechaLavada = dateOnly ? new Date(dateOnly + 'T00:00:00') : new Date(l.fecha)
+    if (isNaN(fechaLavada.getTime())) return []
 
     let dentroDeRango = true
     if (fechaDesde) {

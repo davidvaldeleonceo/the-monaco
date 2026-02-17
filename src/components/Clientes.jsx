@@ -1,8 +1,11 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
-import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles } from 'lucide-react'
+import { formatMoney } from '../utils/money'
+import { LAVADAS_SELECT } from '../config/constants'
+import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles, Droplets, DollarSign } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -14,6 +17,8 @@ registerLocale('es', es)
 export default function Clientes() {
   const { clientes, tiposMembresia, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, negocioId } = useData()
   const { userEmail } = useTenant()
+  const location = useLocation()
+  const [highlightId, setHighlightId] = useState(null)
 
   const [showModal, setShowModal] = useState(false)
   const [editando, setEditando] = useState(null)
@@ -24,10 +29,38 @@ export default function Clientes() {
   const [fechaHasta, setFechaHasta] = useState(null)
   const [filtroRapido, setFiltroRapido] = useState('')
   const [expandedCard, setExpandedCard] = useState(null)
-  const [showFilters, setShowFilters] = useState(false)
   const [selectedClientes, setSelectedClientes] = useState(new Set())
   const [modoSeleccion, setModoSeleccion] = useState(false)
   const [filtroNuevos, setFiltroNuevos] = useState(false)
+  const [sortBy, setSortBy] = useState('')
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false)
+  const [showFabMenu, setShowFabMenu] = useState(false)
+  const [clienteHistorial, setClienteHistorial] = useState({})
+
+  // Receive highlightId from navigation
+  useEffect(() => {
+    if (location.state?.highlightId) {
+      setSearch('')
+      setFiltroTipoCliente('')
+      setFiltroEstado('')
+      setFechaDesde(null)
+      setFechaHasta(null)
+      setFiltroRapido('')
+      setFiltroNuevos(false)
+      setHighlightId(location.state.highlightId)
+      window.history.replaceState({}, '')
+    }
+  }, [location.state])
+
+  // Scroll to highlighted client
+  useEffect(() => {
+    if (!highlightId) return
+    const raf = requestAnimationFrame(() => {
+      document.querySelector(`[data-id="${highlightId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    const timer = setTimeout(() => setHighlightId(null), 1200)
+    return () => { cancelAnimationFrame(raf); clearTimeout(timer) }
+  }, [highlightId])
 
   // Import CSV states
   const [showImportModal, setShowImportModal] = useState(false)
@@ -50,8 +83,7 @@ export default function Clientes() {
     moto: '',
     membresia_id: '',
     fecha_inicio_membresia: null,
-    fecha_fin_membresia: null,
-    estado: 'Activo'
+    fecha_fin_membresia: null
   })
 
   const fechaLocalStr = (date) => {
@@ -143,18 +175,45 @@ export default function Clientes() {
       moto: '',
       membresia_id: '',
       fecha_inicio_membresia: null,
-      fecha_fin_membresia: null,
-      estado: 'Activo'
+      fecha_fin_membresia: null
     })
   }
 
-  const parseFecha = (str) => str ? new Date(str + 'T00:00:00') : null
+  const parseFecha = (str) => {
+    if (!str) return null
+    const dateOnly = typeof str === 'string' ? str.split('T')[0] : null
+    if (!dateOnly) return null
+    const d = new Date(dateOnly + 'T00:00:00')
+    return isNaN(d.getTime()) ? null : d
+  }
 
   const formatFecha = (str) => {
     if (!str) return '—'
     const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-    const d = new Date(str + 'T00:00:00')
+    const dateOnly = typeof str === 'string' ? str.split('T')[0] : null
+    if (!dateOnly) return '—'
+    const d = new Date(dateOnly + 'T00:00:00')
+    if (isNaN(d.getTime())) return '—'
     return `${d.getDate()} ${meses[d.getMonth()]} ${d.getFullYear()}`
+  }
+
+  const fetchHistorial = async (cliente) => {
+    if (clienteHistorial[cliente.id] && !clienteHistorial[cliente.id].loading) return
+    setClienteHistorial(prev => ({ ...prev, [cliente.id]: { lavadas: [], transacciones: [], loading: true } }))
+
+    const [lavRes, txRes] = await Promise.all([
+      supabase.from('lavadas').select(LAVADAS_SELECT)
+        .eq('cliente_id', cliente.id)
+        .order('fecha', { ascending: false }).limit(20),
+      supabase.from('transacciones').select('*, metodo_pago:metodos_pago(nombre)')
+        .ilike('placa_o_persona', `%${cliente.placa}%`)
+        .order('fecha', { ascending: false }).limit(20)
+    ])
+
+    setClienteHistorial(prev => ({
+      ...prev,
+      [cliente.id]: { lavadas: lavRes.data || [], transacciones: txRes.data || [], loading: false }
+    }))
   }
 
   const handleEdit = (cliente) => {
@@ -168,8 +227,7 @@ export default function Clientes() {
       moto: cliente.moto || '',
       membresia_id: cliente.membresia_id || '',
       fecha_inicio_membresia: parseFecha(cliente.fecha_inicio_membresia),
-      fecha_fin_membresia: parseFecha(cliente.fecha_fin_membresia),
-      estado: cliente.estado || 'Activo'
+      fecha_fin_membresia: parseFecha(cliente.fecha_fin_membresia)
     })
     setShowModal(true)
   }
@@ -183,6 +241,7 @@ export default function Clientes() {
       } else {
         deleteClienteLocal(id)
         setSelectedClientes(prev => { const next = new Set(prev); next.delete(id); return next })
+        setClienteHistorial(prev => { const next = { ...prev }; delete next[id]; return next })
       }
     }
   }
@@ -197,10 +256,10 @@ export default function Clientes() {
   }
 
   const toggleSelectAll = () => {
-    if (selectedClientes.size === clientesFiltrados.length) {
+    if (selectedClientes.size === clientesOrdenados.length) {
       setSelectedClientes(new Set())
     } else {
-      setSelectedClientes(new Set(clientesFiltrados.map(c => c.id)))
+      setSelectedClientes(new Set(clientesOrdenados.map(c => c.id)))
     }
   }
 
@@ -225,6 +284,11 @@ export default function Clientes() {
 
     setSelectedClientes(new Set())
     setModoSeleccion(false)
+    setClienteHistorial(prev => {
+      const next = { ...prev }
+      ids.forEach(id => delete next[id])
+      return next
+    })
 
     if (fallos > 0) {
       alert(`Se eliminaron ${eliminados} de ${count} clientes. ${fallos} no se pudieron eliminar porque tienen servicios asociados.`)
@@ -555,9 +619,19 @@ export default function Clientes() {
     if (!cliente.fecha_inicio_membresia || !cliente.fecha_fin_membresia) return 'Inactivo'
     const hoy = new Date()
     hoy.setHours(0, 0, 0, 0)
-    const inicio = new Date(cliente.fecha_inicio_membresia + 'T00:00:00')
-    const fin = new Date(cliente.fecha_fin_membresia + 'T00:00:00')
+    const inicioStr = typeof cliente.fecha_inicio_membresia === 'string' ? cliente.fecha_inicio_membresia.split('T')[0] : null
+    const finStr = typeof cliente.fecha_fin_membresia === 'string' ? cliente.fecha_fin_membresia.split('T')[0] : null
+    if (!inicioStr || !finStr) return 'Inactivo'
+    const inicio = new Date(inicioStr + 'T00:00:00')
+    const fin = new Date(finStr + 'T00:00:00')
+    if (isNaN(inicio.getTime()) || isNaN(fin.getTime())) return 'Inactivo'
     return hoy >= inicio && hoy <= fin ? 'Activo' : 'Inactivo'
+  }
+
+  const hasActiveFilters = !!(filtroTipoCliente || filtroEstado || fechaDesde || fechaHasta || filtroRapido || filtroNuevos || sortBy)
+  const clearAllFilters = () => {
+    setFiltroTipoCliente(''); setFiltroEstado(''); setFechaDesde(null); setFechaHasta(null)
+    setFiltroRapido(''); setFiltroNuevos(false); setSortBy('')
   }
 
   const clientesFiltrados = clientes.filter(c => {
@@ -571,16 +645,21 @@ export default function Clientes() {
     let matchFechaDesde = true
     let matchFechaHasta = true
     if (c.fecha_fin_membresia) {
-      const venc = new Date(c.fecha_fin_membresia + 'T00:00:00')
-      if (fechaDesde) {
-        const desde = new Date(fechaDesde)
-        desde.setHours(0, 0, 0, 0)
-        matchFechaDesde = venc >= desde
-      }
-      if (fechaHasta) {
-        const hasta = new Date(fechaHasta)
-        hasta.setHours(23, 59, 59, 999)
-        matchFechaHasta = venc <= hasta
+      const vencStr = typeof c.fecha_fin_membresia === 'string' ? c.fecha_fin_membresia.split('T')[0] : null
+      const venc = vencStr ? new Date(vencStr + 'T00:00:00') : null
+      if (!venc || isNaN(venc.getTime())) {
+        if (fechaDesde || fechaHasta) matchFechaDesde = false
+      } else {
+        if (fechaDesde) {
+          const desde = new Date(fechaDesde)
+          desde.setHours(0, 0, 0, 0)
+          matchFechaDesde = venc >= desde
+        }
+        if (fechaHasta) {
+          const hasta = new Date(fechaHasta)
+          hasta.setHours(23, 59, 59, 999)
+          matchFechaHasta = venc <= hasta
+        }
       }
     } else {
       if (fechaDesde || fechaHasta) {
@@ -593,15 +672,23 @@ export default function Clientes() {
     return matchSearch && matchTipo && matchEstado && matchFechaDesde && matchFechaHasta && matchNuevos
   })
 
+  const clientesOrdenados = [...clientesFiltrados].sort((a, b) => {
+    if (sortBy === 'nombre-asc') return (a.nombre || '').localeCompare(b.nombre || '')
+    if (sortBy === 'nombre-desc') return (b.nombre || '').localeCompare(a.nombre || '')
+    if (sortBy === 'placa-asc') return (a.placa || '').localeCompare(b.placa || '')
+    if (sortBy === 'placa-desc') return (b.placa || '').localeCompare(a.placa || '')
+    return 0
+  })
+
   if (loading) {
     return <div className="loading">Cargando...</div>
   }
 
   return (
     <div className="clientes-page">
-      <div className="page-header">
-        <h1 className="page-title">Clientes <span className="total-hoy">({clientesFiltrados.length})</span></h1>
-        <div className="page-header-actions">
+      <div className="clientes-title-row">
+        <h1 className="page-title">Clientes <span className="total-hoy">({clientesOrdenados.length})</span></h1>
+        <div className="clientes-desktop-actions">
           <button
             className={`btn-secondary ${modoSeleccion ? 'btn-seleccion-activo' : ''}`}
             onClick={() => { setModoSeleccion(prev => !prev); setSelectedClientes(new Set()) }}
@@ -620,106 +707,125 @@ export default function Clientes() {
         </div>
       </div>
 
-      <div className="filters">
-        <div className="filters-row-main">
-          <div className="search-box">
-            <Search size={18} />
-            <input
-              type="text"
-              placeholder="Buscar nombre, placa, cédula..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <select
-            value={filtroTipoCliente}
-            onChange={(e) => setFiltroTipoCliente(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Tipo</option>
-            {tiposMembresia.map(m => (
-              <option key={m.id} value={m.id}>{m.nombre}</option>
-            ))}
-          </select>
-          <select
-            value={filtroEstado}
-            onChange={(e) => setFiltroEstado(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Estado</option>
-            <option value="Activo">Activo</option>
-            <option value="Inactivo">Inactivo</option>
-          </select>
-          <button
-            className={`filter-toggle-btn ${showFilters ? 'active' : ''}`}
-            onClick={() => setShowFilters(prev => !prev)}
-            title="Más filtros"
-          >
-            <SlidersHorizontal size={18} />
-          </button>
-          <button
-            className={`filter-btn ${filtroNuevos ? 'active' : ''}`}
-            onClick={() => setFiltroNuevos(prev => !prev)}
-            title="Nuevos hoy"
-            style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-          >
-            <Sparkles size={14} /> Nuevos hoy
-          </button>
-          {(search || filtroTipoCliente || filtroEstado || fechaDesde || fechaHasta || filtroRapido || filtroNuevos) && (
-            <button
-              className="filter-clear-btn"
-              onClick={() => {
-                setSearch('')
-                setFiltroTipoCliente('')
-                setFiltroEstado('')
-                setFechaDesde(null)
-                setFechaHasta(null)
-                setFiltroRapido('')
-                setFiltroNuevos(false)
-              }}
-              title="Limpiar filtros"
-            >
+      <div className="clientes-search-row">
+        <div className="search-box">
+          <Search size={18} />
+          <input
+            type="text"
+            placeholder="Buscar nombre, placa, cédula..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button className="search-clear" onClick={() => setSearch('')}>
               <X size={16} />
             </button>
           )}
         </div>
-
-        <div className={`filters-row-extra ${showFilters ? 'open' : ''}`}>
-          <div className="filter-rapido">
-            <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
-            <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
-            <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
-            <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
-            <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
-          </div>
-          <div className="filter-fechas">
-            <DatePicker
-              selected={fechaDesde}
-              onChange={(date) => setFechaDesde(date)}
-              selectsStart
-              startDate={fechaDesde}
-              endDate={fechaHasta}
-              placeholderText="Desde"
-              className="filter-date"
-              dateFormat="dd/MM/yyyy"
-              locale="es"
-              isClearable
-            />
-            <span className="filter-separator">→</span>
-            <DatePicker
-              selected={fechaHasta}
-              onChange={(date) => setFechaHasta(date)}
-              selectsEnd
-              startDate={fechaDesde}
-              endDate={fechaHasta}
-              minDate={fechaDesde}
-              placeholderText="Hasta"
-              className="filter-date"
-              dateFormat="dd/MM/yyyy"
-              locale="es"
-              isClearable
-            />
-          </div>
+        <div className="clientes-filter-wrapper">
+          <button
+            className={`clientes-filter-btn ${hasActiveFilters ? 'active' : ''}`}
+            onClick={() => setShowFilterDropdown(prev => !prev)}
+          >
+            <SlidersHorizontal size={18} />
+          </button>
+          {showFilterDropdown && (
+            <>
+              <div className="clientes-filter-overlay" onClick={() => setShowFilterDropdown(false)} />
+              <div className="clientes-filter-dropdown">
+                <div className="cfd-section">
+                  <span className="cfd-label">Tipo</span>
+                  <select
+                    value={filtroTipoCliente}
+                    onChange={(e) => setFiltroTipoCliente(e.target.value)}
+                    className="cfd-select"
+                  >
+                    <option value="">Todos</option>
+                    {tiposMembresia.map(m => (
+                      <option key={m.id} value={m.id}>{m.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="cfd-section">
+                  <span className="cfd-label">Estado</span>
+                  <select
+                    value={filtroEstado}
+                    onChange={(e) => setFiltroEstado(e.target.value)}
+                    className="cfd-select"
+                  >
+                    <option value="">Todos</option>
+                    <option value="Activo">Activo</option>
+                    <option value="Inactivo">Inactivo</option>
+                  </select>
+                </div>
+                <div className="cfd-section">
+                  <span className="cfd-label">Vencimiento</span>
+                  <div className="cfd-rapido">
+                    <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
+                    <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
+                    <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
+                    <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
+                    <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
+                  </div>
+                  <div className="cfd-dates">
+                    <DatePicker
+                      selected={fechaDesde}
+                      onChange={(date) => setFechaDesde(date)}
+                      selectsStart
+                      startDate={fechaDesde}
+                      endDate={fechaHasta}
+                      placeholderText="Desde"
+                      className="filter-date"
+                      dateFormat="dd/MM/yyyy"
+                      locale="es"
+                      isClearable
+                    />
+                    <span className="filter-separator">→</span>
+                    <DatePicker
+                      selected={fechaHasta}
+                      onChange={(date) => setFechaHasta(date)}
+                      selectsEnd
+                      startDate={fechaDesde}
+                      endDate={fechaHasta}
+                      minDate={fechaDesde}
+                      placeholderText="Hasta"
+                      className="filter-date"
+                      dateFormat="dd/MM/yyyy"
+                      locale="es"
+                      isClearable
+                    />
+                  </div>
+                </div>
+                <div className="cfd-section">
+                  <span className="cfd-label">Ordenar</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="cfd-select"
+                  >
+                    <option value="">Sin orden</option>
+                    <option value="nombre-asc">Nombre A → Z</option>
+                    <option value="nombre-desc">Nombre Z → A</option>
+                    <option value="placa-asc">Placa A → Z</option>
+                    <option value="placa-desc">Placa Z → A</option>
+                  </select>
+                </div>
+                <div className="cfd-section">
+                  <button
+                    className={`filter-btn cfd-nuevos-btn ${filtroNuevos ? 'active' : ''}`}
+                    onClick={() => setFiltroNuevos(prev => !prev)}
+                  >
+                    <Sparkles size={14} /> Nuevos hoy
+                  </button>
+                </div>
+                {hasActiveFilters && (
+                  <button className="cfd-clear" onClick={() => { clearAllFilters(); setShowFilterDropdown(false) }}>
+                    <X size={14} /> Limpiar filtros
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -734,7 +840,7 @@ export default function Clientes() {
                   <label className="custom-check">
                     <input
                       type="checkbox"
-                      checked={clientesFiltrados.length > 0 && selectedClientes.size === clientesFiltrados.length}
+                      checked={clientesOrdenados.length > 0 && selectedClientes.size === clientesOrdenados.length}
                       onChange={toggleSelectAll}
                     />
                     <span className="checkmark"></span>
@@ -751,8 +857,8 @@ export default function Clientes() {
             </tr>
           </thead>
           <tbody>
-            {clientesFiltrados.map((cliente) => (
-              <tr key={cliente.id} className={selectedClientes.has(cliente.id) ? 'row-selected' : ''}>
+            {clientesOrdenados.map((cliente) => (
+              <tr key={cliente.id} data-id={cliente.id} className={`${selectedClientes.has(cliente.id) ? 'row-selected' : ''} ${highlightId === cliente.id ? 'card-highlight' : ''}`}>
                 {modoSeleccion && (
                   <td className="td-checkbox">
                     <label className="custom-check">
@@ -800,7 +906,7 @@ export default function Clientes() {
                 </td>
               </tr>
             ))}
-            {clientesFiltrados.length === 0 && (
+            {clientesOrdenados.length === 0 && (
               <tr>
                 <td colSpan={modoSeleccion ? 8 : 7} className="empty">No hay clientes registrados</td>
               </tr>
@@ -812,12 +918,16 @@ export default function Clientes() {
 
       {/* Mobile: cards */}
       <div className="clientes-cards-mobile">
-        {clientesFiltrados.map(cliente => {
+        {clientesOrdenados.map(cliente => {
           const estado = getEstadoCliente(cliente)
           const isExpanded = expandedCard === cliente.id
           return (
-            <div key={cliente.id} className={`cliente-card ${estado === 'Activo' ? 'estado-activo-border' : 'estado-vencido-border'} ${isExpanded ? 'expanded' : ''} ${selectedClientes.has(cliente.id) ? 'card-selected' : ''}`}>
-              <div className="cliente-card-header" onClick={() => setExpandedCard(isExpanded ? null : cliente.id)}>
+            <div key={cliente.id} data-id={cliente.id} className={`cliente-card ${estado === 'Activo' ? 'estado-activo-border' : 'estado-vencido-border'} ${isExpanded ? 'expanded' : ''} ${selectedClientes.has(cliente.id) ? 'card-selected' : ''} ${highlightId === cliente.id ? 'card-highlight' : ''}`}>
+              <div className="cliente-card-header" onClick={() => {
+                const next = isExpanded ? null : cliente.id
+                setExpandedCard(next)
+                if (next) fetchHistorial(cliente)
+              }}>
                 <div className="cliente-card-left">
                   {modoSeleccion && (
                     <label className="custom-check" onClick={(e) => e.stopPropagation()}>
@@ -858,6 +968,37 @@ export default function Clientes() {
                     <span className="cliente-card-label">Vencimiento</span>
                     <span className="cliente-card-value">{formatFecha(cliente.fecha_fin_membresia)}</span>
                   </div>
+                  {/* Historial */}
+                  {(() => {
+                    const hist = clienteHistorial[cliente.id]
+                    if (!hist) return null
+                    if (hist.loading) return <div className="cliente-historial"><span className="cliente-hist-loading">Cargando historial...</span></div>
+                    const items = [
+                      ...(hist.lavadas || []).map(l => ({ _type: 'lavada', fecha: l.fecha, desc: l.tipo_lavado?.nombre || 'Servicio', valor: l.valor })),
+                      ...(hist.transacciones || []).map(t => ({ _type: t.tipo === 'EGRESO' ? 'egreso' : 'ingreso', fecha: t.fecha, desc: t.descripcion || t.categoria || 'Transacción', valor: t.valor }))
+                    ].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+                    if (items.length === 0) return <div className="cliente-historial"><span className="cliente-hist-empty">Sin registros</span></div>
+                    return (
+                      <div className="cliente-historial">
+                        <span className="cliente-hist-title">Historial</span>
+                        {items.slice(0, 20).map((item, i) => (
+                          <div key={i} className="cliente-hist-item">
+                            <div className={`cliente-hist-icon ${item._type === 'lavada' ? 'icon-blue' : item._type === 'egreso' ? 'icon-red' : 'icon-green'}`}>
+                              {item._type === 'lavada' ? <Droplets size={14} /> : <DollarSign size={14} />}
+                            </div>
+                            <div className="cliente-hist-info">
+                              <span className="cliente-hist-desc">{item.desc}</span>
+                              <span className="cliente-hist-fecha">{formatFecha(item.fecha)}</span>
+                            </div>
+                            <span className={`cliente-hist-valor ${item._type === 'egreso' ? 'negativo' : ''}`}>
+                              {item._type === 'egreso' ? '-' : ''}{formatMoney(item.valor)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
+
                   <div className="cliente-card-actions">
                     <button className="btn-secondary" onClick={() => handleEdit(cliente)}>
                       <Edit size={16} /> Editar
@@ -871,7 +1012,7 @@ export default function Clientes() {
             </div>
           )
         })}
-        {clientesFiltrados.length === 0 && (
+        {clientesOrdenados.length === 0 && (
           <div className="clientes-cards-empty">No hay clientes registrados</div>
         )}
       </div>
@@ -1225,6 +1366,32 @@ export default function Clientes() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* FAB (mobile only) */}
+      {!modoSeleccion && (
+        <button
+          className={`clientes-fab ${showFabMenu ? 'open' : ''}`}
+          onClick={() => setShowFabMenu(!showFabMenu)}
+        >
+          <Plus size={24} />
+        </button>
+      )}
+      {showFabMenu && (
+        <>
+          <div className="clientes-fab-overlay" onClick={() => setShowFabMenu(false)} />
+          <div className="clientes-fab-menu">
+            <button onClick={() => { setShowFabMenu(false); setShowModal(true) }}>
+              <Plus size={18} /> Nuevo Cliente
+            </button>
+            <button onClick={() => { setShowFabMenu(false); setShowImportModal(true) }}>
+              <Upload size={18} /> Importar
+            </button>
+            <button onClick={() => { setShowFabMenu(false); setModoSeleccion(true); setSelectedClientes(new Set()) }}>
+              <CheckSquare size={18} /> Seleccionar
+            </button>
+          </div>
+        </>
       )}
     </div>
   )
