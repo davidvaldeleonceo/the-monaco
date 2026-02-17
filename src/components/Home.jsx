@@ -68,7 +68,6 @@ export default function Home() {
   const ventaClienteWrapperRef = useRef(null)
   const [submitting, setSubmitting] = useState(false)
   const [visibleCount, setVisibleCount] = useState({ servicios: 10, productos: 10, movimientos: 10 })
-  const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [filtroEstado, setFiltroEstado] = useState('')
@@ -290,6 +289,8 @@ export default function Home() {
   const allServicios = lavadasFiltradas.filter(l => {
     if (filtroEstado && l.estado !== filtroEstado) return false
     if (filtroLavador && l.lavador_id != filtroLavador) return false
+    const q = searchQuery.trim().toLowerCase()
+    if (q && !(l.placa || '').toLowerCase().includes(q) && !(l.cliente?.nombre || '').toLowerCase().includes(q)) return false
     return true
   })
   const allProductos = transaccionesFiltradas
@@ -297,6 +298,8 @@ export default function Home() {
     .filter(t => {
       if (filtroTipo && t.tipo !== filtroTipo) return false
       if (filtroMetodoPago && t.metodo_pago_id != filtroMetodoPago) return false
+      const q = searchQuery.trim().toLowerCase()
+      if (q && !(t.descripcion || '').toLowerCase().includes(q) && !(t.placa_o_persona || '').toLowerCase().includes(q) && !(t.categoria || '').toLowerCase().includes(q)) return false
       return true
     })
     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || new Date(b.created_at) - new Date(a.created_at))
@@ -305,6 +308,8 @@ export default function Home() {
     .filter(t => {
       if (filtroTipo && t.tipo !== filtroTipo) return false
       if (filtroMetodoPago && t.metodo_pago_id != filtroMetodoPago) return false
+      const q = searchQuery.trim().toLowerCase()
+      if (q && !(t.descripcion || '').toLowerCase().includes(q) && !(t.placa_o_persona || '').toLowerCase().includes(q) && !(t.categoria || '').toLowerCase().includes(q)) return false
       return true
     })
     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || new Date(b.created_at) - new Date(a.created_at))
@@ -545,67 +550,6 @@ export default function Home() {
     if (eliminados > 0) alert(`Se eliminaron ${eliminados} elemento${eliminados > 1 ? 's' : ''}`)
   }
 
-  // Global search
-  const searchResults = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return null
-
-    const matchClientes = (clientes || [])
-      .filter(c => (c.nombre || '').toLowerCase().includes(q) || (c.placa || '').toLowerCase().includes(q))
-      .slice(0, 5)
-
-    const matchServicios = lavadas
-      .filter(l => (l.placa || '').toLowerCase().includes(q) || (l.cliente?.nombre || '').toLowerCase().includes(q))
-      .slice(0, 5)
-
-    const matchMovimientos = [...transacciones]
-      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || new Date(b.created_at) - new Date(a.created_at))
-      .filter(t =>
-        (t.descripcion || '').toLowerCase().includes(q) ||
-        (t.placa_o_persona || '').toLowerCase().includes(q) ||
-        (t.categoria || '').toLowerCase().includes(q)
-      )
-      .slice(0, 5)
-
-    return { clientes: matchClientes, servicios: matchServicios, movimientos: matchMovimientos }
-  }, [searchQuery, clientes, lavadas, transacciones])
-
-  const openSearch = () => {
-    setShowSearch(true)
-    setSearchQuery('')
-    setTimeout(() => searchInputRef.current?.focus(), 100)
-  }
-  const closeSearch = () => {
-    setShowSearch(false)
-    setSearchQuery('')
-  }
-  const handleSearchNavigate = (type, item) => {
-    closeSearch()
-    if (type === 'cliente') {
-      navigate('/clientes', { state: { highlightId: item.id } })
-      return
-    }
-    // Clear filters so item is visible
-    setFiltroEstado('')
-    setFiltroLavador('')
-    setFiltroTipo('')
-    setFiltroMetodoPago('')
-    if (type === 'servicio') {
-      setTab('servicios')
-      const p = detectPeriod(item.fecha)
-      setPeriodo(p)
-      setHighlightId(item.id)
-    } else if (type === 'movimiento') {
-      if (item.categoria === 'MEMBRESIA' || item.categoria === 'PRODUCTO') {
-        setTab('productos')
-      } else {
-        setTab('movimientos')
-      }
-      const p = detectPeriod(item.fecha)
-      setPeriodo(p)
-      setHighlightId(item.id)
-    }
-  }
 
   // Format relative date
   const formatFechaRelativa = (fechaStr) => {
@@ -1285,19 +1229,35 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Period Pills */}
-      <div className="home-period-pills">
-        <div className="home-period-bubble" style={{ transform: `translateX(${periodIdx * 100}%)` }} />
-        {['d', 's', 'm', 'a'].map(p => (
-          <button
-            key={p}
-            className={`home-period-pill ${periodo === p ? 'active' : ''}`}
-            onClick={() => setPeriodo(p)}
-          >
-            {p.toUpperCase()}
-          </button>
-        ))}
+      {/* Search + Period Row */}
+      <div className="home-search-period-row">
+        <div className="home-inline-search">
+          <Search size={16} />
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder=""
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')}><X size={14} /></button>
+          )}
+        </div>
+        <div className="home-period-pills">
+          <div className="home-period-bubble" style={{ transform: `translateX(${periodIdx * 100}%)` }} />
+          {['d', 's', 'm', 'a'].map(p => (
+            <button
+              key={p}
+              className={`home-period-pill ${periodo === p ? 'active' : ''}`}
+              onClick={() => setPeriodo(p)}
+            >
+              {p.toUpperCase()}
+            </button>
+          ))}
+        </div>
       </div>
+
 
       {/* Tab Pills: Servicios / Productos / Movimientos */}
       <div className="home-tab-pills">
@@ -1984,13 +1944,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Search FAB */}
-      {!showFabMenu && !modoSeleccion && (
-        <button className="home-search-fab" onClick={openSearch}>
-          <Search size={20} />
-        </button>
-      )}
-
       {/* FAB */}
       {!modoSeleccion && (
         <button
@@ -2395,68 +2348,6 @@ export default function Home() {
         onSuccess={() => setShowServicioModal(false)}
       />
 
-      {/* Search Overlay */}
-      {showSearch && (
-        <div className="search-overlay">
-          <div className="search-header">
-            <div className="search-input-row">
-              <Search size={20} className="search-input-icon" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                className="search-input"
-                placeholder="Buscar por placa o nombre..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              <button className="search-close-btn" onClick={closeSearch}>
-                <X size={20} />
-              </button>
-            </div>
-          </div>
-          <div className="search-body">
-            {!searchQuery.trim() && (
-              <p className="search-hint">Escribe para buscar clientes, servicios o movimientos</p>
-            )}
-            {searchResults && searchResults.clientes.length === 0 && searchResults.servicios.length === 0 && searchResults.movimientos.length === 0 && (
-              <p className="search-hint">No se encontraron resultados</p>
-            )}
-            {searchResults && searchResults.clientes.length > 0 && (
-              <div className="search-section">
-                <h3 className="search-section-title">Clientes</h3>
-                {searchResults.clientes.map(c => (
-                  <div key={c.id} className="search-result-card" onClick={() => handleSearchNavigate('cliente', c)}>
-                    <span className="search-result-main">{c.nombre}</span>
-                    <span className="search-result-sub">{c.placa}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {searchResults && searchResults.servicios.length > 0 && (
-              <div className="search-section">
-                <h3 className="search-section-title">Servicios</h3>
-                {searchResults.servicios.map(l => (
-                  <div key={l.id} className="search-result-card" onClick={() => handleSearchNavigate('servicio', l)}>
-                    <span className="search-result-main">{l.placa} — {l.cliente?.nombre || '—'}</span>
-                    <span className="search-result-sub">{formatFechaRelativa(l.fecha)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {searchResults && searchResults.movimientos.length > 0 && (
-              <div className="search-section">
-                <h3 className="search-section-title">Movimientos</h3>
-                {searchResults.movimientos.map(t => (
-                  <div key={t.id} className="search-result-card" onClick={() => handleSearchNavigate('movimiento', t)}>
-                    <span className="search-result-main">{t.descripcion || t.placa_o_persona || t.categoria}</span>
-                    <span className="search-result-sub">{t.categoria} · {formatMoney(t.valor)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

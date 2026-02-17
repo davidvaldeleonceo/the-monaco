@@ -48,6 +48,9 @@ export default function Clientes() {
       setFiltroRapido('')
       setFiltroNuevos(false)
       setHighlightId(location.state.highlightId)
+      setExpandedCard(location.state.highlightId)
+      const target = clientes.find(c => c.id === location.state.highlightId)
+      if (target) fetchHistorial(target)
       window.history.replaceState({}, '')
     }
   }, [location.state])
