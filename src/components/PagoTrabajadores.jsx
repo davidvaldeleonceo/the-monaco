@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
-import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash, Minus, ChevronRight } from 'lucide-react'
+import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash, Minus, ChevronRight, Search, SlidersHorizontal } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -63,6 +63,11 @@ export default function PagoTrabajadores() {
   const [filtroDesde, setFiltroDesde] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth(), 1))
   const [filtroHasta, setFiltroHasta] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth() + 1, 0))
   const [filtroRapido, setFiltroRapido] = useState('mes')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false)
+  const searchInputRef = useRef(null)
+  const filtroRapidoKeys = ['hoy', 'semana', 'mes', 'año']
+  const filtroRapidoIdx = filtroRapidoKeys.indexOf(filtroRapido)
 
   const [formData, setFormData] = useState({
     lavador_id: '',
@@ -548,6 +553,7 @@ export default function PagoTrabajadores() {
           pagos: [],
           total_pagado: 0,
           total_a_pagar: 0,
+          total_ganado: 0,
           total_descuentos: 0,
           saldo: 0
         }
@@ -556,15 +562,29 @@ export default function PagoTrabajadores() {
       const valorPagado = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
       porTrabajador[lid].total_pagado += valorPagado
       porTrabajador[lid].total_a_pagar += Number(p.total_pagar || 0)
+      porTrabajador[lid].total_ganado += Number(p.total || 0)
       porTrabajador[lid].total_descuentos += Number(p.descuentos || 0)
     })
 
     Object.values(porTrabajador).forEach(w => {
       w.saldo = w.total_pagado - w.total_a_pagar
+      w.por_pagar = Math.max(0, w.total_a_pagar - w.total_pagado)
     })
 
     return Object.values(porTrabajador).sort((a, b) => a.nombre.localeCompare(b.nombre))
   }, [pagos])
+
+  const filteredWorkerCards = useMemo(() => {
+    if (!searchQuery.trim()) return workerCards
+    const q = searchQuery.toLowerCase().trim()
+    return workerCards.filter(w => w.nombre.toLowerCase().includes(q))
+  }, [workerCards, searchQuery])
+
+  const filteredPagos = useMemo(() => {
+    if (!searchQuery.trim()) return pagos
+    const q = searchQuery.toLowerCase().trim()
+    return pagos.filter(p => (p.lavador?.nombre || '').toLowerCase().includes(q))
+  }, [pagos, searchQuery])
 
   // Fetch ALL pagos for a worker (no date filter) and open detail modal
   const handleWorkerClick = async (workerCard) => {
@@ -979,50 +999,80 @@ export default function PagoTrabajadores() {
 
   return (
     <div className="pagos-page">
-      <div className="page-header">
+      <div className="clientes-title-row">
         <h1 className="page-title">Pago Trabajadores</h1>
-        <button className="btn-primary" onClick={() => { resetForm(); setEditandoId(null); setModalMinimized(false); setShowModal(true) }}>
-          <Plus size={20} />
-          Nuevo Pago
-        </button>
       </div>
 
-      <div className="filters">
-        <div className="filter-rapido">
-          <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
-          <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
-          <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
-          <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
-          <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
+      <div className="clientes-search-row">
+        <div className="search-box">
+          <Search size={18} />
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Buscar trabajador..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="search-clear" onClick={() => setSearchQuery('')}>
+              <X size={16} />
+            </button>
+          )}
         </div>
-
-        <div className="filter-fechas">
-          <DatePicker
-            selected={filtroDesde}
-            onChange={(date) => { setFiltroDesde(date); setFiltroRapido('') }}
-            selectsStart
-            startDate={filtroDesde}
-            endDate={filtroHasta}
-            placeholderText="Desde"
-            className="filter-date"
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            isClearable
-          />
-          <span className="filter-separator">→</span>
-          <DatePicker
-            selected={filtroHasta}
-            onChange={(date) => { setFiltroHasta(date); setFiltroRapido('') }}
-            selectsEnd
-            startDate={filtroDesde}
-            endDate={filtroHasta}
-            minDate={filtroDesde}
-            placeholderText="Hasta"
-            className="filter-date"
-            dateFormat="dd/MM/yyyy"
-            locale="es"
-            isClearable
-          />
+        <div className="clientes-filter-wrapper">
+          <button
+            className={`clientes-filter-btn${filtroRapido !== 'mes' ? ' active' : ''}`}
+            onClick={() => setShowFilterDropdown(prev => !prev)}
+          >
+            <SlidersHorizontal size={18} />
+          </button>
+          {showFilterDropdown && (
+            <>
+              <div className="clientes-filter-overlay" onClick={() => setShowFilterDropdown(false)} />
+              <div className="clientes-filter-dropdown">
+                <div className="cfd-section">
+                  <span className="cfd-label">Período</span>
+                  <div className="cfd-rapido">
+                    <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Día</button>
+                    <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
+                    <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
+                    <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
+                  </div>
+                </div>
+                <div className="cfd-section">
+                  <span className="cfd-label">Rango de fechas</span>
+                  <div className="cfd-dates">
+                    <DatePicker
+                      selected={filtroDesde}
+                      onChange={(date) => { setFiltroDesde(date); setFiltroRapido('') }}
+                      selectsStart
+                      startDate={filtroDesde}
+                      endDate={filtroHasta}
+                      placeholderText="Desde"
+                      className="filter-date"
+                      dateFormat="dd/MM/yyyy"
+                      locale="es"
+                      isClearable
+                    />
+                    <span className="filter-separator">→</span>
+                    <DatePicker
+                      selected={filtroHasta}
+                      onChange={(date) => { setFiltroHasta(date); setFiltroRapido('') }}
+                      selectsEnd
+                      startDate={filtroDesde}
+                      endDate={filtroHasta}
+                      minDate={filtroDesde}
+                      placeholderText="Hasta"
+                      className="filter-date"
+                      dateFormat="dd/MM/yyyy"
+                      locale="es"
+                      isClearable
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -1051,9 +1101,11 @@ export default function PagoTrabajadores() {
       </div>
 
       {/* Worker cards grid */}
-      {workerCards.length > 0 && (
-        <div className="historial-workers-grid" style={{ marginBottom: '1.5rem' }}>
-          {workerCards.map(w => (
+      {filteredWorkerCards.length > 0 && (
+        <>
+        <h2 className="section-title">Trabajadores</h2>
+        <div className="historial-workers-grid">
+          {filteredWorkerCards.map(w => (
             <div
               key={w.lavador_id}
               className="historial-worker-card"
@@ -1061,20 +1113,15 @@ export default function PagoTrabajadores() {
             >
               <div className="historial-worker-header">
                 <div className="historial-worker-name">{w.nombre}</div>
-                <ChevronRight size={18} className="historial-worker-arrow" />
               </div>
               <div className="historial-worker-stats">
                 <div className="historial-worker-stat">
-                  <span className="historial-stat-label">Pagado</span>
-                  <span className="historial-stat-value">{formatMoney(w.total_pagado)}</span>
+                  <span className="historial-stat-label">Ganado</span>
+                  <span className="historial-stat-value">{formatMoney(w.total_ganado)}</span>
                 </div>
                 <div className="historial-worker-stat">
-                  <span className="historial-stat-label">A pagar</span>
-                  <span className="historial-stat-value">{formatMoney(w.total_a_pagar)}</span>
-                </div>
-                <div className="historial-worker-stat">
-                  <span className="historial-stat-label">Pagos</span>
-                  <span className="historial-stat-value">{w.pagos.length}</span>
+                  <span className="historial-stat-label">Por pagar</span>
+                  <span className="historial-stat-value">{formatMoney(w.por_pagar)}</span>
                 </div>
               </div>
               <div className={`historial-worker-saldo ${w.saldo >= 0 ? 'saldo-favor' : 'saldo-pendiente'}`}>
@@ -1084,7 +1131,10 @@ export default function PagoTrabajadores() {
             </div>
           ))}
         </div>
+        </>
       )}
+
+      <h2 className="section-title">Historial</h2>
 
       {/* Desktop: tabla */}
       <div className="card pagos-tabla-desktop">
@@ -1103,7 +1153,7 @@ export default function PagoTrabajadores() {
             </tr>
           </thead>
           <tbody>
-            {pagos.map((pago) => {
+            {filteredPagos.map((pago) => {
               const esAnulado = !!pago.anulado
               return (
                 <tr key={pago.id} className={esAnulado ? 'fila-anulada' : ''}>
@@ -1144,7 +1194,7 @@ export default function PagoTrabajadores() {
                 </tr>
               )
             })}
-            {pagos.length === 0 && (
+            {filteredPagos.length === 0 && (
               <tr>
                 <td colSpan="8" className="empty">No hay pagos registrados en este período</td>
               </tr>
@@ -1156,10 +1206,10 @@ export default function PagoTrabajadores() {
 
       {/* Mobile: cards */}
       <div className="pagos-cards-mobile">
-        {pagos.length === 0 && (
+        {filteredPagos.length === 0 && (
           <div className="clientes-cards-empty">No hay pagos registrados en este período</div>
         )}
-        {pagos.map((pago) => {
+        {filteredPagos.map((pago) => {
           const esAnulado = !!pago.anulado
           const periodo = pago.fecha_desde && pago.fecha_hasta
             ? `${formatFechaLocal(pago.fecha_desde)} - ${formatFechaLocal(pago.fecha_hasta)}`
@@ -1201,6 +1251,13 @@ export default function PagoTrabajadores() {
           )
         })}
       </div>
+
+      <button
+        className="home-fab"
+        onClick={() => { resetForm(); setEditandoId(null); setModalMinimized(false); setShowModal(true) }}
+      >
+        <Plus size={28} />
+      </button>
 
       {showModal && !modalMinimized && (
         <div className="modal-overlay">

@@ -5,7 +5,7 @@ import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
 import { formatMoney } from '../utils/money'
 import { LAVADAS_SELECT } from '../config/constants'
-import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles, Droplets, DollarSign } from 'lucide-react'
+import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles, Droplets, DollarSign, MessageCircle } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -36,6 +36,8 @@ export default function Clientes() {
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [showFabMenu, setShowFabMenu] = useState(false)
   const [clienteHistorial, setClienteHistorial] = useState({})
+  const [whatsappMenu, setWhatsappMenu] = useState(null)
+  const [waMenuPos, setWaMenuPos] = useState({ top: 0, right: 0 })
 
   // Receive highlightId from navigation
   useEffect(() => {
@@ -631,6 +633,45 @@ export default function Clientes() {
     return hoy >= inicio && hoy <= fin ? 'Activo' : 'Inactivo'
   }
 
+  const getTipoClienteLabel = (cliente) => {
+    const nombre = cliente.membresia?.nombre || ''
+    if (!nombre || nombre.toLowerCase().includes('sin ')) {
+      return { tiene: false, label: 'Sin membresía' }
+    }
+    return { tiene: true, label: nombre }
+  }
+
+  const toggleWhatsappMenu = (clienteId, e) => {
+    if (e) {
+      e.stopPropagation()
+      const rect = e.currentTarget.getBoundingClientRect()
+      setWaMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    }
+    setWhatsappMenu(prev => prev === clienteId ? null : clienteId)
+  }
+
+  const sendWhatsApp = (cliente, tipo) => {
+    setWhatsappMenu(null)
+    if (!cliente.telefono) {
+      alert('Este cliente no tiene teléfono registrado')
+      return
+    }
+    const telefono = cliente.telefono.replace(/\D/g, '')
+    if (tipo === 'contacto') {
+      window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
+      return
+    }
+    const { tiene, label } = getTipoClienteLabel(cliente)
+    const estado = getEstadoCliente(cliente)
+    let mensaje
+    if (tiene) {
+      mensaje = `Hola ${cliente.nombre}, tu plan *${label}* está ${estado === 'Activo' ? 'activo' : 'vencido'}. Vence el ${formatFecha(cliente.fecha_fin_membresia)}. ¿Te gustaría renovar o conocer más sobre nuestros planes?`
+    } else {
+      mensaje = `Hola ${cliente.nombre}, actualmente no tienes una membresía activa. ¿Te gustaría conocer nuestros planes disponibles?`
+    }
+    window.open(`https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(mensaje)}`, '_blank')
+  }
+
   const hasActiveFilters = !!(filtroTipoCliente || filtroEstado || fechaDesde || fechaHasta || filtroRapido || filtroNuevos || sortBy)
   const clearAllFilters = () => {
     setFiltroTipoCliente(''); setFiltroEstado(''); setFechaDesde(null); setFechaHasta(null)
@@ -855,7 +896,7 @@ export default function Clientes() {
               <th>Teléfono</th>
               <th>Tipo de Cliente</th>
               <th>Vencimiento</th>
-              <th>Estado</th>
+              <th>WhatsApp</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -888,14 +929,28 @@ export default function Clientes() {
                 <td>{cliente.membresia?.nombre || 'Sin tipo'}</td>
                 <td>{formatFecha(cliente.fecha_fin_membresia)}</td>
                 <td>
-                  {(() => {
-                    const estado = getEstadoCliente(cliente)
-                    return (
-                      <span className={`estado-badge ${estado === 'Activo' ? 'activo' : 'vencido'}`}>
-                        {estado}
-                      </span>
-                    )
-                  })()}
+                  <div className="wa-menu-wrapper">
+                    <button
+                      className="btn-whatsapp"
+                      onClick={(e) => toggleWhatsappMenu(cliente.id, e)}
+                      title="Enviar WhatsApp"
+                    >
+                      <MessageCircle size={16} />
+                    </button>
+                    {whatsappMenu === cliente.id && (
+                      <>
+                        <div className="wa-menu-overlay" onClick={() => setWhatsappMenu(null)} />
+                        <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
+                          <button onClick={() => sendWhatsApp(cliente, 'bienvenida')}>
+                            Mensaje de bienvenida
+                          </button>
+                          <button onClick={() => sendWhatsApp(cliente, 'contacto')}>
+                            Ir al contacto
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </td>
                 <td>
                   <div className="acciones">
@@ -949,7 +1004,36 @@ export default function Clientes() {
                   <span className="cliente-card-placa">{cliente.placa}</span>
                 </div>
                 <div className="cliente-card-right">
-                  <span className={`estado-badge-mini ${estado === 'Activo' ? 'activo' : 'vencido'}`}>{estado}</span>
+                  {(() => {
+                    const { tiene, label } = getTipoClienteLabel(cliente)
+                    return (
+                      <span className={`tipo-cliente-text ${tiene ? 'con-membresia' : 'sin-membresia'}`}>
+                        {tiene ? label : 'Sin membresía'}
+                      </span>
+                    )
+                  })()}
+                  <div className="wa-menu-wrapper">
+                    <button
+                      className="btn-whatsapp btn-whatsapp-mini"
+                      onClick={(e) => toggleWhatsappMenu(cliente.id, e)}
+                      title="Enviar WhatsApp"
+                    >
+                      <MessageCircle size={16} />
+                    </button>
+                    {whatsappMenu === cliente.id && (
+                      <>
+                        <div className="wa-menu-overlay" onClick={(e) => { e.stopPropagation(); setWhatsappMenu(null) }} />
+                        <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
+                          <button onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'bienvenida') }}>
+                            Mensaje de bienvenida
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'contacto') }}>
+                            Ir al contacto
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
                 </div>
               </div>

@@ -13,6 +13,7 @@ export default function Configuracion() {
   const [formData, setFormData] = useState({})
   const [expandedCard, setExpandedCard] = useState(null)
   const [showBulkModal, setShowBulkModal] = useState(false)
+  const [showFabMenu, setShowFabMenu] = useState(false)
   // Adicionales inline editing (inside lavados tab)
   const [adicionalEdit, setAdicionalEdit] = useState(null) // { id, nombre, precio } or { id: null, nombre, precio } for new
   const [showAdicionales, setShowAdicionales] = useState(true)
@@ -1015,9 +1016,9 @@ export default function Configuracion() {
 
   return (
     <div className="configuracion-page">
-      <div className="page-header">
+      <div className="config-title-row">
         <h1 className="page-title">Configuración</h1>
-        <div className="page-header-actions">
+        <div className="config-desktop-actions">
           {activeTab === 'lavadores' && (
             <button className="btn-secondary" onClick={() => {
               setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
@@ -1029,7 +1030,7 @@ export default function Configuracion() {
           )}
           <button className="btn-primary" onClick={handleNew}>
             <Plus size={18} />
-            Nuevo
+            <span className="btn-label">Nuevo</span>
           </button>
         </div>
       </div>
@@ -1090,6 +1091,39 @@ export default function Configuracion() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* FAB (mobile only) */}
+      {activeTab === 'lavadores' ? (
+        <>
+          <button
+            className={`config-fab ${showFabMenu ? 'open' : ''}`}
+            onClick={() => setShowFabMenu(!showFabMenu)}
+          >
+            <Plus size={24} />
+          </button>
+          {showFabMenu && (
+            <>
+              <div className="config-fab-overlay" onClick={() => setShowFabMenu(false)} />
+              <div className="config-fab-menu">
+                <button onClick={() => { setShowFabMenu(false); handleNew() }}>
+                  <Plus size={18} /> Nuevo Lavador
+                </button>
+                <button onClick={() => {
+                  setShowFabMenu(false)
+                  setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
+                  setShowBulkModal(true)
+                }}>
+                  <Settings size={18} /> Pago General
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <button className="config-fab" onClick={handleNew}>
+          <Plus size={24} />
+        </button>
       )}
 
       {showBulkModal && (
