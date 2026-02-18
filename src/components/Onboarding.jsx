@@ -19,6 +19,11 @@ export default function Onboarding() {
     })
 
     if (rpcError) {
+      // Profile already exists (race condition from register flow) — just refresh
+      if (rpcError.message?.includes('Duplicate')) {
+        await refresh()
+        return
+      }
       setError('Error creando negocio: ' + rpcError.message)
       setLoading(false)
       return

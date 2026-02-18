@@ -14,15 +14,17 @@ import PagoTrabajadores from './components/PagoTrabajadores'
 import Configuracion from './components/Configuracion'
 import Home from './components/Home'
 import Membresias from './components/Membresias'
+import LandingPage from './components/LandingPage'
 import { DataProvider } from './components/DataContext'
 import { TenantProvider, useTenant } from './components/TenantContext'
 import { ThemeProvider } from './components/ThemeContext'
 import Onboarding from './components/Onboarding'
+import SetupWizard from './components/SetupWizard'
 import RoleGuard from './components/RoleGuard'
 import './App.css'
 
 function AuthenticatedApp({ session }) {
-  const { loading, needsOnboarding } = useTenant()
+  const { loading, needsOnboarding, needsSetup } = useTenant()
 
   if (loading) {
     return <div className="loading-screen">Cargando...</div>
@@ -32,10 +34,15 @@ function AuthenticatedApp({ session }) {
     return <Onboarding />
   }
 
+  if (needsSetup) {
+    return <SetupWizard />
+  }
+
   return (
     <DataProvider>
       <Routes>
         <Route path="/" element={<Navigate to="/home" replace />} />
+        <Route path="/login" element={<Navigate to="/home" replace />} />
         <Route element={<Layout user={session.user} />}>
           <Route path="/home" element={<RoleGuard path="/home"><Home /></RoleGuard>} />
           <Route path="/dashboard" element={<RoleGuard path="/dashboard"><Dashboard /></RoleGuard>} />
@@ -81,8 +88,9 @@ function App() {
         <Routes>
           {!session ? (
             <>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<Login />} />
               <Route path="/registro" element={<Register />} />
-              <Route path="/" element={<Login />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           ) : (

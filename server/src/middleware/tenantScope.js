@@ -11,8 +11,9 @@ const UNSCOPED_TABLES = new Set(['users', 'negocios', 'user_profiles'])
 export default function tenantScope(req, res, next) {
   const negocioId = req.user?.negocio_id
 
-  // Allow unscoped tables even without negocio_id (e.g., during onboarding)
-  const table = req.params.table
+  // req.params.table isn't available here (set by sub-router later),
+  // so extract table name from the URL path.
+  const table = req.params.table || req.path.split('/').filter(Boolean)[0]
   if (UNSCOPED_TABLES.has(table)) {
     req.negocioId = negocioId
     req.isScoped = false

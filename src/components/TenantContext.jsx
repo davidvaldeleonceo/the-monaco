@@ -11,6 +11,7 @@ export function TenantProvider({ session, children }) {
   const [negocioId, setNegocioId] = useState(null)
   const [userProfile, setUserProfile] = useState(null)
   const [negocioNombre, setNegocioNombre] = useState('')
+  const [setupComplete, setSetupComplete] = useState(true)
   const [loading, setLoading] = useState(true)
 
   const fetchProfile = useCallback(async () => {
@@ -22,7 +23,7 @@ export function TenantProvider({ session, children }) {
     setLoading(true)
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('*, negocio:negocios(id, nombre)')
+      .select('*, negocio:negocios(id, nombre, setup_complete)')
       .eq('id', session.user.id)
       .single()
 
@@ -30,6 +31,7 @@ export function TenantProvider({ session, children }) {
       setNegocioId(data.negocio_id)
       setUserProfile(data)
       setNegocioNombre(data.negocio?.nombre || '')
+      setSetupComplete(data.negocio?.setup_complete ?? true)
       setLoading(false)
     } else {
       const pending = localStorage.getItem('pending_negocio')
@@ -46,13 +48,14 @@ export function TenantProvider({ session, children }) {
 
           const { data: newData } = await supabase
             .from('user_profiles')
-            .select('*, negocio:negocios(id, nombre)')
+            .select('*, negocio:negocios(id, nombre, setup_complete)')
             .eq('id', session.user.id)
             .single()
           if (newData) {
             setNegocioId(newData.negocio_id)
             setUserProfile(newData)
             setNegocioNombre(newData.negocio?.nombre || '')
+            setSetupComplete(newData.negocio?.setup_complete ?? true)
           }
         }
       } else {
@@ -62,13 +65,18 @@ export function TenantProvider({ session, children }) {
       }
       setLoading(false)
     }
-  }, [session?.user?.id])
+  }, [session?.user?.id, session?.access_token])
 
   useEffect(() => {
     fetchProfile()
   }, [fetchProfile])
 
   const needsOnboarding = !loading && !negocioId
+  const needsSetup = !loading && !!negocioId && !setupComplete
+
+  const markSetupDone = useCallback(() => {
+    setSetupComplete(true)
+  }, [])
 
   const value = {
     negocioId,
@@ -76,6 +84,8 @@ export function TenantProvider({ session, children }) {
     negocioNombre,
     loading,
     needsOnboarding,
+    needsSetup,
+    markSetupDone,
     refresh: fetchProfile,
     userEmail: session?.user?.email,
     userId: session?.user?.id,

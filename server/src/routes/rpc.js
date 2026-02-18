@@ -102,4 +102,17 @@ router.post('/crear_negocio_y_perfil', async (req, res, next) => {
   }
 })
 
+/**
+ * POST /api/rpc/complete_setup
+ * Marks the negocio's initial setup wizard as complete.
+ */
+router.post('/complete_setup', async (req, res, next) => {
+  try {
+    const negocioId = req.user?.negocio_id
+    if (!negocioId) return res.status(401).json({ error: 'No negocio' })
+    await pool.query('UPDATE negocios SET setup_complete = true WHERE id = $1', [negocioId])
+    res.json({ data: true, error: null })
+  } catch (err) { next(err) }
+})
+
 export default router

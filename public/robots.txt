@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /registro
+Disallow: /home
+Disallow: /dashboard
+Disallow: /lavadas
+Disallow: /clientes
+Disallow: /balance
+Disallow: /reportes
+Disallow: /tareas
+Disallow: /pagos
+Disallow: /membresias
+Disallow: /configuracion
+Sitemap: https://themonaco.com.co/sitemap.xml

@@ -84,8 +84,13 @@ export default function Login() {
 
         <div className="login-register-link">
           <span>¿No tienes cuenta? </span>
-          <a href="/registro" onClick={(e) => { e.preventDefault(); navigate('/registro') }}>
+          <a href="/" onClick={(e) => { e.preventDefault(); navigate('/') }}>
             Registra tu negocio
+          </a>
+        </div>
+        <div className="login-back-link">
+          <a href="/" onClick={(e) => { e.preventDefault(); navigate('/') }}>
+            ← Volver
           </a>
         </div>
       </div>

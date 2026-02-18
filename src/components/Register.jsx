@@ -88,7 +88,7 @@ export default function Register() {
           <p className="celebration-message">
             Revisa tu correo electrónico para confirmar tu cuenta y luego inicia sesión.
           </p>
-          <button className="login-button" onClick={() => navigate('/')}>
+          <button className="login-button" onClick={() => navigate('/login')}>
             Ir a iniciar sesión
           </button>
         </div>
@@ -170,7 +170,7 @@ export default function Register() {
 
         <div className="login-register-link">
           <span>¿Ya tienes cuenta? </span>
-          <a href="/" onClick={(e) => { e.preventDefault(); navigate('/') }}>
+          <a href="/login" onClick={(e) => { e.preventDefault(); navigate('/login') }}>
             Inicia sesión
           </a>
         </div>

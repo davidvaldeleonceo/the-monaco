@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS negocios (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre TEXT NOT NULL,
+  setup_complete BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -269,4 +270,8 @@ DO $$ BEGIN
   ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS tiempo_lavado INTEGER;
   ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS tipo_membresia_id UUID REFERENCES tipos_membresia(id) ON DELETE SET NULL;
   ALTER TABLE pago_trabajadores ADD COLUMN IF NOT EXISTS valor_pagado NUMERIC DEFAULT 0;
+  ALTER TABLE negocios ADD COLUMN IF NOT EXISTS setup_complete BOOLEAN DEFAULT false;
 END $$;
+
+-- Mark existing negocios as already configured so they skip the wizard
+UPDATE negocios SET setup_complete = true WHERE setup_complete IS NULL OR setup_complete = false;
