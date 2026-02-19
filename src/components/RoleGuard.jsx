@@ -12,7 +12,7 @@ const ROLE_ACCESS = {
   '/tareas':        ['admin', 'trabajador'],
   '/membresias':    ['admin'],
   '/pagos':         ['admin'],
-  '/configuracion': ['admin'],
+  '/cuenta':        ['admin', 'trabajador', 'viewer'],
 }
 
 export function getAccessibleRoutes(rol) {

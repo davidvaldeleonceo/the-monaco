@@ -6,6 +6,7 @@ import { useTenant } from './TenantContext'
 import { formatMoney } from '../utils/money'
 import { LAVADAS_SELECT } from '../config/constants'
 import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles, Droplets, DollarSign, MessageCircle } from 'lucide-react'
+import UpgradeModal from './UpgradeModal'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -38,6 +39,7 @@ export default function Clientes() {
   const [clienteHistorial, setClienteHistorial] = useState({})
   const [whatsappMenu, setWhatsappMenu] = useState(null)
   const [waMenuPos, setWaMenuPos] = useState({ top: 0, right: 0 })
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   // Receive highlightId from navigation
   useEffect(() => {
@@ -164,6 +166,10 @@ export default function Clientes() {
         .select('*, membresia:tipos_membresia(nombre)')
         .single()
 
+      if (error?.message?.includes('PLAN_LIMIT_REACHED')) {
+        setShowUpgradeModal(true)
+        return
+      }
       if (!error && data) {
         addClienteLocal(data)
       }
@@ -302,18 +308,22 @@ export default function Clientes() {
 
   const descargarPlantilla = () => {
     const bom = '\uFEFF'
-    const headers = 'nombre,placa,telefono,cedula,correo,moto,tipo_membresia,fecha_inicio'
+    const headers = 'nombre,placa,telefono,cedula,correo,moto,tipo_membresia,fecha_inicio,fecha_vencimiento'
     const tipos = tiposMembresia.map(m => m.nombre)
-    const ejemplo = `Juan Pérez,ABC123,3001234567,12345678,juan@email.com,Yamaha FZ 2.0,${tipos[0] || 'MENSUAL'},2026-02-10`
+    const ejemplo = `Juan Pérez,ABC123,3001234567,12345678,juan@email.com,Yamaha FZ 2.0,${tipos[0] || 'MENSUAL'},2026-02-10,2026-03-10`
     const separador = '\n\n# INSTRUCCIONES (borra estas líneas antes de importar)'
     const instrucciones = [
       '# Columnas obligatorias: nombre - placa - telefono',
-      '# Columnas opcionales: cedula - correo - moto - tipo_membresia - fecha_inicio',
+      '# Columnas opcionales: cedula - correo - moto - tipo_membresia - fecha_inicio - fecha_vencimiento',
       '# Teléfono: solo números sin espacios ni guiones (ej: 3001234567)',
       '# Placa: se convierte a mayúsculas automáticamente',
       `# Tipos de membresía válidos: ${tipos.join(' | ') || '(ninguno configurado)'}`,
       '# Si tipo_membresia queda vacío o no coincide se asignará SIN MEMBRESIA',
-      '# fecha_inicio: formato AAAA-MM-DD (ej: 2026-02-10). Si queda vacío se usa la fecha de hoy'
+      '# Fechas: formato AAAA-MM-DD (ej: 2026-02-10)',
+      '# - Si pones ambas fechas se usan tal cual',
+      '# - Si solo pones fecha_inicio se calcula fecha_vencimiento sumando la duración de la membresía',
+      '# - Si solo pones fecha_vencimiento se calcula fecha_inicio restando la duración de la membresía',
+      '# - Si no pones ninguna fecha el cliente quedará como vencido (vencimiento = hoy)'
     ]
     const csv = bom + [headers, ejemplo, separador, ...instrucciones].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -347,6 +357,39 @@ export default function Clientes() {
       const nuevos = []
 
       const nombresMembresia = tiposMembresia.map(m => m.nombre).join(', ')
+
+      const parsearFecha = (rawVal, fila, nombreCampo) => {
+        if (!rawVal) return null
+        // Date object from cellDates: true
+        if (rawVal instanceof Date && !isNaN(rawVal.getTime())) {
+          const y = rawVal.getUTCFullYear()
+          const m = String(rawVal.getUTCMonth() + 1).padStart(2, '0')
+          const dd = String(rawVal.getUTCDate()).padStart(2, '0')
+          return `${y}-${m}-${dd}`
+        }
+        const fechaRaw = rawVal.toString().trim()
+        // YYYY-MM-DD string
+        const matchISO = fechaRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+        if (matchISO) {
+          const d = new Date(fechaRaw + 'T00:00:00')
+          if (!isNaN(d.getTime())) return fechaRaw
+        }
+        // DD/MM/YYYY string
+        const matchDMY = fechaRaw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+        if (matchDMY) {
+          const dd = matchDMY[1].padStart(2, '0')
+          const mm = matchDMY[2].padStart(2, '0')
+          const d = new Date(`${matchDMY[3]}-${mm}-${dd}T00:00:00`)
+          if (!isNaN(d.getTime())) return `${matchDMY[3]}-${mm}-${dd}`
+        }
+        errors.push({
+          fila,
+          problema: `${nombreCampo} "${fechaRaw}" no tiene formato válido`,
+          solucion: 'Usa el formato AAAA-MM-DD (ej: 2026-02-10)',
+          tipo: 'warning'
+        })
+        return null
+      }
 
       rows.forEach((row, idx) => {
         const fila = idx + 2
@@ -396,44 +439,8 @@ export default function Clientes() {
           })
         }
 
-        let fechaInicio = null
-        const fechaRawVal = row.fecha_inicio
-        if (fechaRawVal) {
-          // Date object from cellDates: true
-          if (fechaRawVal instanceof Date && !isNaN(fechaRawVal.getTime())) {
-            const y = fechaRawVal.getUTCFullYear()
-            const m = String(fechaRawVal.getUTCMonth() + 1).padStart(2, '0')
-            const dd = String(fechaRawVal.getUTCDate()).padStart(2, '0')
-            fechaInicio = `${y}-${m}-${dd}`
-          }
-          if (!fechaInicio) {
-            const fechaRaw = fechaRawVal.toString().trim()
-            // YYYY-MM-DD string
-            const matchISO = fechaRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-            if (matchISO) {
-              const d = new Date(fechaRaw + 'T00:00:00')
-              if (!isNaN(d.getTime())) fechaInicio = fechaRaw
-            }
-            // DD/MM/YYYY string
-            if (!fechaInicio) {
-              const matchDMY = fechaRaw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-              if (matchDMY) {
-                const dd = matchDMY[1].padStart(2, '0')
-                const mm = matchDMY[2].padStart(2, '0')
-                const d = new Date(`${matchDMY[3]}-${mm}-${dd}T00:00:00`)
-                if (!isNaN(d.getTime())) fechaInicio = `${matchDMY[3]}-${mm}-${dd}`
-              }
-            }
-            if (!fechaInicio) {
-              errors.push({
-                fila,
-                problema: `Fecha "${fechaRaw}" no tiene formato válido`,
-                solucion: 'Usa el formato AAAA-MM-DD (ej: 2026-02-10)',
-                tipo: 'warning'
-              })
-            }
-          }
-        }
+        const fechaInicio = parsearFecha(row.fecha_inicio, fila, 'fecha_inicio')
+        const fechaVencimiento = parsearFecha(row.fecha_vencimiento, fila, 'fecha_vencimiento')
 
         const parsed = {
           nombre,
@@ -444,7 +451,8 @@ export default function Clientes() {
           moto: (row.moto || '').toString().trim() || null,
           membresia_id: membresiaId,
           tipo_membresia_nombre: tipoNombre || 'SIN MEMBRESIA',
-          fecha_inicio: fechaInicio
+          fecha_inicio: fechaInicio,
+          fecha_vencimiento: fechaVencimiento
         }
 
         const existente = clientes.find(c => c.placa?.toUpperCase() === placa)
@@ -474,18 +482,38 @@ export default function Clientes() {
     }
   }
 
-  const calcularFechasMembresia = (membresiaId, fechaInicioStr) => {
+  const calcularFechasMembresia = (membresiaId, fechaInicioStr, fechaVencimientoStr) => {
     const membresia = tiposMembresia.find(m => m.id === membresiaId)
-    const inicio = fechaInicioStr ? new Date(fechaInicioStr + 'T00:00:00') : new Date()
+    const meses = membresia?.duracion_dias || 1
 
     if (!membresiaId || membresia?.nombre?.toLowerCase().includes('sin ')) {
+      const inicio = fechaInicioStr ? new Date(fechaInicioStr + 'T00:00:00') : new Date()
       return { fecha_inicio_membresia: fechaLocalStr(inicio), fecha_fin_membresia: fechaLocalStr(inicio) }
     }
 
-    const meses = membresia?.duracion_dias || 1
-    const fin = new Date(inicio)
-    fin.setMonth(fin.getMonth() + meses)
-    return { fecha_inicio_membresia: fechaLocalStr(inicio), fecha_fin_membresia: fechaLocalStr(fin) }
+    if (fechaInicioStr && fechaVencimientoStr) {
+      return { fecha_inicio_membresia: fechaInicioStr, fecha_fin_membresia: fechaVencimientoStr }
+    }
+
+    if (fechaInicioStr) {
+      const inicio = new Date(fechaInicioStr + 'T00:00:00')
+      const fin = new Date(inicio)
+      fin.setMonth(fin.getMonth() + meses)
+      return { fecha_inicio_membresia: fechaLocalStr(inicio), fecha_fin_membresia: fechaLocalStr(fin) }
+    }
+
+    if (fechaVencimientoStr) {
+      const fin = new Date(fechaVencimientoStr + 'T00:00:00')
+      const inicio = new Date(fin)
+      inicio.setMonth(inicio.getMonth() - meses)
+      return { fecha_inicio_membresia: fechaLocalStr(inicio), fecha_fin_membresia: fechaLocalStr(fin) }
+    }
+
+    // Ninguna fecha: cliente queda vencido
+    const hoy = new Date()
+    const inicio = new Date(hoy)
+    inicio.setMonth(inicio.getMonth() - meses)
+    return { fecha_inicio_membresia: fechaLocalStr(inicio), fecha_fin_membresia: fechaLocalStr(hoy) }
   }
 
   const ejecutarImportacion = async () => {
@@ -501,7 +529,7 @@ export default function Clientes() {
 
     // Insert new clients one by one to isolate failures
     for (const row of importNuevos) {
-      const fechas = calcularFechasMembresia(row.membresia_id, row.fecha_inicio)
+      const fechas = calcularFechasMembresia(row.membresia_id, row.fecha_inicio, row.fecha_vencimiento)
       const { error } = await supabase.from('clientes').insert([{
         nombre: row.nombre,
         placa: row.placa,
@@ -527,7 +555,7 @@ export default function Clientes() {
     // Update duplicates if selected
     if (dupAction === 'update' && importDuplicados.length > 0) {
       for (const dup of importDuplicados) {
-        const fechas = calcularFechasMembresia(dup.membresia_id, dup.fecha_inicio)
+        const fechas = calcularFechasMembresia(dup.membresia_id, dup.fecha_inicio, dup.fecha_vencimiento)
         const { error } = await supabase.from('clientes').update({
           nombre: dup.nombre,
           telefono: dup.telefono,
@@ -1480,6 +1508,7 @@ export default function Clientes() {
           </div>
         </>
       )}
+      {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} reason="Has alcanzado el límite de 30 clientes" />}
     </div>
   )
 }

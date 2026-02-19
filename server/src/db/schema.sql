@@ -230,6 +230,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS pagos_suscripcion (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  negocio_id UUID NOT NULL REFERENCES negocios(id) ON DELETE CASCADE,
+  wompi_transaction_id TEXT UNIQUE,
+  wompi_reference TEXT NOT NULL,
+  monto INTEGER NOT NULL,
+  moneda TEXT NOT NULL DEFAULT 'COP',
+  estado TEXT NOT NULL DEFAULT 'PENDING',
+  periodo TEXT,
+  datos_wompi JSONB,
+  periodo_desde DATE,
+  periodo_hasta DATE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- ============================================
 -- INDEXES
 -- ============================================
@@ -252,6 +268,8 @@ CREATE INDEX IF NOT EXISTS idx_reservas_negocio ON reservas(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_reservas_fecha ON reservas(fecha_hora);
 CREATE INDEX IF NOT EXISTS idx_audit_log_negocio ON audit_log(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_pagos_suscripcion_negocio ON pagos_suscripcion(negocio_id);
+CREATE INDEX IF NOT EXISTS idx_pagos_suscripcion_referencia ON pagos_suscripcion(wompi_reference);
 
 -- Unique constraint for placa per negocio
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_placa_negocio ON clientes(placa, negocio_id);
@@ -271,7 +289,18 @@ DO $$ BEGIN
   ALTER TABLE lavadas ADD COLUMN IF NOT EXISTS tipo_membresia_id UUID REFERENCES tipos_membresia(id) ON DELETE SET NULL;
   ALTER TABLE pago_trabajadores ADD COLUMN IF NOT EXISTS valor_pagado NUMERIC DEFAULT 0;
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS setup_complete BOOLEAN DEFAULT false;
+  ALTER TABLE negocios ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free';
+  ALTER TABLE negocios ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
+  ALTER TABLE negocios ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMPTZ;
+  ALTER TABLE negocios ADD COLUMN IF NOT EXISTS subscription_period TEXT;
 END $$;
 
 -- Mark existing negocios as already configured so they skip the wizard
 UPDATE negocios SET setup_complete = true WHERE setup_complete IS NULL OR setup_complete = false;
+
+-- Negocios existentes: plan PRO activo por 1 año (grandfathered)
+UPDATE negocios
+SET plan = 'pro',
+    trial_ends_at = created_at,
+    subscription_expires_at = now() + INTERVAL '365 days'
+WHERE trial_ends_at IS NULL;

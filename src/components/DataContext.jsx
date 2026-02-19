@@ -179,6 +179,14 @@ export function DataProvider({ children }) {
     }
   }, [negocioId, lavadasAllLoaded])
 
+  const lavadaCountThisMonth = lavadas.filter(l => {
+    const d = new Date(l.fecha)
+    const now = new Date()
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+  }).length
+
+  const clienteCount = clientes.length
+
   const value = {
     negocioId,
     clientes,
@@ -203,6 +211,8 @@ export function DataProvider({ children }) {
     deleteClienteLocal,
     deleteLavadaLocal,
     setLavadas,
+    lavadaCountThisMonth,
+    clienteCount,
   }
 
   return (

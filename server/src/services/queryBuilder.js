@@ -22,6 +22,7 @@ const ALLOWED_TABLES = new Set([
   'tipos_lavado', 'tipos_membresia', 'lavadores', 'metodos_pago',
   'servicios_adicionales', 'transacciones', 'productos', 'tareas',
   'tareas_completadas', 'pago_trabajadores', 'reservas', 'audit_log',
+  'pagos_suscripcion',
 ])
 
 export function isAllowedTable(table) {

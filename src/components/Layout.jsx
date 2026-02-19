@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import { useTenant } from './TenantContext'
 import { useTheme } from './ThemeContext'
 import { canAccess } from './RoleGuard'
+import UpgradeModal from './UpgradeModal'
 import {
   Home,
   LayoutDashboard,
@@ -14,7 +15,7 @@ import {
   CheckSquare,
   Wallet,
   CreditCard,
-  Settings,
+  User,
   LogOut,
   Menu,
   X,
@@ -24,12 +25,15 @@ import {
   Moon
 } from 'lucide-react'
 
+const PRO_ROUTES = ['/pagos', '/membresias']
+
 export default function Layout({ user }) {
   const navigate = useNavigate()
-  const { negocioNombre, userProfile } = useTenant()
+  const { negocioNombre, userProfile, isPro, planStatus, daysLeftInTrial } = useTenant()
   const { theme, toggleTheme } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -37,6 +41,7 @@ export default function Layout({ user }) {
   }
 
   const rol = userProfile?.rol || 'admin'
+  const isAdmin = rol === 'admin'
 
   const allMenuItems = [
     { to: '/home', icon: Home, label: 'Home' },
@@ -47,7 +52,7 @@ export default function Layout({ user }) {
     { to: '/tareas', icon: CheckSquare, label: 'Control Tareas' },
     { to: '/membresias', icon: CreditCard, label: 'Membresías' },
     { to: '/pagos', icon: Wallet, label: 'Pago Trabajadores' },
-    { to: '/configuracion', icon: Settings, label: 'Configuración' },
+    { to: '/cuenta', icon: User, label: 'Mi Cuenta' },
   ]
 
   const menuItems = allMenuItems.filter(item => canAccess(rol, item.to))
@@ -64,7 +69,7 @@ export default function Layout({ user }) {
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
         <h1 className="mobile-title">monaco</h1>
-        <span className="badge">PRO</span>
+        <span className={`badge ${isPro ? '' : 'badge-free'} badge-clickable`} onClick={() => navigate('/cuenta?tab=plan')}>{isPro ? 'PRO' : 'FREE'}</span>
       </header>
 
       {/* Overlay */}
@@ -73,7 +78,7 @@ export default function Layout({ user }) {
       <aside className={`sidebar ${menuOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
           {!sidebarCollapsed && <h1>monaco</h1>}
-          {!sidebarCollapsed && <span className="badge">PRO</span>}
+          {!sidebarCollapsed && <span className={`badge ${isPro ? '' : 'badge-free'} badge-clickable`} onClick={() => navigate('/cuenta?tab=plan')}>{isPro ? 'PRO' : 'FREE'}</span>}
           <button
             className="sidebar-close-btn"
             onClick={() => setMenuOpen(false)}
@@ -101,6 +106,9 @@ export default function Layout({ user }) {
             >
               <item.icon size={20} />
               {!sidebarCollapsed && <span>{item.label}</span>}
+              {!isPro && PRO_ROUTES.includes(item.to) && (
+                <span className="pro-badge-nav">PRO</span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -139,7 +147,20 @@ export default function Layout({ user }) {
       </aside>
 
       <main className="main-content">
+        {planStatus === 'trial' && daysLeftInTrial <= 5 && (
+          <div className="plan-banner plan-banner--trial">
+            Te quedan {daysLeftInTrial} día{daysLeftInTrial !== 1 ? 's' : ''} de prueba PRO.
+            {isAdmin && <button className="plan-banner-btn" onClick={() => setShowUpgradeModal(true)}>Suscribirse</button>}
+          </div>
+        )}
+        {planStatus === 'free' && isAdmin && (
+          <div className="plan-banner plan-banner--free">
+            Estás en el plan gratuito (50 lavadas/mes, 30 clientes).
+            <button className="plan-banner-btn" onClick={() => setShowUpgradeModal(true)}>Actualizar a PRO</button>
+          </div>
+        )}
         <Outlet />
+        {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
       </main>
 
       <nav className="floating-bottom-bar">
@@ -148,7 +169,7 @@ export default function Layout({ user }) {
           { to: '/dashboard', icon: LayoutDashboard, label: 'Análisis' },
           { to: '/clientes', icon: Users, label: 'Clientes' },
           { to: '/pagos', icon: Wallet, label: 'Trabajadores' },
-          { to: '/configuracion', icon: Settings, label: 'Config' },
+          { to: '/cuenta', icon: User, label: 'Cuenta' },
         ].map(item => (
           <NavLink
             key={item.to}

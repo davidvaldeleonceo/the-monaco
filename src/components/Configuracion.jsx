@@ -1,12 +1,29 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
-import { Plus, X, Edit, Trash2, Settings, ChevronDown } from 'lucide-react'
+import { useTenant } from './TenantContext'
+import { Plus, X, Edit, Trash2, Settings, ChevronDown, Crown, Shield, LogOut, Lock, MessageCircle, Mail, User, Check } from 'lucide-react'
 import { formatMoney } from '../utils/money'
+import { API_URL, TOKEN_KEY, SESSION_KEY } from '../config/constants'
+import UpgradeModal from './UpgradeModal'
 
 export default function Configuracion() {
+  const navigate = useNavigate()
   const { refreshConfig, serviciosAdicionales, productos, negocioId } = useData()
-  const [activeTab, setActiveTab] = useState('membresias')
+  const { userProfile, isPro, planStatus, planCancelled, daysLeftInTrial, refresh, userEmail, negocioNombre } = useTenant()
+  const isAdmin = userProfile?.rol === 'admin'
+  const [activeTab, setActiveTab] = useState('datos')
+  const [configSubTab, setConfigSubTab] = useState('membresias')
+  const [editingField, setEditingField] = useState(null) // 'negocio' | 'email' | 'password'
+  const [negocioNombreEdit, setNegocioNombreEdit] = useState('')
+  const [emailEdit, setEmailEdit] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [datosError, setDatosError] = useState('')
+  const [datosSaving, setDatosSaving] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [data, setData] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editando, setEditando] = useState(null)
@@ -29,6 +46,15 @@ export default function Configuracion() {
   })
 
   const tabs = [
+    { id: 'datos', label: 'Mis Datos' },
+    ...(isAdmin ? [{ id: 'plan', label: 'Mi Plan' }] : []),
+    ...(isAdmin ? [{ id: 'config', label: 'Configuración' }] : []),
+    ...(isAdmin ? [{ id: 'reportes', label: 'Reportes' }] : []),
+    { id: 'seguridad', label: 'Seguridad' },
+    { id: 'soporte', label: 'Soporte' },
+  ]
+
+  const configSubTabs = [
     { id: 'membresias', label: 'Tipos de Cliente', table: 'tipos_membresia' },
     { id: 'lavados', label: 'Tipos de Servicio', table: 'tipos_lavado' },
     { id: 'metodos', label: 'Métodos de Pago', table: 'metodos_pago' },
@@ -36,12 +62,26 @@ export default function Configuracion() {
     { id: 'productos', label: 'Productos', table: 'productos' },
   ]
 
+  // Handle ?tab=plan from URL
+  const [searchParams] = useSearchParams()
   useEffect(() => {
-    fetchData()
-    setExpandedCard(null)
+    const tab = searchParams.get('tab')
+    if (tab && tabs.some(t => t.id === tab)) setActiveTab(tab)
+  }, [searchParams])
+
+  // When selecting "Reportes" tab, navigate away
+  useEffect(() => {
+    if (activeTab === 'reportes') {
+      navigate('/reportes')
+    }
   }, [activeTab])
 
-  const getTable = () => tabs.find(t => t.id === activeTab)?.table
+  useEffect(() => {
+    if (activeTab === 'config') fetchData()
+    setExpandedCard(null)
+  }, [activeTab, configSubTab])
+
+  const getTable = () => configSubTabs.find(t => t.id === configSubTab)?.table
 
   const fetchData = async () => {
     const { data: result } = await supabase
@@ -52,7 +92,7 @@ export default function Configuracion() {
   }
 
   const getInitialForm = () => {
-    switch (activeTab) {
+    switch (configSubTab) {
       case 'membresias':
         return { nombre: '', precio: '', descuento: '', cashback: '', duracion_dias: 1, activo: true }
       case 'lavados':
@@ -69,7 +109,7 @@ export default function Configuracion() {
   }
 
   const getEditableFields = () => {
-    switch (activeTab) {
+    switch (configSubTab) {
       case 'membresias':
         return ['nombre', 'precio', 'descuento', 'cashback', 'duracion_dias', 'activo']
       case 'lavados':
@@ -371,7 +411,7 @@ export default function Configuracion() {
   )
 
   const renderTable = () => {
-    switch (activeTab) {
+    switch (configSubTab) {
       case 'membresias':
         return (
           <div className="table-container">
@@ -588,7 +628,7 @@ export default function Configuracion() {
   const renderMobileCards = () => {
     if (data.length === 0) return null
 
-    switch (activeTab) {
+    switch (configSubTab) {
       case 'membresias':
         return data.map(item => {
           const isExpanded = expandedCard === item.id
@@ -894,7 +934,7 @@ export default function Configuracion() {
   )
 
   const renderForm = () => {
-    switch (activeTab) {
+    switch (configSubTab) {
       case 'membresias':
         return (
           <>
@@ -1014,34 +1054,344 @@ export default function Configuracion() {
     }
   }
 
-  return (
-    <div className="configuracion-page">
-      <div className="config-title-row">
-        <h1 className="page-title">Configuración</h1>
-        <div className="config-desktop-actions">
-          {activeTab === 'lavadores' && (
-            <button className="btn-secondary" onClick={() => {
-              setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
-              setShowBulkModal(true)
-            }}>
-              <Settings size={18} />
-              <span className="btn-label">Pago General</span>
-            </button>
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    navigate('/')
+  }
+
+  const cancelEdit = () => {
+    setEditingField(null)
+    setDatosError('')
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+  }
+
+  const handleSaveNegocioNombre = async () => {
+    if (!negocioNombreEdit.trim()) return
+    setDatosSaving(true)
+    const { error } = await supabase
+      .from('negocios')
+      .update({ nombre: negocioNombreEdit.trim() })
+      .eq('id', negocioId)
+    setDatosSaving(false)
+    if (error) {
+      setDatosError('Error al guardar: ' + error.message)
+    } else {
+      refresh()
+      cancelEdit()
+    }
+  }
+
+  const handleSaveEmail = async () => {
+    if (!emailEdit.trim() || !currentPassword) return
+    setDatosError('')
+    setDatosSaving(true)
+    try {
+      const token = localStorage.getItem(TOKEN_KEY)
+      const res = await fetch(`${API_URL}/api/auth/update-email`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword, newEmail: emailEdit.trim() }),
+      })
+      const result = await res.json()
+      setDatosSaving(false)
+      if (result.error) {
+        setDatosError(result.error)
+      } else {
+        // Update local session with new token
+        if (result.data?.session) {
+          localStorage.setItem(TOKEN_KEY, result.data.session.access_token)
+          localStorage.setItem(SESSION_KEY, JSON.stringify(result.data.session))
+        }
+        refresh()
+        cancelEdit()
+      }
+    } catch {
+      setDatosSaving(false)
+      setDatosError('Error de conexión')
+    }
+  }
+
+  const handleSavePassword = async () => {
+    if (!currentPassword || !newPassword) return
+    if (newPassword !== confirmPassword) {
+      setDatosError('Las contraseñas no coinciden')
+      return
+    }
+    if (newPassword.length < 6) {
+      setDatosError('La contraseña debe tener al menos 6 caracteres')
+      return
+    }
+    setDatosError('')
+    setDatosSaving(true)
+    try {
+      const token = localStorage.getItem(TOKEN_KEY)
+      const res = await fetch(`${API_URL}/api/auth/update-password`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      const result = await res.json()
+      setDatosSaving(false)
+      if (result.error) {
+        setDatosError(result.error)
+      } else {
+        cancelEdit()
+      }
+    } catch {
+      setDatosSaving(false)
+      setDatosError('Error de conexión')
+    }
+  }
+
+  const renderDatosTab = () => (
+    <div className="cuenta-datos-panel">
+      {datosError && <div className="cuenta-datos-error">{datosError}</div>}
+
+      {/* Correo electrónico */}
+      <div className="cuenta-datos-row">
+        <div className="cuenta-datos-left">
+          <span className="cuenta-datos-label">Correo electrónico</span>
+          {editingField === 'email' ? (
+            <div className="cuenta-datos-edit-fields">
+              <input type="email" className="cuenta-datos-input" value={emailEdit} onChange={(e) => setEmailEdit(e.target.value)} placeholder="Nuevo correo" autoFocus />
+              <input type="password" className="cuenta-datos-input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Contraseña actual" />
+            </div>
+          ) : (
+            <span className="cuenta-datos-value">{userEmail || '—'}</span>
           )}
-          <button className="btn-primary" onClick={handleNew}>
-            <Plus size={18} />
-            <span className="btn-label">Nuevo</span>
-          </button>
+        </div>
+        {editingField === 'email' ? (
+          <div className="cuenta-datos-confirm-icons">
+            <button className="btn-icon-plain" onClick={handleSaveEmail} disabled={datosSaving} title="Confirmar"><Check size={18} /></button>
+            <button className="btn-icon-plain" onClick={cancelEdit} title="Cancelar"><X size={18} /></button>
+          </div>
+        ) : (
+          editingField === null && (
+            <button className="btn-icon" onClick={() => { setEmailEdit(userEmail || ''); setEditingField('email') }} title="Editar"><Edit size={16} /></button>
+          )
+        )}
+      </div>
+
+      {/* Contraseña */}
+      <div className="cuenta-datos-row">
+        <div className="cuenta-datos-left">
+          <span className="cuenta-datos-label">Contraseña</span>
+          {editingField === 'password' ? (
+            <div className="cuenta-datos-edit-fields">
+              <input type="password" className="cuenta-datos-input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Contraseña actual" autoFocus />
+              <input type="password" className="cuenta-datos-input" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Nueva contraseña" />
+              <input type="password" className="cuenta-datos-input" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirmar nueva contraseña" />
+            </div>
+          ) : (
+            <span className="cuenta-datos-value">••••••••</span>
+          )}
+        </div>
+        {editingField === 'password' ? (
+          <div className="cuenta-datos-confirm-icons">
+            <button className="btn-icon-plain" onClick={handleSavePassword} disabled={datosSaving} title="Confirmar"><Check size={18} /></button>
+            <button className="btn-icon-plain" onClick={cancelEdit} title="Cancelar"><X size={18} /></button>
+          </div>
+        ) : (
+          editingField === null && (
+            <button className="btn-icon" onClick={() => setEditingField('password')} title="Editar"><Edit size={16} /></button>
+          )
+        )}
+      </div>
+
+      {/* Rol */}
+      <div className="cuenta-datos-row">
+        <div className="cuenta-datos-left">
+          <span className="cuenta-datos-label">Rol</span>
+          <span className="cuenta-datos-value">{userProfile?.rol || 'admin'}</span>
         </div>
       </div>
 
-      {/* Mobile: dropdown */}
-      <div className="config-tab-select-mobile">
-        <select value={activeTab} onChange={(e) => setActiveTab(e.target.value)}>
-          {tabs.map(t => (
-            <option key={t.id} value={t.id}>{t.label}</option>
-          ))}
-        </select>
+      {/* Nombre del negocio */}
+      <div className="cuenta-datos-row">
+        <div className="cuenta-datos-left">
+          <span className="cuenta-datos-label">Nombre del negocio</span>
+          {editingField === 'negocio' ? (
+            <div className="cuenta-datos-edit-fields">
+              <input type="text" className="cuenta-datos-input" value={negocioNombreEdit} onChange={(e) => setNegocioNombreEdit(e.target.value)} autoFocus />
+            </div>
+          ) : (
+            <span className="cuenta-datos-value">{negocioNombre || '—'}</span>
+          )}
+        </div>
+        {editingField === 'negocio' ? (
+          <div className="cuenta-datos-confirm-icons">
+            <button className="btn-icon-plain" onClick={handleSaveNegocioNombre} disabled={datosSaving} title="Confirmar"><Check size={18} /></button>
+            <button className="btn-icon-plain" onClick={cancelEdit} title="Cancelar"><X size={18} /></button>
+          </div>
+        ) : (
+          editingField === null && isAdmin && (
+            <button className="btn-icon" onClick={() => { setNegocioNombreEdit(negocioNombre || ''); setEditingField('negocio') }} title="Editar"><Edit size={16} /></button>
+          )
+        )}
+      </div>
+    </div>
+  )
+
+  const renderSeguridadTab = () => (
+    <div className="plan-panel">
+      <div className="plan-panel-header">
+        <Lock size={32} />
+        <div>
+          <h2>Seguridad</h2>
+        </div>
+      </div>
+      <div className="plan-panel-info">
+        <div className="cuenta-actions">
+          <button className="btn-secondary btn-danger-outline" onClick={handleLogout}>
+            <LogOut size={18} /> Cerrar sesión
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderSoporteTab = () => (
+    <div className="plan-panel">
+      <div className="plan-panel-header">
+        <MessageCircle size={32} />
+        <div>
+          <h2>Soporte</h2>
+        </div>
+      </div>
+      <div className="plan-panel-info">
+        <p>¿Necesitas ayuda? Contáctanos:</p>
+        <div className="cuenta-actions">
+          <a
+            href="https://wa.me/573001234567?text=Hola%2C%20necesito%20ayuda%20con%20Monaco"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary"
+          >
+            <MessageCircle size={18} /> WhatsApp
+          </a>
+          <a
+            href="mailto:soporte@monaco.app"
+            className="btn-secondary"
+          >
+            <Mail size={18} /> Email
+          </a>
+        </div>
+        <p className="cuenta-version">Monaco v1.0.0</p>
+      </div>
+    </div>
+  )
+
+  const handleCancelSubscription = async () => {
+    if (!confirm('¿Estás seguro de cancelar tu suscripción? Seguirás con acceso PRO hasta que expire.')) return
+
+    try {
+      const token = localStorage.getItem(TOKEN_KEY)
+      const res = await fetch(`${API_URL}/api/wompi/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (data.success) {
+        refresh()
+      }
+    } catch {
+      // silently fail
+    }
+  }
+
+  const renderPlanTab = () => {
+    const statusLabel = planCancelled && isPro ? 'CANCELADO'
+      : planStatus === 'active' ? 'PRO ACTIVO'
+      : planStatus === 'trial' ? 'PRO TRIAL'
+      : 'GRATUITO'
+    const statusClass = planStatus === 'free' ? 'plan-status--free'
+      : planCancelled ? 'plan-status--cancelled'
+      : 'plan-status--pro'
+
+    const expiresAt = userProfile?.negocio?.subscription_expires_at || userProfile?.negocio?.trial_ends_at
+    const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleDateString('es-CO') : null
+
+    return (
+      <div className="plan-panel">
+        <div className="plan-panel-header">
+          <Crown size={32} />
+          <div>
+            <h2>Tu Plan</h2>
+            <span className={`plan-status-badge ${statusClass}`}>{statusLabel}</span>
+          </div>
+          {isPro && !planCancelled && (
+            <button className="btn-cancel-sub" onClick={handleCancelSubscription}>
+              Cancelar suscripción
+            </button>
+          )}
+        </div>
+
+        {planCancelled && isPro && (
+          <div className="plan-panel-info">
+            <p>Tu suscripción fue cancelada. Seguirás con acceso PRO hasta el <strong>{expiresLabel}</strong>.</p>
+          </div>
+        )}
+
+        {planStatus === 'trial' && !planCancelled && (
+          <div className="plan-panel-info">
+            <p>Te quedan <strong>{daysLeftInTrial}</strong> día{daysLeftInTrial !== 1 ? 's' : ''} de prueba gratuita.</p>
+          </div>
+        )}
+
+        {planStatus === 'active' && !planCancelled && (
+          <div className="plan-panel-info">
+            <p>Tu suscripción está activa — expira el {expiresLabel || 'N/A'}</p>
+          </div>
+        )}
+
+        {planStatus === 'free' && (
+          <div className="plan-panel-info">
+            <p>Estás en el plan gratuito con límites:</p>
+            <ul className="plan-panel-limits">
+              <li>50 lavadas por mes</li>
+              <li>30 clientes máximo</li>
+              <li>Pago de trabajadores: <strong>Bloqueado</strong></li>
+              <li>Membresías: <strong>Bloqueado</strong></li>
+            </ul>
+          </div>
+        )}
+
+        {(planStatus === 'free' || planStatus === 'trial') && !planCancelled && (
+          <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+            <Crown size={18} /> {planStatus === 'free' ? 'Actualizar a PRO' : 'Suscribirse ahora'}
+          </button>
+        )}
+
+        {planCancelled && !isPro && (
+          <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+            <Crown size={18} /> Reactivar suscripción
+          </button>
+        )}
+
+        {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
+      </div>
+    )
+  }
+
+  return (
+    <div className="configuracion-page">
+      <div className="config-title-row">
+        <h1 className="page-title">Mi Cuenta</h1>
+      </div>
+
+      {/* Mobile: horizontal pills */}
+      <div className="config-pills-mobile">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            className={`config-pill ${activeTab === t.id ? 'active' : ''}`}
+            onClick={() => setActiveTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Desktop: tab buttons */}
@@ -1057,21 +1407,114 @@ export default function Configuracion() {
         ))}
       </div>
 
-      {/* Desktop: tabla */}
-      <div className="card config-tabla-desktop">
-        {renderTable()}
-        {data.length === 0 && (
-          <p className="empty">No hay registros</p>
-        )}
-      </div>
+      {/* Mis Datos tab */}
+      {activeTab === 'datos' && renderDatosTab()}
 
-      {/* Mobile: cards */}
-      <div className="config-cards-mobile">
-        {renderMobileCards()}
-        {data.length === 0 && (
-          <div className="clientes-cards-empty">No hay registros</div>
-        )}
-      </div>
+      {/* Plan tab */}
+      {activeTab === 'plan' && renderPlanTab()}
+
+      {/* Configuración tab */}
+      {activeTab === 'config' && (
+        <>
+          {/* Config sub-tabs */}
+          <div className="config-pills-mobile config-sub-pills">
+            {configSubTabs.map(t => (
+              <button
+                key={t.id}
+                className={`config-pill ${configSubTab === t.id ? 'active' : ''}`}
+                onClick={() => setConfigSubTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="config-title-row">
+            <div />
+            <div className="config-desktop-actions">
+              {configSubTab === 'lavadores' && (
+                <button className="btn-secondary" onClick={() => {
+                  setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
+                  setShowBulkModal(true)
+                }}>
+                  <Settings size={18} />
+                  <span className="btn-label">Pago General</span>
+                </button>
+              )}
+              <button className="btn-primary" onClick={handleNew}>
+                <Plus size={18} />
+                <span className="btn-label">Nuevo</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Desktop: tabla */}
+          <div className="card config-tabla-desktop">
+            {configSubTab === 'membresias' && !isPro ? (
+              <div className="plan-restricted-inline">
+                <Shield size={32} />
+                <p>Tipos de Cliente/Membresía requiere plan PRO</p>
+                <button className="btn-primary" onClick={() => setShowUpgradeModal(true)}>Ver opciones</button>
+                {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
+              </div>
+            ) : (
+              <>
+                {renderTable()}
+                {data.length === 0 && (
+                  <p className="empty">No hay registros</p>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="config-cards-mobile">
+            {renderMobileCards()}
+            {data.length === 0 && (
+              <div className="clientes-cards-empty">No hay registros</div>
+            )}
+          </div>
+
+          {/* FAB (mobile only) */}
+          {configSubTab === 'lavadores' ? (
+            <>
+              <button
+                className={`config-fab ${showFabMenu ? 'open' : ''}`}
+                onClick={() => setShowFabMenu(!showFabMenu)}
+              >
+                <Plus size={24} />
+              </button>
+              {showFabMenu && (
+                <>
+                  <div className="config-fab-overlay" onClick={() => setShowFabMenu(false)} />
+                  <div className="config-fab-menu">
+                    <button onClick={() => { setShowFabMenu(false); handleNew() }}>
+                      <Plus size={18} /> Nuevo Lavador
+                    </button>
+                    <button onClick={() => {
+                      setShowFabMenu(false)
+                      setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
+                      setShowBulkModal(true)
+                    }}>
+                      <Settings size={18} /> Pago General
+                    </button>
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <button className="config-fab" onClick={handleNew}>
+              <Plus size={24} />
+            </button>
+          )}
+        </>
+      )}
+
+      {/* Seguridad tab */}
+      {activeTab === 'seguridad' && renderSeguridadTab()}
+
+      {/* Soporte tab */}
+      {activeTab === 'soporte' && renderSoporteTab()}
 
       {showModal && (
         <div className="modal-overlay">
@@ -1091,39 +1534,6 @@ export default function Configuracion() {
             </form>
           </div>
         </div>
-      )}
-
-      {/* FAB (mobile only) */}
-      {activeTab === 'lavadores' ? (
-        <>
-          <button
-            className={`config-fab ${showFabMenu ? 'open' : ''}`}
-            onClick={() => setShowFabMenu(!showFabMenu)}
-          >
-            <Plus size={24} />
-          </button>
-          {showFabMenu && (
-            <>
-              <div className="config-fab-overlay" onClick={() => setShowFabMenu(false)} />
-              <div className="config-fab-menu">
-                <button onClick={() => { setShowFabMenu(false); handleNew() }}>
-                  <Plus size={18} /> Nuevo Lavador
-                </button>
-                <button onClick={() => {
-                  setShowFabMenu(false)
-                  setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
-                  setShowBulkModal(true)
-                }}>
-                  <Settings size={18} /> Pago General
-                </button>
-              </div>
-            </>
-          )}
-        </>
-      ) : (
-        <button className="config-fab" onClick={handleNew}>
-          <Plus size={24} />
-        </button>
       )}
 
       {showBulkModal && (

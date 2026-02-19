@@ -4,6 +4,7 @@ import { useData } from './DataContext'
 import { useServiceHandlers } from '../hooks/useServiceHandlers'
 import { formatMoney } from '../utils/money'
 import { Plus, X } from 'lucide-react'
+import UpgradeModal from './UpgradeModal'
 
 export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
   const { clientes, tiposMembresia, negocioId, addLavadaLocal, addClienteLocal, serviciosAdicionales: _sa } = useData()
@@ -29,6 +30,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
   const [showCamposExtra, setShowCamposExtra] = useState(false)
   const [creandoCliente, setCreandoCliente] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
   // Bottom sheet drag-to-dismiss
   const sheetRef = useRef(null)
@@ -166,6 +168,10 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       .single()
     setCreandoCliente(false)
     if (error) {
+      if (error.message?.includes('PLAN_LIMIT_REACHED')) {
+        setShowUpgradeModal(true)
+        return
+      }
       const existente = clientes.find(c => c.placa?.toLowerCase() === nuevoClienteData.placa.toLowerCase())
       if (existente) {
         setShowNuevoCliente(false)
@@ -282,6 +288,10 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       .single()
 
     setSubmitting(false)
+    if (error?.message?.includes('PLAN_LIMIT_REACHED')) {
+      setShowUpgradeModal(true)
+      return
+    }
     if (!error && data) {
       addLavadaLocal(data)
       resetState()
@@ -576,6 +586,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
           </div>
         </form>
       </div>
+      {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} reason="Has alcanzado el límite de 50 lavadas este mes" />}
     </div>
   )
 }

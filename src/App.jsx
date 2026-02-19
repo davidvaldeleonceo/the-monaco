@@ -21,6 +21,7 @@ import { ThemeProvider } from './components/ThemeContext'
 import Onboarding from './components/Onboarding'
 import SetupWizard from './components/SetupWizard'
 import RoleGuard from './components/RoleGuard'
+import PlanGuard from './components/PlanGuard'
 import './App.css'
 
 function AuthenticatedApp({ session }) {
@@ -51,9 +52,9 @@ function AuthenticatedApp({ session }) {
           <Route path="/balance" element={<RoleGuard path="/balance"><Balance /></RoleGuard>} />
           <Route path="/reportes" element={<RoleGuard path="/reportes"><Reportes /></RoleGuard>} />
           <Route path="/tareas" element={<RoleGuard path="/tareas"><Tareas /></RoleGuard>} />
-          <Route path="/pagos" element={<RoleGuard path="/pagos"><PagoTrabajadores /></RoleGuard>} />
-          <Route path="/membresias" element={<RoleGuard path="/membresias"><Membresias /></RoleGuard>} />
-          <Route path="/configuracion" element={<RoleGuard path="/configuracion"><Configuracion /></RoleGuard>} />
+          <Route path="/pagos" element={<RoleGuard path="/pagos"><PlanGuard feature="Pago de Trabajadores"><PagoTrabajadores /></PlanGuard></RoleGuard>} />
+          <Route path="/membresias" element={<RoleGuard path="/membresias"><PlanGuard feature="Membresias"><Membresias /></PlanGuard></RoleGuard>} />
+          <Route path="/cuenta" element={<RoleGuard path="/cuenta"><Configuracion /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
