@@ -6,7 +6,7 @@ import { ESTADO_CLASSES } from '../config/constants'
 export function useServiceHandlers() {
   const {
     lavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales,
-    updateLavadaLocal, deleteLavadaLocal
+    updateLavadaLocal, deleteLavadaLocal, plantillasMensaje, negocioId
   } = useData()
 
   const [expandedCards, setExpandedCards] = useState({})
@@ -226,24 +226,68 @@ export function useServiceHandlers() {
     })
   }
 
-  const handleEliminarLavada = async (lavadaId) => {
-    if (confirm('¿Estás seguro de eliminar este servicio?')) {
-      await withCardUpdate(lavadaId, async () => {
-        const { error } = await supabase
-          .from('lavadas')
-          .delete()
-          .eq('id', lavadaId)
+  const [pendingDeleteLavadaId, setPendingDeleteLavadaId] = useState(null)
 
-        if (error) {
-          alert('Error al eliminar servicio: ' + error.message)
-          return
-        }
-        deleteLavadaLocal(lavadaId)
-      })
-    }
+  const requestEliminarLavada = (lavadaId) => {
+    setPendingDeleteLavadaId(lavadaId)
   }
 
-  const enviarWhatsApp = (lavada) => {
+  const executeEliminarLavada = async () => {
+    const lavadaId = pendingDeleteLavadaId
+    if (!lavadaId) return
+    await withCardUpdate(lavadaId, async () => {
+      const { error } = await supabase
+        .from('lavadas')
+        .delete()
+        .eq('id', lavadaId)
+
+      if (error) {
+        alert('Error al eliminar servicio: ' + error.message)
+        return
+      }
+      deleteLavadaLocal(lavadaId)
+    })
+    setPendingDeleteLavadaId(null)
+  }
+
+  const resolverPlantilla = (texto, cliente, lavada, negocioNombre) => {
+    const formatFechaVar = (str) => {
+      if (!str) return '—'
+      const dateOnly = typeof str === 'string' ? str.split('T')[0] : null
+      if (!dateOnly) return '—'
+      const d = new Date(dateOnly + 'T00:00:00')
+      if (isNaN(d.getTime())) return '—'
+      const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+      return `${d.getDate()} ${meses[d.getMonth()]} ${d.getFullYear()}`
+    }
+    const getEstadoMembresia = (c) => {
+      if (!c.fecha_inicio_membresia || !c.fecha_fin_membresia) return 'Inactivo'
+      const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+      const fin = new Date(typeof c.fecha_fin_membresia === 'string' ? c.fecha_fin_membresia.split('T')[0] + 'T00:00:00' : c.fecha_fin_membresia)
+      if (isNaN(fin.getTime())) return 'Inactivo'
+      return hoy <= fin ? 'Activo' : 'Vencido'
+    }
+    const formatMoneyVar = (v) => {
+      const num = Number(v) || 0
+      return '$' + num.toLocaleString('es-CO')
+    }
+
+    const variables = {
+      nombre: cliente?.nombre || '',
+      telefono: cliente?.telefono || '',
+      negocio: negocioNombre || '',
+      membresia: cliente?.membresia?.nombre || 'Sin membresía',
+      estado_membresia: getEstadoMembresia(cliente || {}),
+      vencimiento: formatFechaVar(cliente?.fecha_fin_membresia),
+      placa: lavada?.placa || cliente?.placa || '',
+      ultimo_servicio: lavada?.tipo_lavado?.nombre || '',
+      valor_ultimo: formatMoneyVar(lavada?.valor),
+    }
+
+    return texto.replace(/\{(\w+)\}/g, (match, key) => variables[key] ?? match)
+  }
+
+  const enviarWhatsApp = (lavada, { plantillaId, negocioNombre, userEmail, origen } = {}) => {
     const cliente = clientes.find(c => c.id == lavada.cliente_id)
     if (!cliente?.telefono) {
       alert('El cliente no tiene número de teléfono registrado')
@@ -251,10 +295,31 @@ export function useServiceHandlers() {
     }
 
     const telefono = cliente.telefono.replace(/\D/g, '')
-    const mensaje = `Hola ${cliente.nombre}, tu moto de placa *${lavada.placa}* ya está lista. ¡Puedes venir a recogerla! 🏍️`
-    const url = `https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(mensaje)}`
 
-    window.open(url, '_blank')
+    if (!plantillaId) {
+      window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
+      return
+    }
+
+    const plantilla = plantillasMensaje.find(p => p.id === plantillaId)
+    if (!plantilla) {
+      window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
+      return
+    }
+
+    const mensajeTexto = resolverPlantilla(plantilla.texto, cliente, lavada, negocioNombre)
+    window.open(`https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(mensajeTexto)}`, '_blank')
+
+    // Fire-and-forget: registrar mensaje enviado
+    supabase.from('mensajes_enviados').insert([{
+      cliente_id: cliente.id,
+      plantilla_id: plantilla.id,
+      plantilla_nombre: plantilla.nombre,
+      mensaje_texto: mensajeTexto,
+      enviado_por: userEmail || null,
+      origen: origen || 'servicios',
+      negocio_id: negocioId,
+    }]).then(() => {})
   }
 
   return {
@@ -277,8 +342,11 @@ export function useServiceHandlers() {
     handleTipoLavadoChangeInline,
     handlePagosChange,
     handleAdicionalChange,
-    handleEliminarLavada,
+    pendingDeleteLavadaId, setPendingDeleteLavadaId,
+    requestEliminarLavada, executeEliminarLavada,
     enviarWhatsApp,
+    resolverPlantilla,
+    plantillasMensaje,
     // Data from context
     tiposLavado,
     serviciosAdicionales,

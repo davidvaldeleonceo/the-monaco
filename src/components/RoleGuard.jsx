@@ -8,7 +8,7 @@ const ROLE_ACCESS = {
   '/lavadas':       ['admin', 'trabajador'],
   '/clientes':      ['admin', 'trabajador'],
   '/balance':       ['admin'],
-  '/reportes':      ['admin'],
+
   '/tareas':        ['admin', 'trabajador'],
   '/membresias':    ['admin'],
   '/pagos':         ['admin'],

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import PasswordInput from './common/PasswordInput'
 
 export default function Register() {
   const navigate = useNavigate()
@@ -140,8 +141,7 @@ export default function Register() {
 
           <div className="input-group">
             <label>Contraseña</label>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Mínimo 6 caracteres"
@@ -152,8 +152,7 @@ export default function Register() {
 
           <div className="input-group">
             <label>Confirmar contraseña</label>
-            <input
-              type="password"
+            <PasswordInput
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Repite tu contraseña"

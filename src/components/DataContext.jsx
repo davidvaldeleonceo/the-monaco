@@ -26,6 +26,7 @@ export function DataProvider({ children }) {
   const [serviciosAdicionales, setServiciosAdicionales] = useState([])
   const [transacciones, setTransacciones] = useState([])
   const [productos, setProductos] = useState([])
+  const [plantillasMensaje, setPlantillasMensaje] = useState([])
   const [loading, setLoading] = useState(true)
   const [lavadasAllLoaded, setLavadasAllLoaded] = useState(false)
 
@@ -48,6 +49,7 @@ export function DataProvider({ children }) {
         tiposMembresiaRes,
         serviciosAdicionalesRes,
         productosRes,
+        plantillasRes,
       ] = await Promise.all([
         supabase.from('clientes').select(CLIENTES_SELECT).order('nombre'),
         supabase.from('lavadas').select(LAVADAS_SELECT).gte('fecha', cutoff).order('fecha', { ascending: false }).limit(500),
@@ -57,6 +59,7 @@ export function DataProvider({ children }) {
         supabase.from('tipos_membresia').select('*').eq('activo', true),
         supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre'),
         supabase.from('productos').select('*').order('nombre'),
+        supabase.from('plantillas_mensaje').select('*').eq('activo', true).order('nombre'),
       ])
 
       if (clientesRes.error) console.error('Error clientes:', clientesRes.error)
@@ -67,6 +70,7 @@ export function DataProvider({ children }) {
       if (tiposMembresiaRes.error) console.error('Error tipos_membresia:', tiposMembresiaRes.error)
       if (serviciosAdicionalesRes.error) console.error('Error servicios_adicionales:', serviciosAdicionalesRes.error)
       if (productosRes.error) console.error('Error productos:', productosRes.error)
+      if (plantillasRes.error) console.error('Error plantillas_mensaje:', plantillasRes.error)
 
       setClientes(clientesRes.data || [])
       setLavadas(lavadasRes.data || [])
@@ -77,6 +81,7 @@ export function DataProvider({ children }) {
       setTiposMembresia(tiposMembresiaRes.data || [])
       setServiciosAdicionales(serviciosAdicionalesRes.data || [])
       setProductos(productosRes.data || [])
+      setPlantillasMensaje(plantillasRes.data || [])
     } catch (error) {
       console.error('Error fetching data:', error)
     } finally {
@@ -113,13 +118,14 @@ export function DataProvider({ children }) {
   }
 
   const refreshConfig = async () => {
-    const [tiposLavadoRes, lavadoresRes, metodosPagoRes, tiposMembresiaRes, serviciosRes, productosRes] = await Promise.all([
+    const [tiposLavadoRes, lavadoresRes, metodosPagoRes, tiposMembresiaRes, serviciosRes, productosRes, plantillasRes] = await Promise.all([
       supabase.from('tipos_lavado').select('*').eq('activo', true),
       supabase.from('lavadores').select('*').eq('activo', true),
       supabase.from('metodos_pago').select('*').eq('activo', true),
       supabase.from('tipos_membresia').select('*').eq('activo', true),
       supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre'),
       supabase.from('productos').select('*').order('nombre'),
+      supabase.from('plantillas_mensaje').select('*').eq('activo', true).order('nombre'),
     ])
     setTiposLavado(tiposLavadoRes.data || [])
     setLavadores(lavadoresRes.data || [])
@@ -127,6 +133,7 @@ export function DataProvider({ children }) {
     setTiposMembresia(tiposMembresiaRes.data || [])
     setServiciosAdicionales(serviciosRes.data || [])
     setProductos(productosRes.data || [])
+    setPlantillasMensaje(plantillasRes.data || [])
   }
 
   const updateLavadaLocal = (lavadaId, updates) => {
@@ -197,6 +204,7 @@ export function DataProvider({ children }) {
     tiposMembresia,
     serviciosAdicionales,
     productos,
+    plantillasMensaje,
     loading,
     lavadasAllLoaded,
     fetchAllData,

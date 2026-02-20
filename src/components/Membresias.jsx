@@ -8,6 +8,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney } from '../utils/money'
+import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 
 registerLocale('es', es)
 
@@ -34,8 +35,6 @@ export default function Membresias() {
   const [expandedCard, setExpandedCard] = useState(null)
   const [showFilters, setShowFilters] = useState(false)
   const [eliminarId, setEliminarId] = useState(null)
-  const [password, setPassword] = useState('')
-  const [errorPassword, setErrorPassword] = useState('')
   const [nuevoCliente, setNuevoCliente] = useState(false)
   const [minFechaActivacion, setMinFechaActivacion] = useState(null)
   const [clienteData, setClienteData] = useState({
@@ -236,25 +235,11 @@ export default function Membresias() {
 
   const handleEliminarPago = (pagoId) => {
     setEliminarId(pagoId)
-    setPassword('')
-    setErrorPassword('')
   }
 
-  const confirmarEliminacion = async () => {
-    // Verificar contraseña
-    const { data: { session } } = await supabase.auth.getSession()
-    const email = session?.user?.email
-    if (!email) return
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setErrorPassword('Contraseña incorrecta')
-      return
-    }
-
+  const executeEliminarPago = async () => {
     const pago = pagos.find(p => p.id === eliminarId)
     if (pago) {
-      // Buscar cliente por placa_o_persona y revertir membresía a SIN MEMBRESIA
       const placa = pago.placa_o_persona?.split(' - ')[1]?.trim()
       const clienteAfectado = clientes.find(c => c.placa?.toLowerCase() === placa?.toLowerCase())
 
@@ -283,8 +268,6 @@ export default function Membresias() {
     }
 
     setEliminarId(null)
-    setPassword('')
-    setErrorPassword('')
   }
 
   const aplicarFiltroRapido = (tipo) => {
@@ -719,43 +702,12 @@ export default function Membresias() {
         </div>
       )}
 
-      {eliminarId && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: '400px' }}>
-            <div className="modal-header">
-              <h2>Confirmar eliminación</h2>
-              <button className="btn-close" onClick={() => { setEliminarId(null); setPassword(''); setErrorPassword('') }}>
-                <X size={24} />
-              </button>
-            </div>
-            <div style={{ padding: '1.5rem' }}>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                Se eliminará el pago y se revertirá la membresía del cliente. Ingresa tu contraseña para confirmar.
-              </p>
-              <div className="form-group">
-                <label>Contraseña</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setErrorPassword('') }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') confirmarEliminacion() }}
-                  placeholder="Ingresa tu contraseña"
-                  autoFocus
-                />
-                {errorPassword && <span style={{ color: 'var(--accent-red)', fontSize: '0.85rem', marginTop: '0.5rem', display: 'block' }}>{errorPassword}</span>}
-              </div>
-            </div>
-            <div className="modal-footer" style={{ justifyContent: 'center', alignItems: 'center', paddingBottom: '1.5rem' }}>
-              <button type="button" className="btn-secondary" onClick={() => { setEliminarId(null); setPassword(''); setErrorPassword('') }}>
-                Cancelar
-              </button>
-              <button type="button" className="btn-primary" style={{ background: 'var(--accent-red)' }} onClick={confirmarEliminacion}>
-                Eliminar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDeleteModal
+        isOpen={!!eliminarId}
+        onClose={() => setEliminarId(null)}
+        onConfirm={executeEliminarPago}
+        message="Se eliminará el pago y se revertirá la membresía del cliente. Ingresa tu contraseña para confirmar."
+      />
     </div>
   )
 }

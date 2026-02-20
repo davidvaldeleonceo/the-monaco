@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useTenant } from './TenantContext'
-import { FileText, FileSpreadsheet } from 'lucide-react'
+import { FileText, FileSpreadsheet, TrendingUp, TrendingDown } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import ExcelJS from 'exceljs'
@@ -15,6 +15,8 @@ import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend
 } from 'recharts'
+import { useData } from './DataContext'
+import { useMoneyVisibility } from './MoneyVisibilityContext'
 
 registerLocale('es', es)
 
@@ -22,6 +24,16 @@ const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', '
 import { CHART_THEME } from '../config/constants'
 
 const COLORES = ['#62B6CB', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#BEE9E8', '#f97316']
+
+const formatSeg = (seg) => {
+  if (!seg || seg <= 0) return '—'
+  const h = Math.floor(seg / 3600)
+  const m = Math.floor((seg % 3600) / 60)
+  const s = seg % 60
+  if (h > 0) return s > 0 ? `${h}h ${m}m ${s}s` : `${h}h ${m}m`
+  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`
+  return `${s}s`
+}
 
 function fechaLocalStr(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -55,31 +67,39 @@ const PieTooltip = ({ active, payload }) => {
 
 export default function Reportes() {
   const { negocioNombre } = useTenant()
+  const { lavadas: allLavadas, lavadores, loading: dataLoading } = useData()
+  const { displayMoney } = useMoneyVisibility()
   const hoyInit = new Date(); hoyInit.setHours(0,0,0,0)
 
   const [fechaDesde, setFechaDesde] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth(), 1))
   const [fechaHasta, setFechaHasta] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth() + 1, 0))
-  const [filtroRapido, setFiltroRapido] = useState('mes')
+  const [filtroRapido, setFiltroRapido] = useState('m')
   const [tabActivo, setTabActivo] = useState(0)
   const [data, setData] = useState(null)
   const [cargando, setCargando] = useState(false)
+  const [expanded, setExpanded] = useState(null)
   const chartsRef = useRef(null)
 
+  const toggle = (key) => setExpanded(prev => prev === key ? null : key)
+
   useEffect(() => { if (fechaDesde && fechaHasta) fetchAll() }, [fechaDesde, fechaHasta])
+
+  const FILTRO_LABELS = { d: 'D', s: 'S', m: 'M', a: 'A' }
+  const filtroIdx = ['d', 's', 'm', 'a'].indexOf(filtroRapido)
 
   const aplicarFiltroRapido = (tipo) => {
     setFiltroRapido(tipo)
     const hoy = new Date(); hoy.setHours(0,0,0,0)
     switch (tipo) {
-      case 'hoy': setFechaDesde(hoy); setFechaHasta(hoy); break
-      case 'semana': {
+      case 'd': setFechaDesde(hoy); setFechaHasta(hoy); break
+      case 's': {
         const ini = new Date(hoy); const d = hoy.getDay()
         ini.setDate(hoy.getDate() - (d === 0 ? 6 : d - 1))
         const fin = new Date(ini); fin.setDate(ini.getDate() + 6)
         setFechaDesde(ini); setFechaHasta(fin); break
       }
-      case 'mes': setFechaDesde(new Date(hoy.getFullYear(), hoy.getMonth(), 1)); setFechaHasta(new Date(hoy.getFullYear(), hoy.getMonth()+1, 0)); break
-      case 'año': setFechaDesde(new Date(hoy.getFullYear(), 0, 1)); setFechaHasta(new Date(hoy.getFullYear(), 11, 31)); break
+      case 'm': setFechaDesde(new Date(hoy.getFullYear(), hoy.getMonth(), 1)); setFechaHasta(new Date(hoy.getFullYear(), hoy.getMonth()+1, 0)); break
+      case 'a': setFechaDesde(new Date(hoy.getFullYear(), 0, 1)); setFechaHasta(new Date(hoy.getFullYear(), 11, 31)); break
       default: break
     }
   }
@@ -94,7 +114,12 @@ export default function Reportes() {
 
   const fetchAll = async () => {
     if (!fechaDesde || !fechaHasta) return
-    setCargando(true)
+    const cacheKey = `reportes-cache-${fechaLocalStr(fechaDesde)}-${fechaLocalStr(fechaHasta)}`
+    const cached = sessionStorage.getItem(cacheKey)
+    if (cached && !data) {
+      try { setData(JSON.parse(cached)) } catch {}
+    }
+    setCargando(!cached || !data)
 
     const desdeStr = fechaLocalStr(fechaDesde)
     const hasta = new Date(fechaHasta); hasta.setDate(hasta.getDate() + 1)
@@ -281,20 +306,109 @@ export default function Reportes() {
       clientesDiarios.push({ dia: String(dia), nuevos: clientesNuevosPorDia[dia] || 0 })
     }
 
-    setData({
+    // === KPI Stats (Dashboard-style expandable cards) ===
+    const kpiPagosLavadas = lavadas.flatMap(l => {
+      const pagos = l.pagos || []
+      return pagos.map(p => ({ valor: p.valor || 0 }))
+    })
+    const kpiIngresosServicios = kpiPagosLavadas.reduce((s, p) => s + Number(p.valor), 0)
+    const kpiIngresosTransacciones = trans.filter(t => t.tipo === 'INGRESO').reduce((s, t) => s + Number(t.valor), 0)
+    const kpiIngresos = kpiIngresosServicios + kpiIngresosTransacciones
+    const kpiEgresos = trans.filter(t => t.tipo === 'EGRESO').reduce((s, t) => s + Number(t.valor), 0)
+    const kpiBalance = kpiIngresos - kpiEgresos
+
+    const kpiSinMem = lavadas.filter(l => {
+      const nombre = l.tipo_lavado?.nombre?.toUpperCase() || ''
+      return nombre !== 'MEMBRESIA' && nombre !== 'MEMBRESÍA' && Number(l.valor) > 0
+    })
+    const kpiTicketProm = kpiSinMem.length > 0 ? kpiSinMem.reduce((s, l) => s + Number(l.valor), 0) / kpiSinMem.length : 0
+    const kpiTicketMin = kpiSinMem.length > 0 ? Math.min(...kpiSinMem.map(l => Number(l.valor))) : 0
+    const kpiTicketMax = kpiSinMem.length > 0 ? Math.max(...kpiSinMem.map(l => Number(l.valor))) : 0
+
+    const kpiTicketPorTipo = {}
+    kpiSinMem.forEach(l => {
+      const nombre = l.tipo_lavado?.nombre || 'Sin tipo'
+      if (!kpiTicketPorTipo[nombre]) kpiTicketPorTipo[nombre] = { total: 0, count: 0 }
+      kpiTicketPorTipo[nombre].total += Number(l.valor)
+      kpiTicketPorTipo[nombre].count++
+    })
+    const kpiDesgloseTicket = Object.entries(kpiTicketPorTipo)
+      .map(([name, d]) => ({ name, promedio: Math.round(d.total / d.count), count: d.count }))
+      .sort((a, b) => b.promedio - a.promedio)
+
+    const kpiPorTipo = {}
+    lavadas.forEach(l => {
+      const nombre = l.tipo_lavado?.nombre || 'Sin tipo'
+      kpiPorTipo[nombre] = (kpiPorTipo[nombre] || 0) + 1
+    })
+    const kpiDesgloseTipos = Object.entries(kpiPorTipo)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+
+    const kpiConEspera = lavadas.filter(l => l.duracion_espera > 0)
+    const kpiConLavado = lavadas.filter(l => l.duracion_lavado > 0)
+    const kpiTiempoEspera = kpiConEspera.length > 0
+      ? { promedio: Math.round(kpiConEspera.reduce((s, l) => s + l.duracion_espera, 0) / kpiConEspera.length), max: Math.max(...kpiConEspera.map(l => l.duracion_espera)), count: kpiConEspera.length }
+      : { promedio: 0, max: 0, count: 0 }
+    const kpiTiempoLavado = kpiConLavado.length > 0
+      ? { promedio: Math.round(kpiConLavado.reduce((s, l) => s + l.duracion_lavado, 0) / kpiConLavado.length), max: Math.max(...kpiConLavado.map(l => l.duracion_lavado)), count: kpiConLavado.length }
+      : { promedio: 0, max: 0, count: 0 }
+
+    const kpiLavadorMap = {}
+    lavadas.forEach(l => {
+      const id = l.lavador_id || 'sin'
+      const nombre = l.lavador?.nombre || 'Sin asignar'
+      if (!kpiLavadorMap[id]) kpiLavadorMap[id] = { nombre, count: 0, total: 0 }
+      kpiLavadorMap[id].count++
+      kpiLavadorMap[id].total += Number(l.valor || 0)
+    })
+    const kpiLavadorRanking = Object.values(kpiLavadorMap).sort((a, b) => b.count - a.count)
+
+    const kpiIngresosPorCat = {}
+    kpiPagosLavadas.forEach(() => {
+      kpiIngresosPorCat['Servicios'] = (kpiIngresosPorCat['Servicios'] || 0)
+    })
+    // Accumulate service income
+    kpiIngresosPorCat['Servicios'] = kpiIngresosServicios
+    trans.filter(t => t.tipo === 'INGRESO').forEach(t => {
+      const cat = t.categoria || 'Otro'
+      kpiIngresosPorCat[cat] = (kpiIngresosPorCat[cat] || 0) + Number(t.valor)
+    })
+    const kpiEgresosPorCat = {}
+    trans.filter(t => t.tipo === 'EGRESO').forEach(t => {
+      const cat = t.categoria || 'Otro'
+      kpiEgresosPorCat[cat] = (kpiEgresosPorCat[cat] || 0) + Number(t.valor)
+    })
+
+    const kpiStats = {
+      ingresos: kpiIngresos, egresos: kpiEgresos, balance: kpiBalance,
+      totalLavadas: lavadas.length, desgloseTipos: kpiDesgloseTipos,
+      ticketPromedio: kpiTicketProm, ticketMin: kpiTicketMin, ticketMax: kpiTicketMax,
+      desgloseTicket: kpiDesgloseTicket, cantidadTicket: kpiSinMem.length,
+      tiempoEspera: kpiTiempoEspera, tiempoLavado: kpiTiempoLavado,
+      lavadorRanking: kpiLavadorRanking,
+      ingresosPorCat: Object.entries(kpiIngresosPorCat).filter(([,v]) => v > 0).sort((a, b) => b[1] - a[1]),
+      egresosPorCat: Object.entries(kpiEgresosPorCat).sort((a, b) => b[1] - a[1]),
+    }
+
+    const newData = {
       ventas, ingresos, egresosDetalle, egresosTrans, margen, balance, totalIngresos,
       // Tab 1 charts
       ventasDiarias, rendLavadores, tiposLavado, adicionales, metodosPago, ticketData,
       // Tab 2 charts
       ingEgDiario, ingPie, egPie,
-      // Tab 3
+      // Tab 3 (General = old tab 2 + tab 3)
       comparativa, topDias, topLavadores, topAdicionales, tend6, rankLavadores,
       cTotal,
-      // Tab 4: Clientes
+      // Clientes (merged into General tab)
       clientesNuevos: clientesNuevos.length,
       clientesDiarios,
       clientesNuevosList: clientesNuevos,
-    })
+      // KPI stats
+      kpiStats,
+    }
+    setData(newData)
+    try { sessionStorage.setItem(cacheKey, JSON.stringify(newData)) } catch {}
     setCargando(false)
   }
 
@@ -907,32 +1021,229 @@ export default function Reportes() {
 
   // ================================ RENDER ================================
 
-  const TABS = ['Reporte de Ventas', 'Ingresos y Egresos', 'Reporte Total', 'Clientes Nuevos']
+  const TABS = ['Ventas', 'Finanzas', 'General']
 
   return (
     <div className="reportes-page">
       <div className="page-header">
-        <h1 className="page-title">Reportes</h1>
-        <div className="reportes-actions">
-          <button className="btn-export btn-pdf" onClick={descargarPDF} disabled={!data}><FileText size={18} /><span>PDF</span></button>
-          <button className="btn-export btn-excel" onClick={descargarExcel} disabled={!data}><FileSpreadsheet size={18} /><span>Excel</span></button>
-        </div>
+        <h1 className="page-title">Análisis</h1>
       </div>
 
-      <div className="filters">
-        <div className="filter-rapido">
-          {['hoy','semana','mes','año'].map(f => (
-            <button key={f} className={`filter-btn ${filtroRapido === f ? 'active' : ''}`} onClick={() => aplicarFiltroRapido(f)}>
-              {f.charAt(0).toUpperCase() + f.slice(1)}
+      <div className="analisis-filters">
+        <div className="home-period-pills">
+          {filtroIdx >= 0 && <div className="home-period-bubble" style={{ transform: `translateX(${filtroIdx * 100}%)` }} />}
+          {['d', 's', 'm', 'a'].map(p => (
+            <button
+              key={p}
+              className={`home-period-pill ${filtroRapido === p ? 'active' : ''}`}
+              onClick={() => aplicarFiltroRapido(p)}
+            >
+              {p.toUpperCase()}
             </button>
           ))}
         </div>
-        <div className="filter-fechas">
-          <DatePicker selected={fechaDesde} onChange={d => { setFechaDesde(d); setFiltroRapido('') }} selectsStart startDate={fechaDesde} endDate={fechaHasta} placeholderText="Desde" className="filter-date" dateFormat="dd/MM/yyyy" locale="es" isClearable />
-          <span className="filter-separator">→</span>
-          <DatePicker selected={fechaHasta} onChange={d => { setFechaHasta(d); setFiltroRapido('') }} selectsEnd startDate={fechaDesde} endDate={fechaHasta} minDate={fechaDesde} placeholderText="Hasta" className="filter-date" dateFormat="dd/MM/yyyy" locale="es" isClearable />
+        <div className="analisis-filters-right">
+          <div className="filter-fechas">
+            <DatePicker selected={fechaDesde} onChange={d => { setFechaDesde(d); setFiltroRapido('') }} selectsStart startDate={fechaDesde} endDate={fechaHasta} placeholderText="Desde" className="filter-date" dateFormat="dd/MM/yyyy" locale="es" isClearable />
+            <span className="filter-separator">→</span>
+            <DatePicker selected={fechaHasta} onChange={d => { setFechaHasta(d); setFiltroRapido('') }} selectsEnd startDate={fechaDesde} endDate={fechaHasta} minDate={fechaDesde} placeholderText="Hasta" className="filter-date" dateFormat="dd/MM/yyyy" locale="es" isClearable />
+          </div>
+          <div className="reportes-actions">
+            <button className="btn-export btn-pdf" onClick={descargarPDF} disabled={!data}><FileText size={18} /><span>PDF</span></button>
+            <button className="btn-export btn-excel" onClick={descargarExcel} disabled={!data}><FileSpreadsheet size={18} /><span>Excel</span></button>
+          </div>
         </div>
       </div>
+
+      {cargando && !data && (
+        <div className="dash-v2">
+          <div className="dash-v2-card dash-v2-balance skel">
+            <div className="skel-line skel-sm" />
+            <div className="skel-line skel-xl" />
+            <div className="dash-v2-balance-row">
+              <div className="skel-line skel-md" />
+              <div className="skel-line skel-md" />
+            </div>
+          </div>
+          <div className="dash-v2-grid">
+            <div className="dash-v2-col">
+              <div className="dash-v2-card skel"><div className="skel-line skel-sm" /><div className="skel-line skel-lg" /></div>
+              <div className="dash-v2-card skel"><div className="skel-line skel-sm" /><div className="skel-line skel-lg" /></div>
+            </div>
+            <div className="dash-v2-col">
+              <div className="dash-v2-card skel"><div className="skel-line skel-sm" /><div className="skel-line skel-lg" /></div>
+              <div className="dash-v2-card skel"><div className="skel-line skel-sm" /><div className="skel-line skel-lg" /></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {data && data.kpiStats && (
+        <div className="dash-v2">
+          {/* Balance Card */}
+          <div className={`dash-v2-card dash-v2-balance ${expanded === 'balance' ? 'expanded' : ''}`} onClick={() => toggle('balance')}>
+            <span className="dash-v2-balance-title">Balance</span>
+            <div className={`dash-v2-balance-value ${data.kpiStats.balance >= 0 ? 'positive' : 'negative'}`}>
+              {displayMoney(data.kpiStats.balance)}
+            </div>
+            <div className="dash-v2-balance-row">
+              <div className="dash-v2-balance-item">
+                <TrendingUp size={16} className="positive" />
+                <span className="dash-v2-balance-subvalue positive">{displayMoney(data.kpiStats.ingresos)}</span>
+              </div>
+              <div className="dash-v2-balance-item">
+                <TrendingDown size={16} className="negative" />
+                <span className="dash-v2-balance-subvalue negative">{displayMoney(data.kpiStats.egresos)}</span>
+              </div>
+            </div>
+            {expanded === 'balance' && (
+              <div className="dash-v2-expand">
+                {data.kpiStats.ingresosPorCat.length > 0 && (
+                  <>
+                    <p className="dash-v2-expand-title">Ingresos por categoría</p>
+                    {data.kpiStats.ingresosPorCat.map(([cat, val]) => (
+                      <div key={cat} className="dash-v2-expand-row">
+                        <span>{cat}</span>
+                        <span className="positive">{displayMoney(val)}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {data.kpiStats.egresosPorCat.length > 0 && (
+                  <>
+                    <p className="dash-v2-expand-title">Egresos por categoría</p>
+                    {data.kpiStats.egresosPorCat.map(([cat, val]) => (
+                      <div key={cat} className="dash-v2-expand-row">
+                        <span>{cat}</span>
+                        <span className="negative">{displayMoney(val)}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Two Column Grid */}
+          <div className="dash-v2-grid">
+            <div className="dash-v2-col">
+              {/* Lavadas */}
+              <div className={`dash-v2-card ${expanded === 'lavadas' ? 'expanded' : ''}`} onClick={() => toggle('lavadas')}>
+                <span className="dash-v2-card-title">Lavadas</span>
+                <span className="dash-v2-big-number">{data.kpiStats.totalLavadas}</span>
+                {expanded === 'lavadas' && (
+                  <div className="dash-v2-expand">
+                    <p className="dash-v2-expand-title">Por tipo de servicio</p>
+                    {data.kpiStats.desgloseTipos.length === 0 ? (
+                      <p className="dash-v2-expand-empty">Sin datos</p>
+                    ) : (
+                      data.kpiStats.desgloseTipos.map(t => (
+                        <div key={t.name} className="dash-v2-expand-row">
+                          <span>{t.name}</span>
+                          <span className="dash-v2-expand-count">{t.count}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Tiempos */}
+              <div className={`dash-v2-card ${expanded === 'tiempos' ? 'expanded' : ''}`} onClick={() => toggle('tiempos')}>
+                <span className="dash-v2-card-title">Tiempos</span>
+                <div className="dash-v2-tiempos-summary">
+                  <div className="dash-v2-tiempo-item">
+                    <span className="dash-v2-tiempo-label">Espera</span>
+                    <span className="dash-v2-tiempo-val">{formatSeg(data.kpiStats.tiempoEspera.promedio)}</span>
+                  </div>
+                  <div className="dash-v2-tiempo-divider" />
+                  <div className="dash-v2-tiempo-item">
+                    <span className="dash-v2-tiempo-label">Lavado</span>
+                    <span className="dash-v2-tiempo-val">{formatSeg(data.kpiStats.tiempoLavado.promedio)}</span>
+                  </div>
+                </div>
+                {expanded === 'tiempos' && (
+                  <div className="dash-v2-expand">
+                    <p className="dash-v2-expand-title">Tiempo de espera</p>
+                    <div className="dash-v2-expand-row"><span>Promedio</span><span>{formatSeg(data.kpiStats.tiempoEspera.promedio)}</span></div>
+                    <div className="dash-v2-expand-row"><span>Máximo</span><span>{formatSeg(data.kpiStats.tiempoEspera.max)}</span></div>
+                    <div className="dash-v2-expand-row"><span>Mediciones</span><span>{data.kpiStats.tiempoEspera.count}</span></div>
+                    <p className="dash-v2-expand-title">Tiempo de lavado</p>
+                    <div className="dash-v2-expand-row"><span>Promedio</span><span>{formatSeg(data.kpiStats.tiempoLavado.promedio)}</span></div>
+                    <div className="dash-v2-expand-row"><span>Máximo</span><span>{formatSeg(data.kpiStats.tiempoLavado.max)}</span></div>
+                    <div className="dash-v2-expand-row"><span>Mediciones</span><span>{data.kpiStats.tiempoLavado.count}</span></div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="dash-v2-col">
+              {/* Ticket Promedio */}
+              <div className={`dash-v2-card ${expanded === 'ticket' ? 'expanded' : ''}`} onClick={() => toggle('ticket')}>
+                <span className="dash-v2-card-title">Ticket Prom.</span>
+                <span className="dash-v2-big-number">{formatMoney(Math.round(data.kpiStats.ticketPromedio))}</span>
+                {expanded === 'ticket' && (
+                  <div className="dash-v2-expand">
+                    <div className="dash-v2-expand-row"><span>Mínimo</span><span>{formatMoney(data.kpiStats.ticketMin)}</span></div>
+                    <div className="dash-v2-expand-row"><span>Máximo</span><span>{formatMoney(data.kpiStats.ticketMax)}</span></div>
+                    <div className="dash-v2-expand-row"><span>Servicios</span><span>{data.kpiStats.cantidadTicket}</span></div>
+                    {data.kpiStats.desgloseTicket.length > 0 && (
+                      <>
+                        <p className="dash-v2-expand-title">Por tipo de servicio</p>
+                        {data.kpiStats.desgloseTicket.map(t => (
+                          <div key={t.name} className="dash-v2-expand-row">
+                            <span>{t.name} ({t.count})</span>
+                            <span>{formatMoney(t.promedio)}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Trabajadores */}
+              <div className={`dash-v2-card ${expanded === 'trabajadores' ? 'expanded' : ''}`} onClick={() => toggle('trabajadores')}>
+                <span className="dash-v2-card-title">Trabajadores</span>
+                <div className="dash-v2-ranking">
+                  {data.kpiStats.lavadorRanking.slice(0, 3).map((w, i) => (
+                    <div key={i} className="dash-v2-rank-item">
+                      <span className="dash-v2-rank-pos">#{i + 1}</span>
+                      <span className="dash-v2-rank-name">{w.nombre}</span>
+                      <span className="dash-v2-rank-count">{w.count}</span>
+                    </div>
+                  ))}
+                  {data.kpiStats.lavadorRanking.length === 0 && (
+                    <span className="dash-v2-empty-text">Sin datos</span>
+                  )}
+                </div>
+                {expanded === 'trabajadores' && data.kpiStats.lavadorRanking.length > 0 && (
+                  <div className="dash-v2-expand">
+                    <p className="dash-v2-expand-title">Ranking completo</p>
+                    {data.kpiStats.lavadorRanking.map((w, i) => {
+                      const maxCount = data.kpiStats.lavadorRanking[0]?.count || 1
+                      return (
+                        <div key={i} className="dash-v2-worker-detail">
+                          <div className="dash-v2-expand-row">
+                            <span>#{i + 1} {w.nombre}</span>
+                            <span>{w.count} lavadas · {formatMoney(w.total)}</span>
+                          </div>
+                          <div className="dash-v2-bar-track">
+                            <div
+                              className="dash-v2-bar-fill"
+                              style={{ width: `${(w.count / maxCount) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="reporte-tabs">
         {TABS.map((t, i) => (
@@ -945,9 +1256,7 @@ export default function Reportes() {
         <p>{getRangoStr()}</p>
       </div>
 
-      {cargando && <div className="loading">Cargando reportes...</div>}
-
-      {data && !cargando && (
+      {data && (
         <div className="reportes-secciones" ref={chartsRef}>
 
           {/* ========== TAB 1: VENTAS ========== */}
@@ -1094,7 +1403,7 @@ export default function Reportes() {
             </div>
           </>)}
 
-          {/* ========== TAB 3: REPORTE TOTAL ========== */}
+          {/* ========== TAB 3: GENERAL (Reporte Total + Clientes Nuevos) ========== */}
           {tabActivo === 2 && (<>
             <div className="kpi-cards">
               <div className="kpi-card"><span className="kpi-label">Total Ventas</span><span className="kpi-value">{fmt(data.ventas.totalVentas)}</span><span className={`kpi-change ${Number(data.comparativa.ventas) >= 0 ? 'positivo' : 'negativo'}`}>{Number(data.comparativa.ventas) >= 0 ? '+' : ''}{data.comparativa.ventas}% vs mes ant.</span></div>
@@ -1155,9 +1464,10 @@ export default function Reportes() {
                 </div>
               )}
             </div>
-          </>)}
 
-          {tabActivo === 3 && (<>
+            {/* Clientes Nuevos section (merged from old tab 3) */}
+            <h3 className="reporte-seccion-titulo" style={{ marginTop: '2.5rem', marginBottom: '1.5rem', fontSize: '1.3rem' }}>CLIENTES NUEVOS</h3>
+
             <div className="kpi-cards">
               <div className="kpi-card"><span className="kpi-label">Clientes Nuevos</span><span className="kpi-value">{data.clientesNuevos}</span></div>
               <div className="kpi-card"><span className="kpi-label">Promedio Diario</span><span className="kpi-value">{data.clientesDiarios.length > 0 ? (data.clientesNuevos / data.clientesDiarios.length).toFixed(1) : 0}</span></div>

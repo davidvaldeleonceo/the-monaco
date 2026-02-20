@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
@@ -7,6 +7,7 @@ import { formatMoney } from '../utils/money'
 import { LAVADAS_SELECT } from '../config/constants'
 import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles, Droplets, DollarSign, MessageCircle } from 'lucide-react'
 import UpgradeModal from './UpgradeModal'
+import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -16,9 +17,10 @@ import * as XLSX from 'xlsx'
 registerLocale('es', es)
 
 export default function Clientes() {
-  const { clientes, tiposMembresia, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, negocioId } = useData()
-  const { userEmail } = useTenant()
+  const { clientes, tiposMembresia, tiposLavado, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, refreshLavadas, negocioId, plantillasMensaje } = useData()
+  const { userEmail, negocioNombre } = useTenant()
   const location = useLocation()
+  const navigate = useNavigate()
   const [highlightId, setHighlightId] = useState(null)
 
   const [showModal, setShowModal] = useState(false)
@@ -40,6 +42,8 @@ export default function Clientes() {
   const [whatsappMenu, setWhatsappMenu] = useState(null)
   const [waMenuPos, setWaMenuPos] = useState({ top: 0, right: 0 })
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [pendingDeleteClienteId, setPendingDeleteClienteId] = useState(null)
+  const [pendingBulkDeleteClientes, setPendingBulkDeleteClientes] = useState(false)
 
   // Receive highlightId from navigation
   useEffect(() => {
@@ -125,7 +129,7 @@ export default function Clientes() {
   }
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
+    e?.preventDefault()
 
     let formToSend = { ...formData }
     if (!formToSend.membresia_id) {
@@ -210,20 +214,23 @@ export default function Clientes() {
 
   const fetchHistorial = async (cliente) => {
     if (clienteHistorial[cliente.id] && !clienteHistorial[cliente.id].loading) return
-    setClienteHistorial(prev => ({ ...prev, [cliente.id]: { lavadas: [], transacciones: [], loading: true } }))
+    setClienteHistorial(prev => ({ ...prev, [cliente.id]: { lavadas: [], transacciones: [], mensajes: [], loading: true } }))
 
-    const [lavRes, txRes] = await Promise.all([
+    const [lavRes, txRes, msgRes] = await Promise.all([
       supabase.from('lavadas').select(LAVADAS_SELECT)
         .eq('cliente_id', cliente.id)
         .order('fecha', { ascending: false }).limit(20),
       supabase.from('transacciones').select('*, metodo_pago:metodos_pago(nombre)')
         .ilike('placa_o_persona', `%${cliente.placa}%`)
-        .order('fecha', { ascending: false }).limit(20)
+        .order('fecha', { ascending: false }).limit(20),
+      supabase.from('mensajes_enviados').select('*')
+        .eq('cliente_id', cliente.id)
+        .order('created_at', { ascending: false }).limit(20)
     ])
 
     setClienteHistorial(prev => ({
       ...prev,
-      [cliente.id]: { lavadas: lavRes.data || [], transacciones: txRes.data || [], loading: false }
+      [cliente.id]: { lavadas: lavRes.data || [], transacciones: txRes.data || [], mensajes: msgRes.data || [], loading: false }
     }))
   }
 
@@ -243,18 +250,22 @@ export default function Clientes() {
     setShowModal(true)
   }
 
-  const handleDelete = async (id) => {
-    if (confirm('¿Estás seguro de eliminar este cliente?')) {
-      const cliente = clientes.find(c => c.id === id)
-      const { error } = await supabase.from('clientes').delete().eq('id', id)
-      if (error) {
-        alert('No se pudo eliminar: ' + (error.message.includes('foreign key') ? 'El cliente tiene servicios asociados. Elimina sus servicios primero.' : error.message))
-      } else {
-        deleteClienteLocal(id)
-        setSelectedClientes(prev => { const next = new Set(prev); next.delete(id); return next })
-        setClienteHistorial(prev => { const next = { ...prev }; delete next[id]; return next })
-      }
+  const requestDeleteCliente = (id) => {
+    setPendingDeleteClienteId(id)
+  }
+
+  const executeDeleteCliente = async () => {
+    const id = pendingDeleteClienteId
+    if (!id) return
+    const { error } = await supabase.from('clientes').delete().eq('id', id)
+    if (error) {
+      alert('No se pudo eliminar: ' + (error.message.includes('foreign key') ? 'El cliente tiene servicios asociados. Elimina sus servicios primero.' : error.message))
+    } else {
+      deleteClienteLocal(id)
+      setSelectedClientes(prev => { const next = new Set(prev); next.delete(id); return next })
+      setClienteHistorial(prev => { const next = { ...prev }; delete next[id]; return next })
     }
+    setPendingDeleteClienteId(null)
   }
 
   const toggleSelectCliente = (id) => {
@@ -274,11 +285,12 @@ export default function Clientes() {
     }
   }
 
-  const handleBulkDelete = async () => {
-    const count = selectedClientes.size
-    if (!count) return
-    if (!confirm(`¿Estás seguro de eliminar ${count} cliente${count > 1 ? 's' : ''}?`)) return
+  const requestBulkDeleteClientes = () => {
+    if (!selectedClientes.size) return
+    setPendingBulkDeleteClientes(true)
+  }
 
+  const executeBulkDeleteClientes = async () => {
     const ids = [...selectedClientes]
     let eliminados = 0
     let fallos = 0
@@ -295,6 +307,7 @@ export default function Clientes() {
 
     setSelectedClientes(new Set())
     setModoSeleccion(false)
+    setPendingBulkDeleteClientes(false)
     setClienteHistorial(prev => {
       const next = { ...prev }
       ids.forEach(id => delete next[id])
@@ -307,32 +320,37 @@ export default function Clientes() {
   }
 
   const descargarPlantilla = () => {
-    const bom = '\uFEFF'
-    const headers = 'nombre,placa,telefono,cedula,correo,moto,tipo_membresia,fecha_inicio,fecha_vencimiento'
     const tipos = tiposMembresia.map(m => m.nombre)
-    const ejemplo = `Juan Pérez,ABC123,3001234567,12345678,juan@email.com,Yamaha FZ 2.0,${tipos[0] || 'MENSUAL'},2026-02-10,2026-03-10`
-    const separador = '\n\n# INSTRUCCIONES (borra estas líneas antes de importar)'
+
+    const headers = ['nombre','placa','telefono','cedula','correo','moto','tipo_membresia','fecha_inicio','fecha_vencimiento','valor_lavada','fecha_lavada']
+    const ejemplo = ['Juan Pérez','ABC123','3001234567','12345678','juan@email.com','Yamaha FZ 2.0', tipos[0] || 'MENSUAL','2026-02-10','2026-03-10', 15000, '2026-02-10']
+    const wsClientes = XLSX.utils.aoa_to_sheet([headers, ejemplo])
+
     const instrucciones = [
-      '# Columnas obligatorias: nombre - placa - telefono',
-      '# Columnas opcionales: cedula - correo - moto - tipo_membresia - fecha_inicio - fecha_vencimiento',
-      '# Teléfono: solo números sin espacios ni guiones (ej: 3001234567)',
-      '# Placa: se convierte a mayúsculas automáticamente',
-      `# Tipos de membresía válidos: ${tipos.join(' | ') || '(ninguno configurado)'}`,
-      '# Si tipo_membresia queda vacío o no coincide se asignará SIN MEMBRESIA',
-      '# Fechas: formato AAAA-MM-DD (ej: 2026-02-10)',
-      '# - Si pones ambas fechas se usan tal cual',
-      '# - Si solo pones fecha_inicio se calcula fecha_vencimiento sumando la duración de la membresía',
-      '# - Si solo pones fecha_vencimiento se calcula fecha_inicio restando la duración de la membresía',
-      '# - Si no pones ninguna fecha el cliente quedará como vencido (vencimiento = hoy)'
+      ['INSTRUCCIONES'],
+      ['Columnas obligatorias: nombre - placa - telefono'],
+      ['Columnas opcionales: cedula - correo - moto - tipo_membresia - fecha_inicio - fecha_vencimiento - valor_lavada - fecha_lavada'],
+      ['Teléfono: solo números sin espacios ni guiones (ej: 3001234567)'],
+      ['Placa: se convierte a mayúsculas automáticamente'],
+      [`Tipos de membresía válidos: ${tipos.join(' | ') || '(ninguno configurado)'}`],
+      ['Si tipo_membresia queda vacío o no coincide se asignará SIN MEMBRESIA'],
+      ['Fechas: formato AAAA-MM-DD (ej: 2026-02-10)'],
+      ['- Si pones ambas fechas se usan tal cual'],
+      ['- Si solo pones fecha_inicio se calcula fecha_vencimiento sumando la duración de la membresía'],
+      ['- Si solo pones fecha_vencimiento se calcula fecha_inicio restando la duración de la membresía'],
+      ['- Si no pones ninguna fecha el cliente quedará como vencido (vencimiento = hoy)'],
+      [''],
+      ['LAVADAS (opcional)'],
+      ['valor_lavada: valor numérico de la lavada (puede ser 0). Obligatorio si pones fecha_lavada'],
+      ['fecha_lavada: fecha de la lavada en formato AAAA-MM-DD. Obligatoria si pones valor_lavada'],
+      ['Si ambos campos están vacíos no se crea lavada']
     ]
-    const csv = bom + [headers, ejemplo, separador, ...instrucciones].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'plantilla_clientes.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+    const wsInstrucciones = XLSX.utils.aoa_to_sheet(instrucciones)
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, wsClientes, 'Clientes')
+    XLSX.utils.book_append_sheet(wb, wsInstrucciones, 'Instrucciones')
+    XLSX.writeFile(wb, 'plantilla_clientes.xlsx')
   }
 
   const handleFileUpload = (e) => {
@@ -442,6 +460,34 @@ export default function Clientes() {
         const fechaInicio = parsearFecha(row.fecha_inicio, fila, 'fecha_inicio')
         const fechaVencimiento = parsearFecha(row.fecha_vencimiento, fila, 'fecha_vencimiento')
 
+        // Lavada fields
+        const rawValorLavada = row.valor_lavada
+        const rawFechaLavada = row.fecha_lavada
+        const tieneValorLavada = rawValorLavada !== '' && rawValorLavada !== null && rawValorLavada !== undefined
+        const tieneFechaLavada = rawFechaLavada !== '' && rawFechaLavada !== null && rawFechaLavada !== undefined
+
+        let lavadaValor = null
+        let lavadaFecha = null
+
+        if (tieneValorLavada || tieneFechaLavada) {
+          if (!tieneValorLavada) {
+            errors.push({ fila, problema: 'Falta valor_lavada (es obligatorio si pones fecha_lavada)', solucion: 'Agrega el valor de la lavada (puede ser 0)', tipo: 'warning' })
+          } else if (!tieneFechaLavada) {
+            errors.push({ fila, problema: 'Falta fecha_lavada (es obligatoria si pones valor_lavada)', solucion: 'Agrega la fecha de la lavada en formato AAAA-MM-DD', tipo: 'warning' })
+          } else {
+            const valorNum = Number(rawValorLavada)
+            if (isNaN(valorNum) || valorNum < 0) {
+              errors.push({ fila, problema: `valor_lavada "${rawValorLavada}" no es un número válido`, solucion: 'Usa un número positivo o 0', tipo: 'warning' })
+            } else {
+              const fechaLavadaParsed = parsearFecha(rawFechaLavada, fila, 'fecha_lavada')
+              if (fechaLavadaParsed) {
+                lavadaValor = valorNum
+                lavadaFecha = `${fechaLavadaParsed}T05:00:00.000Z`
+              }
+            }
+          }
+        }
+
         const parsed = {
           nombre,
           placa,
@@ -452,7 +498,9 @@ export default function Clientes() {
           membresia_id: membresiaId,
           tipo_membresia_nombre: tipoNombre || 'SIN MEMBRESIA',
           fecha_inicio: fechaInicio,
-          fecha_vencimiento: fechaVencimiento
+          fecha_vencimiento: fechaVencimiento,
+          lavada_valor: lavadaValor,
+          lavada_fecha: lavadaFecha
         }
 
         const existente = clientes.find(c => c.placa?.toUpperCase() === placa)
@@ -522,15 +570,42 @@ export default function Clientes() {
 
     let insertados = 0
     let actualizados = 0
+    let lavadas = 0
     let errores = 0
     const failedRows = []
     const total = importNuevos.length + (dupAction === 'update' ? importDuplicados.length : 0)
     let procesados = 0
 
+    // Helper: detect tipo_lavado_id based on membership
+    const getTipoLavadoId = (membresiaId) => {
+      const membresia = tiposMembresia.find(m => m.id === membresiaId)
+      const esSinMembresia = !membresiaId || membresia?.nombre?.toLowerCase().includes('sin ')
+      const tipoNombre = esSinMembresia ? 'sin membresía' : 'membresía'
+      const tipo = tiposLavado.find(t => t.nombre.toLowerCase().includes(tipoNombre))
+      return tipo?.id || tiposLavado[0]?.id || null
+    }
+
+    // Helper: insert lavada for a client row
+    const insertarLavada = async (clienteId, row) => {
+      if (row.lavada_valor == null || !row.lavada_fecha) return false
+      const { error } = await supabase.from('lavadas').insert([{
+        cliente_id: clienteId,
+        placa: row.placa,
+        tipo_lavado_id: getTipoLavadoId(row.membresia_id),
+        valor: row.lavada_valor,
+        fecha: row.lavada_fecha,
+        estado: 'ENTREGADO',
+        pagos: [],
+        adicionales: [],
+        negocio_id: negocioId
+      }])
+      return !error
+    }
+
     // Insert new clients one by one to isolate failures
     for (const row of importNuevos) {
       const fechas = calcularFechasMembresia(row.membresia_id, row.fecha_inicio, row.fecha_vencimiento)
-      const { error } = await supabase.from('clientes').insert([{
+      const { data, error } = await supabase.from('clientes').insert([{
         nombre: row.nombre,
         placa: row.placa,
         telefono: row.telefono,
@@ -541,12 +616,13 @@ export default function Clientes() {
         estado: 'Activo',
         negocio_id: negocioId,
         ...fechas
-      }])
+      }]).select('id').single()
       if (error) {
         errores++
         failedRows.push({ placa: row.placa, nombre: row.nombre, error: error.message })
       } else {
         insertados++
+        if (data?.id && await insertarLavada(data.id, row)) lavadas++
       }
       procesados++
       setImportProgress(Math.round((procesados / total) * 100))
@@ -572,6 +648,7 @@ export default function Clientes() {
           failedRows.push({ placa: dup.placa, nombre: dup.nombre, error: error.message })
         } else {
           actualizados++
+          if (await insertarLavada(dup.clienteExistenteId, dup)) lavadas++
         }
         procesados++
         setImportProgress(Math.round((procesados / total) * 100))
@@ -579,7 +656,8 @@ export default function Clientes() {
     }
 
     await refreshClientes()
-    setImportResult({ insertados, actualizados, errores, failedRows })
+    if (lavadas > 0) await refreshLavadas()
+    setImportResult({ insertados, actualizados, lavadas, errores, failedRows })
     setImportStep('done')
   }
 
@@ -678,7 +756,37 @@ export default function Clientes() {
     setWhatsappMenu(prev => prev === clienteId ? null : clienteId)
   }
 
-  const sendWhatsApp = (cliente, tipo) => {
+  const resolverPlantillaCliente = (texto, cliente) => {
+    const formatFechaVar = (str) => {
+      if (!str) return '—'
+      const dateOnly = typeof str === 'string' ? str.split('T')[0] : null
+      if (!dateOnly) return '—'
+      const d = new Date(dateOnly + 'T00:00:00')
+      if (isNaN(d.getTime())) return '—'
+      const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+      return `${d.getDate()} ${meses[d.getMonth()]} ${d.getFullYear()}`
+    }
+    const formatMoneyVar = (v) => {
+      const num = Number(v) || 0
+      return '$' + num.toLocaleString('es-CO')
+    }
+    const hist = clienteHistorial[cliente.id]
+    const ultimaLavada = hist?.lavadas?.[0]
+    const variables = {
+      nombre: cliente.nombre || '',
+      telefono: cliente.telefono || '',
+      negocio: negocioNombre || '',
+      membresia: getTipoClienteLabel(cliente).label,
+      estado_membresia: getEstadoCliente(cliente),
+      vencimiento: formatFechaVar(cliente.fecha_fin_membresia),
+      placa: cliente.placa || '',
+      ultimo_servicio: ultimaLavada?.tipo_lavado?.nombre || '',
+      valor_ultimo: formatMoneyVar(ultimaLavada?.valor),
+    }
+    return texto.replace(/\{(\w+)\}/g, (match, key) => variables[key] ?? match)
+  }
+
+  const sendWhatsApp = (cliente, tipo, plantillaId) => {
     setWhatsappMenu(null)
     if (!cliente.telefono) {
       alert('Este cliente no tiene teléfono registrado')
@@ -689,15 +797,28 @@ export default function Clientes() {
       window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
       return
     }
-    const { tiene, label } = getTipoClienteLabel(cliente)
-    const estado = getEstadoCliente(cliente)
-    let mensaje
-    if (tiene) {
-      mensaje = `Hola ${cliente.nombre}, tu plan *${label}* está ${estado === 'Activo' ? 'activo' : 'vencido'}. Vence el ${formatFecha(cliente.fecha_fin_membresia)}. ¿Te gustaría renovar o conocer más sobre nuestros planes?`
-    } else {
-      mensaje = `Hola ${cliente.nombre}, actualmente no tienes una membresía activa. ¿Te gustaría conocer nuestros planes disponibles?`
+    if (tipo === 'plantilla' && plantillaId) {
+      const plantilla = (plantillasMensaje || []).find(p => p.id === plantillaId)
+      if (!plantilla) {
+        window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
+        return
+      }
+      const mensajeTexto = resolverPlantillaCliente(plantilla.texto, cliente)
+      window.open(`https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(mensajeTexto)}`, '_blank')
+      // Fire-and-forget: registrar mensaje enviado
+      supabase.from('mensajes_enviados').insert([{
+        cliente_id: cliente.id,
+        plantilla_id: plantilla.id,
+        plantilla_nombre: plantilla.nombre,
+        mensaje_texto: mensajeTexto,
+        enviado_por: userEmail || null,
+        origen: 'clientes',
+        negocio_id: negocioId,
+      }]).then(() => {})
+      return
     }
-    window.open(`https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(mensaje)}`, '_blank')
+    // Fallback: contacto directo
+    window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
   }
 
   const hasActiveFilters = !!(filtroTipoCliente || filtroEstado || fechaDesde || fechaHasta || filtroRapido || filtroNuevos || sortBy)
@@ -969,11 +1090,18 @@ export default function Clientes() {
                       <>
                         <div className="wa-menu-overlay" onClick={() => setWhatsappMenu(null)} />
                         <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
-                          <button onClick={() => sendWhatsApp(cliente, 'bienvenida')}>
-                            Mensaje de bienvenida
-                          </button>
+                          {(plantillasMensaje || []).length > 0 ? (plantillasMensaje || []).map(p => (
+                            <button key={p.id} onClick={() => sendWhatsApp(cliente, 'plantilla', p.id)}>
+                              {p.nombre}
+                            </button>
+                          )) : (
+                            <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em', display: 'block' }}>No hay plantillas</span>
+                          )}
                           <button onClick={() => sendWhatsApp(cliente, 'contacto')}>
                             Ir al contacto
+                          </button>
+                          <button onClick={() => { setWhatsappMenu(null); navigate('/cuenta?tab=config&subtab=mensajes') }}>
+                            + Agregar plantilla
                           </button>
                         </div>
                       </>
@@ -985,7 +1113,7 @@ export default function Clientes() {
                     <button className="btn-icon" onClick={() => handleEdit(cliente)}>
                       <Edit size={18} />
                     </button>
-                    <button className="btn-icon delete" onClick={() => handleDelete(cliente.id)}>
+                    <button className="btn-icon delete" onClick={() => requestDeleteCliente(cliente.id)}>
                       <Trash2 size={18} />
                     </button>
                   </div>
@@ -1052,11 +1180,18 @@ export default function Clientes() {
                       <>
                         <div className="wa-menu-overlay" onClick={(e) => { e.stopPropagation(); setWhatsappMenu(null) }} />
                         <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
-                          <button onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'bienvenida') }}>
-                            Mensaje de bienvenida
-                          </button>
+                          {(plantillasMensaje || []).length > 0 ? (plantillasMensaje || []).map(p => (
+                            <button key={p.id} onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'plantilla', p.id) }}>
+                              {p.nombre}
+                            </button>
+                          )) : (
+                            <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em', display: 'block' }}>No hay plantillas</span>
+                          )}
                           <button onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'contacto') }}>
                             Ir al contacto
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); setWhatsappMenu(null); navigate('/cuenta?tab=config&subtab=mensajes') }}>
+                            + Agregar plantilla
                           </button>
                         </div>
                       </>
@@ -1090,7 +1225,8 @@ export default function Clientes() {
                     if (hist.loading) return <div className="cliente-historial"><span className="cliente-hist-loading">Cargando historial...</span></div>
                     const items = [
                       ...(hist.lavadas || []).map(l => ({ _type: 'lavada', fecha: l.fecha, desc: l.tipo_lavado?.nombre || 'Servicio', valor: l.valor })),
-                      ...(hist.transacciones || []).map(t => ({ _type: t.tipo === 'EGRESO' ? 'egreso' : 'ingreso', fecha: t.fecha, desc: t.descripcion || t.categoria || 'Transacción', valor: t.valor }))
+                      ...(hist.transacciones || []).map(t => ({ _type: t.tipo === 'EGRESO' ? 'egreso' : 'ingreso', fecha: t.fecha, desc: t.descripcion || t.categoria || 'Transacción', valor: t.valor })),
+                      ...(hist.mensajes || []).map(m => ({ _type: 'mensaje', fecha: m.created_at, desc: m.plantilla_nombre || 'Mensaje WhatsApp', valor: null }))
                     ].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
                     if (items.length === 0) return <div className="cliente-historial"><span className="cliente-hist-empty">Sin registros</span></div>
                     return (
@@ -1098,16 +1234,18 @@ export default function Clientes() {
                         <span className="cliente-hist-title">Historial</span>
                         {items.slice(0, 20).map((item, i) => (
                           <div key={i} className="cliente-hist-item">
-                            <div className={`cliente-hist-icon ${item._type === 'lavada' ? 'icon-blue' : item._type === 'egreso' ? 'icon-red' : 'icon-green'}`}>
-                              {item._type === 'lavada' ? <Droplets size={14} /> : <DollarSign size={14} />}
+                            <div className={`cliente-hist-icon ${item._type === 'lavada' ? 'icon-blue' : item._type === 'mensaje' ? 'icon-purple' : item._type === 'egreso' ? 'icon-red' : 'icon-green'}`}>
+                              {item._type === 'lavada' ? <Droplets size={14} /> : item._type === 'mensaje' ? <MessageCircle size={14} /> : <DollarSign size={14} />}
                             </div>
                             <div className="cliente-hist-info">
                               <span className="cliente-hist-desc">{item.desc}</span>
                               <span className="cliente-hist-fecha">{formatFecha(item.fecha)}</span>
                             </div>
-                            <span className={`cliente-hist-valor ${item._type === 'egreso' ? 'negativo' : ''}`}>
-                              {item._type === 'egreso' ? '-' : ''}{formatMoney(item.valor)}
-                            </span>
+                            {item._type !== 'mensaje' && (
+                              <span className={`cliente-hist-valor ${item._type === 'egreso' ? 'negativo' : ''}`}>
+                                {item._type === 'egreso' ? '-' : ''}{formatMoney(item.valor)}
+                              </span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1118,7 +1256,7 @@ export default function Clientes() {
                     <button className="btn-secondary" onClick={() => handleEdit(cliente)}>
                       <Edit size={16} /> Editar
                     </button>
-                    <button className="btn-secondary btn-danger-outline" onClick={() => handleDelete(cliente.id)}>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteCliente(cliente.id)}>
                       <Trash2 size={16} /> Eliminar
                     </button>
                   </div>
@@ -1139,7 +1277,7 @@ export default function Clientes() {
             <button className="btn-secondary" onClick={() => { setSelectedClientes(new Set()); setModoSeleccion(false) }}>
               <X size={16} /> Cancelar
             </button>
-            <button className="btn-danger" onClick={handleBulkDelete}>
+            <button className="btn-danger" onClick={requestBulkDeleteClientes}>
               <Trash2 size={16} /> Eliminar
             </button>
           </div>
@@ -1337,6 +1475,12 @@ export default function Clientes() {
                       <span className="import-stat-value">{importResult.actualizados}</span>
                       <span className="import-stat-label">Actualizados</span>
                     </div>
+                    {importResult.lavadas > 0 && (
+                      <div className="import-stat stat-green">
+                        <span className="import-stat-value">{importResult.lavadas}</span>
+                        <span className="import-stat-label">Lavadas</span>
+                      </div>
+                    )}
                     <div className="import-stat stat-red">
                       <span className="import-stat-value">{importResult.errores}</span>
                       <span className="import-stat-label">Errores</span>
@@ -1365,11 +1509,15 @@ export default function Clientes() {
 
       {showModal && (
         <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
+          <div className="modal modal-sheet">
+            <div className="modal-sheet-handle"><div className="modal-sheet-handle-bar" /></div>
+            <div className="modal-sheet-header">
+              <button type="button" className="btn-sheet-close" onClick={() => { setShowModal(false); setEditando(null) }}>
+                <X size={20} />
+              </button>
               <h2>{editando ? 'Editar Cliente' : 'Nuevo Cliente'}</h2>
-              <button className="btn-close" onClick={() => { setShowModal(false); setEditando(null) }}>
-                <X size={24} />
+              <button type="button" className="btn-sheet-action" onClick={handleSubmit}>
+                {editando ? 'Actualizar' : 'Guardar'}
               </button>
             </div>
             <form onSubmit={handleSubmit}>
@@ -1469,15 +1617,6 @@ export default function Clientes() {
                   </div>
                 </div>
               </div>
-
-              <div className="modal-footer">
-                <button type="button" className="btn-secondary" onClick={() => { setShowModal(false); setEditando(null) }}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn-primary">
-                  {editando ? 'Actualizar' : 'Guardar'}
-                </button>
-              </div>
             </form>
           </div>
         </div>
@@ -1509,6 +1648,20 @@ export default function Clientes() {
         </>
       )}
       {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} reason="Has alcanzado el límite de 30 clientes" />}
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingDeleteClienteId}
+        onClose={() => setPendingDeleteClienteId(null)}
+        onConfirm={executeDeleteCliente}
+        message="Se eliminará este cliente permanentemente. Ingresa tu contraseña para confirmar."
+      />
+
+      <ConfirmDeleteModal
+        isOpen={pendingBulkDeleteClientes}
+        onClose={() => setPendingBulkDeleteClientes(false)}
+        onConfirm={executeBulkDeleteClientes}
+        message={`Vas a eliminar ${selectedClientes.size} cliente${selectedClientes.size > 1 ? 's' : ''}. Esta acción no se puede deshacer. Ingresa tu contraseña para confirmar.`}
+      />
     </div>
   )
 }

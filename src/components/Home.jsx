@@ -2,20 +2,27 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
+import { useTenant } from './TenantContext'
 import { useServiceHandlers } from '../hooks/useServiceHandlers'
 import ServiceCard from './ServiceCard'
 import NuevoServicioSheet from './NuevoServicioSheet'
 import { formatMoney, formatMoneyShort } from '../utils/money'
+import { useMoneyVisibility } from './MoneyVisibilityContext'
 import { AreaChart, Area, XAxis, ResponsiveContainer } from 'recharts'
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../config/constants'
-import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download, ChevronDown, Pencil, Check } from 'lucide-react'
-import DatePicker from 'react-datepicker'
+import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download, ChevronDown, Pencil, Check, Eye, EyeOff, TrendingUp, TrendingDown, UserPlus } from 'lucide-react'
+import ConfirmDeleteModal from './common/ConfirmDeleteModal'
+import DatePicker, { registerLocale } from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
+import es from 'date-fns/locale/es'
+registerLocale('es', es)
 import * as XLSX from 'xlsx'
 
 export default function Home() {
   const navigate = useNavigate()
   const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal } = useData()
+  const { negocioNombre, userEmail } = useTenant()
+  const { showMoney, toggleMoney, displayMoney, displayMoneyShort } = useMoneyVisibility()
 
   const {
     expandedCards, setExpandedCards,
@@ -32,8 +39,10 @@ export default function Home() {
     handleTipoLavadoChangeInline,
     handlePagosChange,
     handleAdicionalChange,
-    handleEliminarLavada,
+    pendingDeleteLavadaId, setPendingDeleteLavadaId,
+    requestEliminarLavada, executeEliminarLavada,
     enviarWhatsApp,
+    plantillasMensaje,
     tiposLavado,
     serviciosAdicionales,
     lavadores,
@@ -80,6 +89,13 @@ export default function Home() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [highlightId, setHighlightId] = useState(null)
+  const [clienteInfoModal, setClienteInfoModal] = useState(null)
+  const [showNuevoClienteModal, setShowNuevoClienteModal] = useState(false)
+  const [nuevoClienteData, setNuevoClienteData] = useState({
+    nombre: '', cedula: '', telefono: '', correo: '', placa: '', moto: '',
+    membresia_id: '', fecha_inicio_membresia: null, fecha_fin_membresia: null
+  })
+  const [creandoCliente, setCreandoCliente] = useState(false)
 
   // Expandable product cards
   const [expandedProductCard, setExpandedProductCard] = useState(null)
@@ -95,6 +111,31 @@ export default function Home() {
   const [importResult, setImportResult] = useState(null)
   const [importTipo, setImportTipo] = useState('')
   const fileInputRef = useRef(null)
+
+  // Nuevo Movimiento (Ingreso/Egreso adicional)
+  const [showMovimientoModal, setShowMovimientoModal] = useState(false)
+  const [movimientoForm, setMovimientoForm] = useState({
+    tipo: 'INGRESO',
+    valor: '',
+    categoria: '',
+    metodo_pago_id: '',
+    placa_o_persona: '',
+    descripcion: '',
+    fecha: ''
+  })
+  const [movimientoSubmitting, setMovimientoSubmitting] = useState(false)
+  const movimientoSheetRef = useRef(null)
+  const [movimientoDragY, setMovimientoDragY] = useState(0)
+  const movimientoDragStartY = useRef(null)
+
+  const categoriasMovimiento = {
+    INGRESO: ['SERVICIO', 'ADICIONAL', 'OTRO'],
+    EGRESO: ['INSUMOS', 'SERVICIOS', 'ABONO A SUELDO', 'ARRIENDO', 'PAGO TRABAJADOR', 'OTRO']
+  }
+
+  const handleWhatsApp = (lavada, opts = {}) => {
+    enviarWhatsApp(lavada, { ...opts, negocioNombre, userEmail, origen: 'servicios' })
+  }
 
   // Bottom-sheet drag refs for Nueva Venta
   const ventaSheetRef = useRef(null)
@@ -544,7 +585,6 @@ export default function Home() {
     }
 
     setDeleting(false)
-    setShowDeleteModal(false)
     setSelectedItems(new Set())
     setModoSeleccion(false)
     if (eliminados > 0) alert(`Se eliminaron ${eliminados} elemento${eliminados > 1 ? 's' : ''}`)
@@ -688,6 +728,67 @@ export default function Home() {
       setVentaClienteSearch(`${data.nombre} - ${data.placa}`)
       setShowVentaClienteDropdown(false)
       setVentaForm(prev => ({ ...prev, cliente_id: data.id }))
+    }
+  }
+
+  // Nuevo cliente desde FAB
+  const handleNuevoClienteMembresiaChange = (membresiaId) => {
+    const membresia = tiposMembresia.find(m => m.id === membresiaId)
+    const hoy = new Date()
+    if (!membresiaId || membresia?.nombre?.toLowerCase().includes('sin ')) {
+      setNuevoClienteData(prev => ({ ...prev, membresia_id: membresiaId, fecha_inicio_membresia: hoy, fecha_fin_membresia: hoy }))
+    } else {
+      const fin = new Date()
+      fin.setMonth(fin.getMonth() + (membresia?.duracion_dias || 1))
+      setNuevoClienteData(prev => ({ ...prev, membresia_id: membresiaId, fecha_inicio_membresia: hoy, fecha_fin_membresia: fin }))
+    }
+  }
+
+  const resetNuevoClienteData = () => setNuevoClienteData({
+    nombre: '', cedula: '', telefono: '', correo: '', placa: '', moto: '',
+    membresia_id: '', fecha_inicio_membresia: null, fecha_fin_membresia: null
+  })
+
+  const handleNuevoCliente = async (e) => {
+    e?.preventDefault()
+    if (creandoCliente || !nuevoClienteData.nombre || !nuevoClienteData.placa) return
+    setCreandoCliente(true)
+
+    let formToSend = { ...nuevoClienteData }
+    if (!formToSend.membresia_id) {
+      const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
+      if (sinMembresia) {
+        const hoy = new Date()
+        formToSend.membresia_id = sinMembresia.id
+        formToSend.fecha_inicio_membresia = hoy
+        formToSend.fecha_fin_membresia = hoy
+      }
+    }
+
+    const cleanData = Object.fromEntries(
+      Object.entries(formToSend).map(([key, value]) => {
+        if (value === '' || value === null) return [key, null]
+        if ((key === 'fecha_inicio_membresia' || key === 'fecha_fin_membresia') && value instanceof Date) {
+          return [key, fechaLocalStr(value)]
+        }
+        return [key, value]
+      })
+    )
+
+    const { data, error } = await supabase
+      .from('clientes')
+      .insert([{ ...cleanData, negocio_id: negocioId }])
+      .select('*, membresia:tipos_membresia(nombre)')
+      .single()
+    setCreandoCliente(false)
+    if (error) {
+      alert('Error al crear cliente: ' + (error.message || 'Error desconocido'))
+      return
+    }
+    if (data) {
+      addClienteLocal(data)
+      setShowNuevoClienteModal(false)
+      resetNuevoClienteData()
     }
   }
 
@@ -1109,14 +1210,105 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  // Nuevo Movimiento handlers
+  const openMovimientoModal = (tipo) => {
+    setMovimientoForm({
+      tipo,
+      valor: '',
+      categoria: '',
+      metodo_pago_id: '',
+      placa_o_persona: '',
+      descripcion: '',
+      fecha: fechaLocalStr(new Date())
+    })
+    setShowMovimientoModal(true)
+  }
+
+  const handleMovimientoValorChange = (raw) => {
+    const limpio = raw.replace(/[^\d]/g, '')
+    if (limpio === '') {
+      setMovimientoForm(prev => ({ ...prev, valor: '' }))
+      return
+    }
+    const num = Number(limpio)
+    setMovimientoForm(prev => ({ ...prev, valor: num.toLocaleString('es-CO') }))
+  }
+
+  const handleMovimientoSubmit = async () => {
+    if (movimientoSubmitting) return
+    const valor = Number(movimientoForm.valor.replace(/[^\d]/g, ''))
+    if (!valor || !movimientoForm.categoria || !movimientoForm.metodo_pago_id) return
+    setMovimientoSubmitting(true)
+
+    const { data, error } = await supabase.from('transacciones').insert([{
+      tipo: movimientoForm.tipo,
+      valor,
+      categoria: movimientoForm.categoria,
+      metodo_pago_id: movimientoForm.metodo_pago_id,
+      placa_o_persona: movimientoForm.placa_o_persona,
+      descripcion: movimientoForm.descripcion,
+      fecha: movimientoForm.fecha + 'T12:00:00-05:00',
+      negocio_id: negocioId
+    }]).select('id').single()
+
+    setMovimientoSubmitting(false)
+    setShowMovimientoModal(false)
+
+    // Refresh transacciones
+    let query = supabase
+      .from('transacciones')
+      .select('*, metodo_pago:metodos_pago(nombre)')
+      .order('fecha', { ascending: false })
+      .order('created_at', { ascending: false })
+    if (fechaDesde) query = query.gte('fecha', fechaLocalStr(fechaDesde))
+    if (fechaHasta) {
+      const hasta = new Date(fechaHasta)
+      hasta.setDate(hasta.getDate() + 1)
+      query = query.lt('fecha', fechaLocalStr(hasta))
+    }
+    const { data: refreshed } = await query
+    setTransacciones(refreshed || [])
+
+    // Navigate to movimientos tab and highlight new item
+    setTab('movimientos')
+    if (data?.id) {
+      setHighlightId(data.id)
+      // Auto-adjust period if needed
+      const bestPeriod = detectPeriod(movimientoForm.fecha + 'T12:00:00')
+      if (bestPeriod !== periodo) setPeriodo(bestPeriod)
+    }
+  }
+
+  const handleCloseMovimiento = () => {
+    setShowMovimientoModal(false)
+    setMovimientoDragY(0)
+    movimientoDragStartY.current = null
+  }
+
+  const onMovimientoSheetTouchStart = (e) => { movimientoDragStartY.current = e.touches[0].clientY }
+  const onMovimientoSheetTouchMove = (e) => {
+    if (movimientoDragStartY.current === null) return
+    const delta = e.touches[0].clientY - movimientoDragStartY.current
+    if (delta > 0) setMovimientoDragY(delta)
+  }
+  const onMovimientoSheetTouchEnd = () => {
+    const height = movimientoSheetRef.current?.offsetHeight || 500
+    if (movimientoDragY > height * 0.3) handleCloseMovimiento()
+    setMovimientoDragY(0)
+    movimientoDragStartY.current = null
+  }
+
   return (
     <div className="home-page">
       {/* Balance Carousel */}
       <div className="home-balance-carousel">
         <div className="home-balance-card balance">
+          <button className="money-toggle-btn money-toggle-card" onClick={toggleMoney} title={showMoney ? 'Ocultar valores' : 'Mostrar valores'}>
+            {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
+          </button>
           <span className="home-balance-label balance-title">Balance - {periodoLabel}</span>
           <span className={`home-balance-amount ${balance >= 0 ? 'positivo' : 'negativo'}`}>
-            {formatMoney(balance)}
+            {displayMoney(balance)}
           </span>
           <div className="balance-chart">
             <ResponsiveContainer width="100%" height={80}>
@@ -1155,13 +1347,13 @@ export default function Home() {
               </div>
               <div className="ingresos-body">
                 <div className="ingresos-left">
-                  <span className="home-balance-amount positivo">{formatMoney(ingresos)}</span>
+                  <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
                   <div className="ingresos-legend">
                     {donutData.segments.map(s => (
                       <div key={s.label} className="ingresos-legend-item">
                         <span className="ingresos-legend-dot" style={{ background: s.color }} />
                         <span className="ingresos-legend-label">{s.label}</span>
-                        <span className="ingresos-legend-value">{formatMoneyShort(s.value)}</span>
+                        <span className="ingresos-legend-value">{displayMoneyShort(s.value)}</span>
                       </div>
                     ))}
                   </div>
@@ -1176,7 +1368,7 @@ export default function Home() {
           ) : (
             <>
               <span className="home-balance-label ingresos-title">Ingresos - {periodoLabel}</span>
-              <span className="home-balance-amount positivo">{formatMoney(ingresos)}</span>
+              <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
             </>
           )}
         </div>
@@ -1202,13 +1394,13 @@ export default function Home() {
               </div>
               <div className="egresos-body">
                 <div className="egresos-left">
-                  <span className="home-balance-amount negativo">{formatMoney(egresos)}</span>
+                  <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
                   <div className="egresos-legend">
                     {donutDataEgresos.segments.map(s => (
                       <div key={s.label} className="egresos-legend-item">
                         <span className="egresos-legend-dot" style={{ background: s.color }} />
                         <span className="egresos-legend-label">{s.label}</span>
-                        <span className="egresos-legend-value">{formatMoneyShort(s.value)}</span>
+                        <span className="egresos-legend-value">{displayMoneyShort(s.value)}</span>
                       </div>
                     ))}
                   </div>
@@ -1223,7 +1415,7 @@ export default function Home() {
           ) : (
             <>
               <span className="home-balance-label egresos-title">Egresos - {periodoLabel}</span>
-              <span className="home-balance-amount negativo">{formatMoney(egresos)}</span>
+              <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
             </>
           )}
         </div>
@@ -1256,11 +1448,8 @@ export default function Home() {
             </button>
           ))}
         </div>
-      </div>
-
-
-      {/* Tab Pills: Servicios / Productos / Movimientos */}
-      <div className="home-tab-pills">
+        {/* Tab Pills: Servicios / Productos / Movimientos */}
+        <div className="home-tab-pills">
         <button
           className={`home-tab-pill ${tab === 'servicios' ? 'active' : ''}`}
           onClick={() => { setTab('servicios'); setFiltroEstado(''); setFiltroLavador(''); setFiltroTipo(''); setFiltroMetodoPago(''); setModoSeleccion(false); setSelectedItems(new Set()) }}
@@ -1279,6 +1468,7 @@ export default function Home() {
         >
           Movimientos
         </button>
+        </div>
       </div>
 
       {/* Recent Cards */}
@@ -1298,6 +1488,13 @@ export default function Home() {
             onClick={() => setShowFilters(prev => !prev)}
           >
             <SlidersHorizontal size={16} />
+          </button>
+          <button
+            className="btn-primary home-desktop-add"
+            onClick={() => setShowFabMenu(!showFabMenu)}
+          >
+            <Plus size={18} />
+            <span>Nuevo</span>
           </button>
         </div>
       </div>
@@ -1349,8 +1546,9 @@ export default function Home() {
                   onAdicionalChange={handleAdicionalChange}
                   onLavadorChange={handleLavadorChange}
                   onPagosChange={handlePagosChange}
-                  onEliminar={handleEliminarLavada}
-                  onWhatsApp={enviarWhatsApp}
+                  onEliminar={requestEliminarLavada}
+                  onWhatsApp={handleWhatsApp}
+                  plantillasMensaje={plantillasMensaje}
                   isExpanded={expandedCards[item.id]}
                   isCollapsing={collapsingCards[item.id]}
                   isUpdating={updatingCards.has(item.id)}
@@ -1371,6 +1569,10 @@ export default function Home() {
                   isSelected={selectedItems.has(item.id)}
                   onToggleSelect={toggleSelectItem}
                   isHighlighted={highlightId === item.id}
+                  onPlacaClick={(lavada) => {
+                    const cliente = clientes.find(c => c.id == lavada.cliente_id)
+                    if (cliente) setClienteInfoModal(cliente)
+                  }}
                 />
               ))}
             </div>
@@ -1409,12 +1611,6 @@ export default function Home() {
                       setExpandedProductCard(isExpanded ? null : item.id)
                       if (isExpanded) { cancelarEdicionProducto() }
                     }}>
-                    {modoSeleccion && (
-                      <label className="custom-check" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" checked={selectedItems.has(item.id)} onChange={() => toggleSelectItem(item.id)} />
-                        <span className="checkmark"></span>
-                      </label>
-                    )}
                     <div className="home-recent-card-left">
                       <span className="home-recent-placa">{item.descripcion || item.placa_o_persona || item.categoria}</span>
                       <span className="home-recent-desc">
@@ -1475,10 +1671,12 @@ export default function Home() {
                           </div>
                           <div className="edit-row">
                             <label>Fecha</label>
-                            <input
-                              type="date"
-                              value={editProductData.fecha}
-                              onChange={(e) => setEditProductData(prev => ({ ...prev, fecha: e.target.value }))}
+                            <DatePicker
+                              selected={editProductData.fecha ? new Date(editProductData.fecha + 'T00:00:00') : null}
+                              onChange={(date) => setEditProductData(prev => ({ ...prev, fecha: date ? fechaLocalStr(date) : '' }))}
+                              dateFormat="dd/MM/yyyy"
+                              locale="es"
+                              placeholderText="Seleccionar fecha"
                             />
                           </div>
                           <div className="home-product-edit-actions">
@@ -1557,12 +1755,6 @@ export default function Home() {
                       setExpandedProductCard(isExpanded ? null : item.id)
                       if (isExpanded) { cancelarEdicionProducto() }
                     }}>
-                    {modoSeleccion && (
-                      <label className="custom-check" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" checked={selectedItems.has(item.id)} onChange={() => toggleSelectItem(item.id)} />
-                        <span className="checkmark"></span>
-                      </label>
-                    )}
                     <div className="home-recent-card-left">
                       <span className="home-recent-placa">{item.descripcion || item.placa_o_persona || item.categoria}</span>
                       <span className="home-recent-desc">
@@ -1623,10 +1815,12 @@ export default function Home() {
                           </div>
                           <div className="edit-row">
                             <label>Fecha</label>
-                            <input
-                              type="date"
-                              value={editProductData.fecha}
-                              onChange={(e) => setEditProductData(prev => ({ ...prev, fecha: e.target.value }))}
+                            <DatePicker
+                              selected={editProductData.fecha ? new Date(editProductData.fecha + 'T00:00:00') : null}
+                              onChange={(date) => setEditProductData(prev => ({ ...prev, fecha: date ? fechaLocalStr(date) : '' }))}
+                              dateFormat="dd/MM/yyyy"
+                              locale="es"
+                              placeholderText="Seleccionar fecha"
                             />
                           </div>
                           <div className="home-product-edit-actions">
@@ -1711,27 +1905,127 @@ export default function Home() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: '400px' }}>
+      {/* Delete Confirmation Modals */}
+      <ConfirmDeleteModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleBulkDelete}
+        message={`Vas a eliminar ${selectedItems.size} elemento${selectedItems.size > 1 ? 's' : ''}. Esta acción no se puede deshacer. Ingresa tu contraseña para confirmar.`}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingDeleteLavadaId}
+        onClose={() => setPendingDeleteLavadaId(null)}
+        onConfirm={executeEliminarLavada}
+        message="Se eliminará este servicio permanentemente. Ingresa tu contraseña para confirmar."
+      />
+
+      {/* Cliente Info Modal */}
+      {clienteInfoModal && (
+        <div className="modal-overlay confirm-delete-overlay" onClick={() => setClienteInfoModal(null)}>
+          <div className="modal confirm-delete-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Confirmar eliminación</h2>
-              <button className="btn-close" onClick={() => setShowDeleteModal(false)}>
+              <h2>Información del cliente</h2>
+              <button className="btn-close" onClick={() => setClienteInfoModal(null)}>
                 <X size={24} />
               </button>
             </div>
-            <div style={{ padding: '1.5rem' }}>
-              <p style={{ color: 'var(--text-secondary)' }}>
-                Vas a eliminar <strong style={{ color: 'var(--accent-red, #ff4d4d)' }}>{selectedItems.size}</strong> elemento{selectedItems.size > 1 ? 's' : ''}. Esta acción no se puede deshacer.
-              </p>
+            <div className="cliente-info-grid">
+              {clienteInfoModal.nombre && <><span className="cliente-info-label">Nombre</span><span className="cliente-info-value">{clienteInfoModal.nombre}</span></>}
+              {clienteInfoModal.telefono && <><span className="cliente-info-label">Teléfono</span><span className="cliente-info-value">{clienteInfoModal.telefono}</span></>}
+              {clienteInfoModal.cedula && <><span className="cliente-info-label">Cédula</span><span className="cliente-info-value">{clienteInfoModal.cedula}</span></>}
+              {clienteInfoModal.correo && <><span className="cliente-info-label">Correo</span><span className="cliente-info-value">{clienteInfoModal.correo}</span></>}
+              {clienteInfoModal.placa && <><span className="cliente-info-label">Placa</span><span className="cliente-info-value">{clienteInfoModal.placa}</span></>}
+              {clienteInfoModal.moto && <><span className="cliente-info-label">Vehículo</span><span className="cliente-info-value">{clienteInfoModal.moto}</span></>}
+              {clienteInfoModal.membresia && <><span className="cliente-info-label">Membresía</span><span className="cliente-info-value">{typeof clienteInfoModal.membresia === 'object' ? clienteInfoModal.membresia.nombre : clienteInfoModal.membresia}</span></>}
+              <span className="cliente-info-label">Cashback</span><span className="cliente-info-value">{formatMoney(clienteInfoModal.cashback_acumulado || 0)}</span>
             </div>
             <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowDeleteModal(false)} disabled={deleting}>Cancelar</button>
-              <button className="btn-danger" onClick={handleBulkDelete} disabled={deleting}>
-                <Trash2 size={16} /> {deleting ? 'Eliminando...' : 'Eliminar'}
+              <button className="btn-secondary" onClick={() => setClienteInfoModal(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Nuevo Cliente */}
+      {showNuevoClienteModal && (
+        <div className="modal-overlay" onClick={() => { setShowNuevoClienteModal(false); resetNuevoClienteData() }}>
+          <div className="modal modal-sheet" onClick={e => e.stopPropagation()}>
+            <div className="modal-sheet-handle"><div className="modal-sheet-handle-bar" /></div>
+            <div className="modal-sheet-header">
+              <button type="button" className="btn-sheet-close" onClick={() => { setShowNuevoClienteModal(false); resetNuevoClienteData() }}><X size={20} /></button>
+              <h2>Nuevo Cliente</h2>
+              <button
+                type="button"
+                className="btn-sheet-action"
+                onClick={handleNuevoCliente}
+                disabled={creandoCliente || !nuevoClienteData.nombre || !nuevoClienteData.placa}
+              >
+                {creandoCliente ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
+            <form onSubmit={(e) => { e.preventDefault(); handleNuevoCliente(e); }}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Nombre completo</label>
+                  <input type="text" value={nuevoClienteData.nombre} onChange={e => setNuevoClienteData(prev => ({ ...prev, nombre: e.target.value }))} required autoFocus />
+                </div>
+                <div className="form-group">
+                  <label>Cédula</label>
+                  <input type="text" value={nuevoClienteData.cedula} onChange={e => setNuevoClienteData(prev => ({ ...prev, cedula: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Teléfono</label>
+                  <input type="text" value={nuevoClienteData.telefono} onChange={e => setNuevoClienteData(prev => ({ ...prev, telefono: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Correo</label>
+                  <input type="email" value={nuevoClienteData.correo} onChange={e => setNuevoClienteData(prev => ({ ...prev, correo: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Placa</label>
+                  <input type="text" value={nuevoClienteData.placa} onChange={e => setNuevoClienteData(prev => ({ ...prev, placa: e.target.value.toUpperCase() }))} required />
+                </div>
+                <div className="form-group">
+                  <label>Vehículo</label>
+                  <input type="text" value={nuevoClienteData.moto} onChange={e => setNuevoClienteData(prev => ({ ...prev, moto: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Tipo de Cliente</label>
+                  <select value={nuevoClienteData.membresia_id} onChange={e => handleNuevoClienteMembresiaChange(e.target.value)}>
+                    <option value="">Seleccionar</option>
+                    {tiposMembresia.map(m => (
+                      <option key={m.id} value={m.id}>{m.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Fecha inicio</label>
+                    <DatePicker
+                      selected={nuevoClienteData.fecha_inicio_membresia}
+                      onChange={date => setNuevoClienteData(prev => ({ ...prev, fecha_inicio_membresia: date }))}
+                      dateFormat="dd/MM/yyyy"
+                      locale="es"
+                      isClearable
+                      placeholderText="Seleccionar fecha"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Fecha fin</label>
+                    <DatePicker
+                      selected={nuevoClienteData.fecha_fin_membresia}
+                      onChange={date => setNuevoClienteData(prev => ({ ...prev, fecha_fin_membresia: date }))}
+                      dateFormat="dd/MM/yyyy"
+                      locale="es"
+                      isClearable
+                      placeholderText="Seleccionar fecha"
+                      minDate={nuevoClienteData.fecha_inicio_membresia}
+                    />
+                  </div>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1957,8 +2251,14 @@ export default function Home() {
         <>
           <div className="home-fab-overlay" onClick={() => setShowFabMenu(false)} />
           <div className="home-fab-menu">
+            <button onClick={() => { setShowFabMenu(false); openMovimientoModal('INGRESO') }}>
+              <TrendingUp size={18} /> Registrar Ing/Egr
+            </button>
             <button onClick={() => { setShowFabMenu(false); setShowServicioModal(true) }}>
               <Droplets size={18} /> Nuevo Servicio
+            </button>
+            <button onClick={() => { setShowFabMenu(false); setShowNuevoClienteModal(true) }}>
+              <UserPlus size={18} /> Nuevo Cliente
             </button>
             <button onClick={() => { setShowFabMenu(false); setShowVentaModal(true) }}>
               <DollarSign size={18} /> Nueva Venta
@@ -1976,6 +2276,137 @@ export default function Home() {
             </button>
           </div>
         </>
+      )}
+
+      {/* Modal Nuevo Movimiento (bottom-sheet) */}
+      {showMovimientoModal && (
+        <div className="modal-overlay" onClick={handleCloseMovimiento}>
+          <div
+            className="modal modal-sheet"
+            ref={movimientoSheetRef}
+            onClick={e => e.stopPropagation()}
+            style={movimientoDragY > 0 ? { transform: `translateY(${movimientoDragY}px)`, transition: 'none' } : {}}
+          >
+            <div
+              className="modal-sheet-handle"
+              onTouchStart={onMovimientoSheetTouchStart}
+              onTouchMove={onMovimientoSheetTouchMove}
+              onTouchEnd={onMovimientoSheetTouchEnd}
+            >
+              <div className="modal-sheet-handle-bar" />
+            </div>
+
+            <div className="modal-sheet-header">
+              <button className="btn-sheet-close" onClick={handleCloseMovimiento}>
+                <X size={20} />
+              </button>
+              <h2>{movimientoForm.tipo === 'INGRESO' ? 'Registrar Ingreso' : 'Registrar Egreso'}</h2>
+              <button
+                className="btn-sheet-action"
+                onClick={handleMovimientoSubmit}
+                disabled={movimientoSubmitting || !movimientoForm.valor || !movimientoForm.categoria || !movimientoForm.metodo_pago_id}
+              >
+                {movimientoSubmitting ? 'Guardando...' : 'Registrar'}
+              </button>
+            </div>
+
+            <div className="modal-sheet-body">
+              {/* Tipo toggle */}
+              <div className="movimiento-tipo-toggle">
+                <button
+                  className={`movimiento-tipo-btn ${movimientoForm.tipo === 'INGRESO' ? 'active ingreso' : ''}`}
+                  onClick={() => setMovimientoForm(prev => ({ ...prev, tipo: 'INGRESO', categoria: '' }))}
+                >
+                  <TrendingUp size={16} /> Ingreso
+                </button>
+                <button
+                  className={`movimiento-tipo-btn ${movimientoForm.tipo === 'EGRESO' ? 'active egreso' : ''}`}
+                  onClick={() => setMovimientoForm(prev => ({ ...prev, tipo: 'EGRESO', categoria: '' }))}
+                >
+                  <TrendingDown size={16} /> Egreso
+                </button>
+              </div>
+
+              {/* Valor */}
+              <div className="form-group">
+                <label>Valor</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={movimientoForm.valor ? `$ ${movimientoForm.valor}` : ''}
+                  onChange={(e) => handleMovimientoValorChange(e.target.value)}
+                  placeholder="$ 0"
+                  autoFocus
+                />
+              </div>
+
+              {/* Categoría */}
+              <div className="form-group">
+                <label>Categoría</label>
+                <select
+                  value={movimientoForm.categoria}
+                  onChange={(e) => setMovimientoForm(prev => ({ ...prev, categoria: e.target.value }))}
+                  required
+                >
+                  <option value="">Seleccionar categoría</option>
+                  {categoriasMovimiento[movimientoForm.tipo].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Método de pago */}
+              <div className="form-group">
+                <label>Método de pago</label>
+                <select
+                  value={movimientoForm.metodo_pago_id}
+                  onChange={(e) => setMovimientoForm(prev => ({ ...prev, metodo_pago_id: e.target.value }))}
+                  required
+                >
+                  <option value="">Seleccionar método</option>
+                  {metodosPago.map(m => (
+                    <option key={m.id} value={m.id}>{m.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Descripción */}
+              <div className="form-group">
+                <label>Descripción</label>
+                <input
+                  type="text"
+                  value={movimientoForm.descripcion}
+                  onChange={(e) => setMovimientoForm(prev => ({ ...prev, descripcion: e.target.value }))}
+                  placeholder="Ej: Pago de agua, compra de shampoo..."
+                />
+              </div>
+
+              {/* Placa o persona */}
+              <div className="form-group">
+                <label>Placa o persona (opcional)</label>
+                <input
+                  type="text"
+                  value={movimientoForm.placa_o_persona}
+                  onChange={(e) => setMovimientoForm(prev => ({ ...prev, placa_o_persona: e.target.value }))}
+                  placeholder="Ej: ABC123 o Juan Pérez"
+                />
+              </div>
+
+              {/* Fecha */}
+              <div className="form-group">
+                <label>Fecha</label>
+                <DatePicker
+                  selected={movimientoForm.fecha ? new Date(movimientoForm.fecha + 'T00:00:00') : null}
+                  onChange={(date) => setMovimientoForm(prev => ({ ...prev, fecha: date ? fechaLocalStr(date) : '' }))}
+                  dateFormat="dd/MM/yyyy"
+                  locale="es"
+                  placeholderText="Seleccionar fecha"
+                />
+              </div>
+            </div>
+
+          </div>
+        </div>
       )}
 
       {/* Modal Nueva Venta (bottom-sheet) */}

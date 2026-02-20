@@ -4,7 +4,6 @@ import { supabase } from './supabaseClient'
 import Login from './components/Login'
 import Register from './components/Register'
 import Layout from './components/Layout'
-import Dashboard from './components/Dashboard'
 import Lavadas from './components/Lavadas'
 import Clientes from './components/Clientes'
 import Balance from './components/Balance'
@@ -18,6 +17,7 @@ import LandingPage from './components/LandingPage'
 import { DataProvider } from './components/DataContext'
 import { TenantProvider, useTenant } from './components/TenantContext'
 import { ThemeProvider } from './components/ThemeContext'
+import { MoneyVisibilityProvider } from './components/MoneyVisibilityContext'
 import Onboarding from './components/Onboarding'
 import SetupWizard from './components/SetupWizard'
 import RoleGuard from './components/RoleGuard'
@@ -46,11 +46,11 @@ function AuthenticatedApp({ session }) {
         <Route path="/login" element={<Navigate to="/home" replace />} />
         <Route element={<Layout user={session.user} />}>
           <Route path="/home" element={<RoleGuard path="/home"><Home /></RoleGuard>} />
-          <Route path="/dashboard" element={<RoleGuard path="/dashboard"><Dashboard /></RoleGuard>} />
+          <Route path="/dashboard" element={<RoleGuard path="/dashboard"><Reportes /></RoleGuard>} />
+          <Route path="/reportes" element={<Navigate to="/dashboard" replace />} />
           <Route path="/lavadas" element={<RoleGuard path="/lavadas"><Lavadas /></RoleGuard>} />
           <Route path="/clientes" element={<RoleGuard path="/clientes"><Clientes /></RoleGuard>} />
           <Route path="/balance" element={<RoleGuard path="/balance"><Balance /></RoleGuard>} />
-          <Route path="/reportes" element={<RoleGuard path="/reportes"><Reportes /></RoleGuard>} />
           <Route path="/tareas" element={<RoleGuard path="/tareas"><Tareas /></RoleGuard>} />
           <Route path="/pagos" element={<RoleGuard path="/pagos"><PlanGuard feature="Pago de Trabajadores"><PagoTrabajadores /></PlanGuard></RoleGuard>} />
           <Route path="/membresias" element={<RoleGuard path="/membresias"><PlanGuard feature="Membresias"><Membresias /></PlanGuard></RoleGuard>} />
@@ -85,6 +85,7 @@ function App() {
 
   return (
     <ThemeProvider>
+      <MoneyVisibilityProvider>
       <BrowserRouter>
         <Routes>
           {!session ? (
@@ -106,6 +107,7 @@ function App() {
           )}
         </Routes>
       </BrowserRouter>
+      </MoneyVisibilityProvider>
     </ThemeProvider>
   )
 }

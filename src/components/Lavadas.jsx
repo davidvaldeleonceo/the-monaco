@@ -10,6 +10,7 @@ import { formatMoney } from '../utils/money'
 import { Plus, Search, X, Trash2, SlidersHorizontal, Upload, Download, CheckSquare, RefreshCw } from 'lucide-react'
 import Select from 'react-select'
 import * as XLSX from 'xlsx'
+import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -110,7 +111,8 @@ export default function Lavadas() {
     handleTipoLavadoChangeInline,
     handlePagosChange,
     handleAdicionalChange,
-    handleEliminarLavada,
+    pendingDeleteLavadaId, setPendingDeleteLavadaId,
+    requestEliminarLavada, executeEliminarLavada,
     enviarWhatsApp,
   } = useServiceHandlers()
 
@@ -191,7 +193,6 @@ export default function Lavadas() {
     let eliminados = 0
 
     for (const id of ids) {
-      const lavada = lavadas.find(l => l.id === id)
       const { error } = await supabase.from('lavadas').delete().eq('id', id)
       if (!error) {
         deleteLavadaLocal(id)
@@ -200,7 +201,6 @@ export default function Lavadas() {
     }
 
     setDeleting(false)
-    setShowDeleteModal(false)
     setSelectedLavadas(new Set())
     setModoSeleccion(false)
     if (eliminados > 0) alert(`Se eliminaron ${eliminados} servicios`)
@@ -724,7 +724,7 @@ export default function Lavadas() {
             onAdicionalChange={handleAdicionalChange}
             onLavadorChange={handleLavadorChange}
             onPagosChange={handlePagosChange}
-            onEliminar={handleEliminarLavada}
+            onEliminar={requestEliminarLavada}
             onWhatsApp={enviarWhatsApp}
             isExpanded={expandedCards[lavada.id]}
             isCollapsing={collapsingCards[lavada.id]}
@@ -766,29 +766,19 @@ export default function Lavadas() {
         </div>
       )}
 
-      {showDeleteModal && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: '400px' }}>
-            <div className="modal-header">
-              <h2>Confirmar eliminación</h2>
-              <button className="btn-close" onClick={() => setShowDeleteModal(false)}>
-                <X size={24} />
-              </button>
-            </div>
-            <div style={{ padding: '1.5rem' }}>
-              <p style={{ color: 'var(--text-secondary)' }}>
-                Vas a eliminar <strong style={{ color: 'var(--accent-red, #ff4d4d)' }}>{selectedLavadas.size}</strong> servicio{selectedLavadas.size > 1 ? 's' : ''}. Esta acción no se puede deshacer.
-              </p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowDeleteModal(false)} disabled={deleting}>Cancelar</button>
-              <button className="btn-danger" onClick={handleBulkDelete} disabled={deleting}>
-                <Trash2 size={16} /> {deleting ? 'Eliminando...' : 'Eliminar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDeleteModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleBulkDelete}
+        message={`Vas a eliminar ${selectedLavadas.size} servicio${selectedLavadas.size > 1 ? 's' : ''}. Esta acción no se puede deshacer. Ingresa tu contraseña para confirmar.`}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingDeleteLavadaId}
+        onClose={() => setPendingDeleteLavadaId(null)}
+        onConfirm={executeEliminarLavada}
+        message="Se eliminará este servicio permanentemente. Ingresa tu contraseña para confirmar."
+      />
 
       {showImportModal && (
         <div className="modal-overlay">

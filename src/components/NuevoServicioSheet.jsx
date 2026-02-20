@@ -396,42 +396,56 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
                 )}
                 {showClienteDropdown && !formData.cliente_id && (
                   <div className="cliente-search-dropdown">
-                    {clientes
-                      .filter(c => {
+                    {(() => {
+                      const filtered = clientes.filter(c => {
                         const q = clienteSearch.toLowerCase()
-                        return !q || c.nombre?.toLowerCase().includes(q) || c.placa?.toLowerCase().includes(q)
+                        return !q || c.nombre?.toLowerCase().includes(q) || c.placa?.toLowerCase().includes(q) || c.telefono?.toLowerCase().includes(q)
                       })
-                      .slice(0, 8)
-                      .map(c => (
-                        <div
-                          key={c.id}
-                          className="cliente-search-option"
-                          onMouseDown={() => handleClienteChange(c.id)}
-                        >
-                          <span className="cliente-search-nombre">{c.nombre}</span>
-                          <span className="cliente-search-placa">{c.placa}</span>
-                          {!clienteTieneMembresia(c) && <span className="cliente-search-tag">Sin membresía</span>}
-                        </div>
-                      ))}
-                    {clientes.filter(c => {
-                      const q = clienteSearch.toLowerCase()
-                      return !q || c.nombre?.toLowerCase().includes(q) || c.placa?.toLowerCase().includes(q)
-                    }).length === 0 && (
-                        <div className="cliente-search-empty">
-                          No se encontraron clientes
-                          <button
-                            type="button"
-                            className="btn-nuevo-cliente-inline"
-                            onMouseDown={() => {
-                              setShowNuevoCliente(true)
-                              setShowClienteDropdown(false)
-                              setNuevoClienteData({ ...emptyNuevoCliente, nombre: clienteSearch })
-                            }}
-                          >
-                            <Plus size={14} /> Agregar cliente
-                          </button>
-                        </div>
-                      )}
+                      return (
+                        <>
+                          {filtered.slice(0, 8).map(c => (
+                            <div
+                              key={c.id}
+                              className="cliente-search-option"
+                              onMouseDown={() => handleClienteChange(c.id)}
+                            >
+                              <span className="cliente-search-nombre">{c.nombre}</span>
+                              <span className="cliente-search-placa">{c.placa}</span>
+                              {!clienteTieneMembresia(c) && <span className="cliente-search-tag">Sin membresía</span>}
+                            </div>
+                          ))}
+                          {filtered.length === 0 && (
+                            <div className="cliente-search-empty">No se encontraron clientes</div>
+                          )}
+                          <div className="cliente-search-add">
+                            <button
+                              type="button"
+                              className="btn-nuevo-cliente-inline"
+                              onMouseDown={() => {
+                                const search = clienteSearch.trim()
+                                const soloDigitos = search.replace(/[\s+\-()]/g, '')
+                                const cantDigitos = (soloDigitos.match(/\d/g) || []).length
+
+                                let nuevoData = { ...emptyNuevoCliente }
+                                if (cantDigitos >= 7) {
+                                  nuevoData.telefono = search
+                                } else if (/\d/.test(search)) {
+                                  nuevoData.placa = search.toUpperCase()
+                                } else {
+                                  nuevoData.nombre = search
+                                }
+
+                                setShowNuevoCliente(true)
+                                setShowClienteDropdown(false)
+                                setNuevoClienteData(nuevoData)
+                              }}
+                            >
+                              <Plus size={14} /> Agregar cliente
+                            </button>
+                          </div>
+                        </>
+                      )
+                    })()}
                   </div>
                 )}
                 {showNuevoCliente && (
@@ -447,6 +461,9 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
                       onChange={(e) => setNuevoClienteData(prev => ({ ...prev, nombre: e.target.value }))}
                       autoFocus
                     />
+                    {nuevoClienteData.nombre.trim() !== '' && clientes.some(c => c.nombre?.trim().toLowerCase() === nuevoClienteData.nombre.trim().toLowerCase()) && (
+                      <span className="cliente-ya-existe-warning">Cliente ya existe</span>
+                    )}
                     <input
                       type="text"
                       placeholder="Placa"

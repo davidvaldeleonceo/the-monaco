@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { Plus, X, Pencil, Trash2, ListChecks, CheckCircle2, Users, ClipboardList } from 'lucide-react'
+import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 
 const DIAS_NOMBRES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
@@ -43,6 +44,8 @@ export default function Tareas() {
     frecuencia: 'DIARIA',
     dias_semana: [0, 1, 2, 3, 4, 5, 6]
   })
+
+  const [pendingDeleteTareaId, setPendingDeleteTareaId] = useState(null)
 
   // Modal completar todas
   const [showModalCompletar, setShowModalCompletar] = useState(false)
@@ -187,10 +190,16 @@ export default function Tareas() {
     fetchTareas()
   }
 
-  const handleEliminarTarea = async (id) => {
-    if (!confirm('¿Eliminar esta tarea predefinida?')) return
+  const requestEliminarTarea = (id) => {
+    setPendingDeleteTareaId(id)
+  }
+
+  const executeEliminarTarea = async () => {
+    const id = pendingDeleteTareaId
+    if (!id) return
     await supabase.from('tareas').update({ activo: false }).eq('id', id)
     fetchTareas()
+    setPendingDeleteTareaId(null)
   }
 
   const toggleDiaSemana = (dia) => {
@@ -404,7 +413,7 @@ export default function Tareas() {
                           <button className="btn-icon" onClick={() => abrirModalEditarTarea(tarea)} title="Editar">
                             <Pencil size={16} />
                           </button>
-                          <button className="btn-icon btn-icon-danger" onClick={() => handleEliminarTarea(tarea.id)} title="Eliminar">
+                          <button className="btn-icon btn-icon-danger" onClick={() => requestEliminarTarea(tarea.id)} title="Eliminar">
                             <Trash2 size={16} />
                           </button>
                         </div>
@@ -524,6 +533,13 @@ export default function Tareas() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingDeleteTareaId}
+        onClose={() => setPendingDeleteTareaId(null)}
+        onConfirm={executeEliminarTarea}
+        message="Se eliminará esta tarea predefinida. Ingresa tu contraseña para confirmar."
+      />
     </div>
   )
 }

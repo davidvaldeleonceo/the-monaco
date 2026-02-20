@@ -7,11 +7,14 @@ import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney } from '../utils/money'
+import { useMoneyVisibility } from './MoneyVisibilityContext'
+import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 
 registerLocale('es', es)
 
 export default function Balance() {
   const { metodosPago: metodosPagoConfig, lavadas, negocioId } = useData()
+  const { displayMoney } = useMoneyVisibility()
 
   const [transacciones, setTransacciones] = useState([])
   const [showModal, setShowModal] = useState(false)
@@ -52,8 +55,6 @@ export default function Balance() {
 
   // Eliminar
   const [eliminarId, setEliminarId] = useState(null)
-  const [password, setPassword] = useState('')
-  const [errorPassword, setErrorPassword] = useState('')
 
   // Editar transacción completa
   const [editandoId, setEditandoId] = useState(null)
@@ -259,25 +260,11 @@ export default function Balance() {
   // Eliminar con contraseña
   const handleEliminar = (id) => {
     setEliminarId(id)
-    setPassword('')
-    setErrorPassword('')
   }
 
-  const confirmarEliminacion = async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    const email = session?.user?.email
-    if (!email) return
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setErrorPassword('Contraseña incorrecta')
-      return
-    }
-
+  const executeEliminar = async () => {
     await supabase.from('transacciones').delete().eq('id', eliminarId)
     setEliminarId(null)
-    setPassword('')
-    setErrorPassword('')
     fetchData()
   }
 
@@ -357,21 +344,21 @@ export default function Balance() {
             <TrendingUp size={24} />
             <span className="label">Ingresos</span>
           </div>
-          <span className="valor">{formatMoney(ingresosFiltrados)}</span>
+          <span className="valor">{displayMoney(ingresosFiltrados)}</span>
         </div>
         <div className="resumen-card egresos">
           <div className="left">
             <TrendingDown size={24} />
             <span className="label">Egresos</span>
           </div>
-          <span className="valor">{formatMoney(egresosFiltrados)}</span>
+          <span className="valor">{displayMoney(egresosFiltrados)}</span>
         </div>
         <div className={`resumen-card balance ${balanceFiltrado >= 0 ? 'positivo' : 'negativo'}`}>
           <div className="left">
             <TrendingUp size={24} />
             <span className="label">Balance</span>
           </div>
-          <span className="valor">{formatMoney(balanceFiltrado)}</span>
+          <span className="valor">{displayMoney(balanceFiltrado)}</span>
         </div>
       </div>
 
@@ -380,13 +367,13 @@ export default function Balance() {
         {resumenPorMetodo.map(m => (
           <div key={m.id} className="metodo-card">
             <span className="metodo-nombre">{m.nombre}</span>
-            <span className={`metodo-valor ${m.total >= 0 ? 'positivo' : 'negativo'}`}>{formatMoney(m.total)}</span>
+            <span className={`metodo-valor ${m.total >= 0 ? 'positivo' : 'negativo'}`}>{displayMoney(m.total)}</span>
           </div>
         ))}
         {sinMetodo !== 0 && (
           <div className="metodo-card">
             <span className="metodo-nombre">Sin método</span>
-            <span className={`metodo-valor ${sinMetodo >= 0 ? 'positivo' : 'negativo'}`}>{formatMoney(sinMetodo)}</span>
+            <span className={`metodo-valor ${sinMetodo >= 0 ? 'positivo' : 'negativo'}`}>{displayMoney(sinMetodo)}</span>
           </div>
         )}
       </div>
@@ -787,44 +774,12 @@ export default function Balance() {
         </div>
       )}
 
-      {/* Modal confirmar eliminación */}
-      {eliminarId && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: '400px' }}>
-            <div className="modal-header">
-              <h2>Confirmar eliminación</h2>
-              <button className="btn-close" onClick={() => { setEliminarId(null); setPassword(''); setErrorPassword('') }}>
-                <X size={24} />
-              </button>
-            </div>
-            <div style={{ padding: '1.5rem' }}>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                Se eliminará esta transacción permanentemente. Ingresa tu contraseña para confirmar.
-              </p>
-              <div className="form-group">
-                <label>Contraseña</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setErrorPassword('') }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') confirmarEliminacion() }}
-                  placeholder="Ingresa tu contraseña"
-                  autoFocus
-                />
-                {errorPassword && <span style={{ color: 'var(--accent-red)', fontSize: '0.85rem', marginTop: '0.5rem', display: 'block' }}>{errorPassword}</span>}
-              </div>
-            </div>
-            <div className="modal-footer" style={{ justifyContent: 'center', alignItems: 'center', paddingBottom: '1.5rem' }}>
-              <button type="button" className="btn-secondary" onClick={() => { setEliminarId(null); setPassword(''); setErrorPassword('') }}>
-                Cancelar
-              </button>
-              <button type="button" className="btn-primary" style={{ background: 'var(--accent-red)' }} onClick={confirmarEliminacion}>
-                Eliminar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDeleteModal
+        isOpen={!!eliminarId}
+        onClose={() => setEliminarId(null)}
+        onConfirm={executeEliminar}
+        message="Se eliminará esta transacción permanentemente. Ingresa tu contraseña para confirmar."
+      />
     </div>
   )
 }

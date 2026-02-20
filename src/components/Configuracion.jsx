@@ -3,14 +3,16 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
-import { Plus, X, Edit, Trash2, Settings, ChevronDown, Crown, Shield, LogOut, Lock, MessageCircle, Mail, User, Check } from 'lucide-react'
+import { Plus, X, Edit, Trash2, Settings, ChevronDown, Crown, Shield, MessageCircle, Mail, User, Check, LogOut } from 'lucide-react'
 import { formatMoney } from '../utils/money'
 import { API_URL, TOKEN_KEY, SESSION_KEY } from '../config/constants'
 import UpgradeModal from './UpgradeModal'
+import ConfirmDeleteModal from './common/ConfirmDeleteModal'
+import PasswordInput from './common/PasswordInput'
 
 export default function Configuracion() {
   const navigate = useNavigate()
-  const { refreshConfig, serviciosAdicionales, productos, negocioId } = useData()
+  const { refreshConfig, serviciosAdicionales, productos, negocioId, tiposLavado } = useData()
   const { userProfile, isPro, planStatus, planCancelled, daysLeftInTrial, refresh, userEmail, negocioNombre } = useTenant()
   const isAdmin = userProfile?.rol === 'admin'
   const [activeTab, setActiveTab] = useState('datos')
@@ -34,6 +36,9 @@ export default function Configuracion() {
   // Adicionales inline editing (inside lavados tab)
   const [adicionalEdit, setAdicionalEdit] = useState(null) // { id, nombre, precio } or { id: null, nombre, precio } for new
   const [showAdicionales, setShowAdicionales] = useState(true)
+  const [pendingDeleteId, setPendingDeleteId] = useState(null)
+  const [pendingAdicionalDeleteId, setPendingAdicionalDeleteId] = useState(null)
+  const [pendingCancelSub, setPendingCancelSub] = useState(false)
   const [bulkForm, setBulkForm] = useState({
     tipo_pago: null,
     pago_porcentaje: '',
@@ -46,11 +51,9 @@ export default function Configuracion() {
   })
 
   const tabs = [
-    { id: 'datos', label: 'Mis Datos' },
+    { id: 'datos', label: 'Mi Cuenta' },
     ...(isAdmin ? [{ id: 'plan', label: 'Mi Plan' }] : []),
     ...(isAdmin ? [{ id: 'config', label: 'Configuración' }] : []),
-    ...(isAdmin ? [{ id: 'reportes', label: 'Reportes' }] : []),
-    { id: 'seguridad', label: 'Seguridad' },
     { id: 'soporte', label: 'Soporte' },
   ]
 
@@ -60,6 +63,7 @@ export default function Configuracion() {
     { id: 'metodos', label: 'Métodos de Pago', table: 'metodos_pago' },
     { id: 'lavadores', label: 'Lavadores', table: 'lavadores' },
     { id: 'productos', label: 'Productos', table: 'productos' },
+    { id: 'mensajes', label: 'Mensajes', table: 'plantillas_mensaje' },
   ]
 
   // Handle ?tab=plan from URL
@@ -67,14 +71,13 @@ export default function Configuracion() {
   useEffect(() => {
     const tab = searchParams.get('tab')
     if (tab && tabs.some(t => t.id === tab)) setActiveTab(tab)
+    const subtab = searchParams.get('subtab')
+    if (subtab && configSubTabs.some(t => t.id === subtab)) {
+      setActiveTab('config')
+      setConfigSubTab(subtab)
+    }
   }, [searchParams])
 
-  // When selecting "Reportes" tab, navigate away
-  useEffect(() => {
-    if (activeTab === 'reportes') {
-      navigate('/reportes')
-    }
-  }, [activeTab])
 
   useEffect(() => {
     if (activeTab === 'config') fetchData()
@@ -96,13 +99,15 @@ export default function Configuracion() {
       case 'membresias':
         return { nombre: '', precio: '', descuento: '', cashback: '', duracion_dias: 1, activo: true }
       case 'lavados':
-        return { nombre: '', precio: '', descripcion: '', adicionales_incluidos: [], activo: true }
+        return { nombre: '', precio: '', descripcion: '', adicionales_incluidos: [], activo: true, es_base: false }
       case 'metodos':
         return { nombre: '', activo: true }
       case 'lavadores':
         return { nombre: '', telefono: '', activo: true, tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null }
       case 'productos':
         return { nombre: '', precio: '', cantidad: '', activo: true }
+      case 'mensajes':
+        return { nombre: '', texto: '', activo: true }
       default:
         return {}
     }
@@ -113,19 +118,21 @@ export default function Configuracion() {
       case 'membresias':
         return ['nombre', 'precio', 'descuento', 'cashback', 'duracion_dias', 'activo']
       case 'lavados':
-        return ['nombre', 'precio', 'descripcion', 'adicionales_incluidos', 'activo']
+        return ['nombre', 'precio', 'descripcion', 'adicionales_incluidos', 'activo', 'es_base']
       case 'metodos':
         return ['nombre', 'activo']
       case 'lavadores':
         return ['nombre', 'telefono', 'activo', 'tipo_pago', 'pago_porcentaje', 'pago_sueldo_base', 'pago_por_lavada', 'pago_por_adicional', 'pago_porcentaje_lavada', 'pago_adicional_fijo', 'pago_adicionales_detalle']
       case 'productos':
         return ['nombre', 'precio', 'cantidad', 'activo']
+      case 'mensajes':
+        return ['nombre', 'texto', 'activo']
       default:
         return []
     }
   }
 
-  const stringFields = ['nombre', 'telefono', 'descripcion', 'tipo_pago', 'activo', 'pago_adicionales_detalle', 'adicionales_incluidos']
+  const stringFields = ['nombre', 'telefono', 'descripcion', 'tipo_pago', 'activo', 'pago_adicionales_detalle', 'adicionales_incluidos', 'es_base', 'texto']
 
   const numVal = (v) => v === '' || v === null || v === undefined ? '' : v
   const numChange = (field) => (e) => {
@@ -139,11 +146,25 @@ export default function Configuracion() {
     const cleaned = { ...obj }
     for (const key of Object.keys(cleaned)) {
       if (stringFields.includes(key)) continue
+      if (Array.isArray(cleaned[key])) continue
       if (cleaned[key] === '' || cleaned[key] === null || cleaned[key] === undefined) {
         cleaned[key] = 0
       }
     }
     if (cleaned.tipo_pago === '') cleaned.tipo_pago = null
+    // UUID[] column: convert JS array to PostgreSQL array literal or omit for default
+    if ('adicionales_incluidos' in cleaned) {
+      let arr = cleaned.adicionales_incluidos
+      if (!Array.isArray(arr)) {
+        try { arr = JSON.parse(arr) } catch { arr = [] }
+        if (!Array.isArray(arr)) arr = []
+      }
+      if (arr.length === 0) {
+        delete cleaned.adicionales_incluidos
+      } else {
+        cleaned.adicionales_incluidos = `{${arr.join(',')}}`
+      }
+    }
     return cleaned
   }
 
@@ -163,7 +184,8 @@ export default function Configuracion() {
       } else if (f === 'pago_adicionales_detalle') {
         editData[f] = item[f] || null
       } else if (f === 'adicionales_incluidos') {
-        editData[f] = item[f] || []
+        const raw = item[f]
+        editData[f] = Array.isArray(raw) ? raw : []
       } else if (stringFields.includes(f)) {
         editData[f] = item[f] ?? ''
       } else {
@@ -174,16 +196,21 @@ export default function Configuracion() {
     setShowModal(true)
   }
 
-  const handleDelete = async (id) => {
-    if (confirm('¿Estás seguro de eliminar este registro? Esta acción es permanente.')) {
-      const { error } = await supabase.from(getTable()).delete().eq('id', id)
-      if (error) {
-        alert('Error al eliminar: ' + error.message)
-      } else {
-        fetchData()
-        refreshConfig()
-      }
+  const requestDeleteConfig = (id) => {
+    setPendingDeleteId(id)
+  }
+
+  const executeDeleteConfig = async () => {
+    const id = pendingDeleteId
+    if (!id) return
+    const { error } = await supabase.from(getTable()).delete().eq('id', id)
+    if (error) {
+      alert('Error al eliminar: ' + error.message)
+    } else {
+      fetchData()
+      refreshConfig()
     }
+    setPendingDeleteId(null)
   }
 
   const handleToggleActive = async (item) => {
@@ -195,6 +222,21 @@ export default function Configuracion() {
     if (error) {
       alert(`Error al actualizar estado: ${error.message}`)
       fetchData()
+    }
+    refreshConfig()
+  }
+
+  const handleToggleBase = async (item) => {
+    const newBase = !item.es_base
+    if (newBase) {
+      // Optimistic: set all to false, then this one to true
+      setData(data.map(d => ({ ...d, es_base: d.id === item.id })))
+      // DB: clear all, then set this one
+      await supabase.from('tipos_lavado').update({ es_base: false }).eq('negocio_id', negocioId)
+      await supabase.from('tipos_lavado').update({ es_base: true }).eq('id', item.id)
+    } else {
+      setData(data.map(d => d.id === item.id ? { ...d, es_base: false } : d))
+      await supabase.from('tipos_lavado').update({ es_base: false }).eq('id', item.id)
     }
     refreshConfig()
   }
@@ -224,6 +266,11 @@ export default function Configuracion() {
       payload[f] = formData[f]
     }
     const cleaned = cleanForSave(payload)
+
+    // If saving a lavado as base, clear others first
+    if (configSubTab === 'lavados' && cleaned.es_base) {
+      await supabase.from('tipos_lavado').update({ es_base: false }).eq('negocio_id', negocioId)
+    }
 
     let error
     if (editando) {
@@ -280,11 +327,17 @@ export default function Configuracion() {
     refreshConfig()
   }
 
-  const handleAdicionalDelete = async (id) => {
-    if (!confirm('¿Eliminar este adicional?')) return
+  const requestAdicionalDelete = (id) => {
+    setPendingAdicionalDeleteId(id)
+  }
+
+  const executeAdicionalDelete = async () => {
+    const id = pendingAdicionalDeleteId
+    if (!id) return
     const { error } = await supabase.from('servicios_adicionales').delete().eq('id', id)
     if (error) { alert('Error: ' + error.message); return }
     refreshConfig()
+    setPendingAdicionalDeleteId(null)
   }
 
   const handleAdicionalToggle = async (item) => {
@@ -304,10 +357,12 @@ export default function Configuracion() {
       return `Base ${formatMoney(item.pago_sueldo_base || 0)} + ${formatMoney(item.pago_por_lavada || 0)}/lav + ${formatMoney(item.pago_por_adicional || 0)}/adic`
     }
     if (item.tipo_pago === 'porcentaje_lavada') {
+      const tipoBase = tiposLavado.find(t => t.es_base)
+      const baseLabel = tipoBase ? `${tipoBase.nombre} (${formatMoney(tipoBase.precio)})` : 'lavada básica'
       const adicInfo = item.pago_adicionales_detalle
         ? 'valor por servicio'
         : `${formatMoney(item.pago_adicional_fijo || 0)}/adic`
-      return `${formatPct(item.pago_porcentaje_lavada)} lavada básica + ${adicInfo}`
+      return `${formatPct(item.pago_porcentaje_lavada)} de ${baseLabel} + ${adicInfo}`
     }
     return '-'
   }
@@ -375,7 +430,7 @@ export default function Configuracion() {
                     <span className="slider"></span>
                   </label>
                   <button className="btn-icon" onClick={() => setAdicionalEdit({ id: s.id, nombre: s.nombre, precio: s.precio })} title="Editar"><Edit size={14} /></button>
-                  <button className="btn-icon delete" onClick={() => handleAdicionalDelete(s.id)} title="Eliminar"><Trash2 size={14} /></button>
+                  <button className="btn-icon delete" onClick={() => requestAdicionalDelete(s.id)} title="Eliminar"><Trash2 size={14} /></button>
                 </>
               )}
             </div>
@@ -442,7 +497,7 @@ export default function Configuracion() {
                     <td>
                       <div className="acciones">
                         <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
                       </div>
                     </td>
                   </tr>
@@ -461,6 +516,7 @@ export default function Configuracion() {
                     <th>Nombre</th>
                     <th>Precio</th>
                     <th>Incluye</th>
+                    <th>Base</th>
                     <th>Estado</th>
                     <th>Acciones</th>
                   </tr>
@@ -479,6 +535,12 @@ export default function Configuracion() {
                         </td>
                         <td>
                           <label className="switch">
+                            <input type="checkbox" checked={!!item.es_base} onChange={() => handleToggleBase(item)} />
+                            <span className="slider"></span>
+                          </label>
+                        </td>
+                        <td>
+                          <label className="switch">
                             <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
                             <span className="slider"></span>
                           </label>
@@ -486,7 +548,7 @@ export default function Configuracion() {
                         <td>
                           <div className="acciones">
                             <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                            <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                            <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
                           </div>
                         </td>
                       </tr>
@@ -522,7 +584,7 @@ export default function Configuracion() {
                     <td>
                       <div className="acciones">
                         <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
                       </div>
                     </td>
                   </tr>
@@ -574,7 +636,7 @@ export default function Configuracion() {
                     <td>
                       <div className="acciones">
                         <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
                       </div>
                     </td>
                   </tr>
@@ -611,7 +673,42 @@ export default function Configuracion() {
                     <td>
                       <div className="acciones">
                         <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
-                        <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      case 'mensajes':
+        return (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Título</th>
+                  <th>Texto</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.texto}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
                       </div>
                     </td>
                   </tr>
@@ -659,7 +756,7 @@ export default function Configuracion() {
                   </div>
                   <div className="cliente-card-actions">
                     <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
-                    <button className="btn-secondary btn-danger-outline" onClick={() => handleDelete(item.id)}><Trash2 size={16} /> Eliminar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
                   </div>
                 </div>
               )}
@@ -676,7 +773,10 @@ export default function Configuracion() {
             <div key={item.id} className={`config-card ${isExpanded ? 'expanded' : ''}`}>
               <div className="config-card-header" onClick={() => setExpandedCard(isExpanded ? null : item.id)}>
                 <div className="config-card-left">
-                  <span className="config-card-nombre">{item.nombre}</span>
+                  <span className="config-card-nombre">
+                    {item.nombre}
+                    {item.es_base && <span className="badge-base">Base</span>}
+                  </span>
                   <span className="config-card-sub">{formatMoney(item.precio)}</span>
                 </div>
                 <div className="config-card-right">
@@ -696,9 +796,16 @@ export default function Configuracion() {
                       ))}
                     </div>
                   )}
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Lavada Base</span>
+                    <label className="switch" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={!!item.es_base} onChange={() => handleToggleBase(item)} />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
                   <div className="cliente-card-actions">
                     <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
-                    <button className="btn-secondary btn-danger-outline" onClick={() => handleDelete(item.id)}><Trash2 size={16} /> Eliminar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
                   </div>
                 </div>
               )}
@@ -718,7 +825,7 @@ export default function Configuracion() {
                   <span className="slider"></span>
                 </label>
                 <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={16} /></button>
-                <button className="btn-icon delete" onClick={() => handleDelete(item.id)}><Trash2 size={16} /></button>
+                <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /></button>
               </div>
             </div>
           </div>
@@ -765,7 +872,7 @@ export default function Configuracion() {
                   </div>
                   <div className="cliente-card-actions">
                     <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
-                    <button className="btn-secondary btn-danger-outline" onClick={() => handleDelete(item.id)}><Trash2 size={16} /> Eliminar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
                   </div>
                 </div>
               )}
@@ -802,7 +909,43 @@ export default function Configuracion() {
                   </div>
                   <div className="cliente-card-actions">
                     <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
-                    <button className="btn-secondary btn-danger-outline" onClick={() => handleDelete(item.id)}><Trash2 size={16} /> Eliminar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })
+      case 'mensajes':
+        return data.map(item => {
+          const isExpanded = expandedCard === item.id
+          return (
+            <div key={item.id} className={`config-card ${isExpanded ? 'expanded' : ''}`}>
+              <div className="config-card-header" onClick={() => setExpandedCard(isExpanded ? null : item.id)}>
+                <div className="config-card-left">
+                  <span className="config-card-nombre">{item.nombre}</span>
+                  <span className="config-card-sub" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{item.texto}</span>
+                </div>
+                <div className="config-card-right">
+                  <label className="switch" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                    <span className="slider"></span>
+                  </label>
+                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="config-card-body">
+                  <div className="cliente-card-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                    <span className="cliente-card-label">Texto completo</span>
+                    <span className="cliente-card-value" style={{ whiteSpace: 'pre-wrap', fontSize: '0.9em' }}>{item.texto}</span>
+                  </div>
+                  <p style={{ fontSize: '0.8em', color: '#888', margin: '8px 0 4px' }}>
+                    Variables: {'{nombre}'}, {'{telefono}'}, {'{negocio}'}, {'{membresia}'}, {'{estado_membresia}'}, {'{vencimiento}'}, {'{placa}'}, {'{ultimo_servicio}'}, {'{valor_ultimo}'}
+                  </p>
+                  <div className="cliente-card-actions">
+                    <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
                   </div>
                 </div>
               )}
@@ -849,6 +992,18 @@ export default function Configuracion() {
       )}
       {formObj.tipo_pago === 'porcentaje_lavada' && (
         <>
+          {(() => {
+            const tipoBase = tiposLavado.find(t => t.es_base)
+            return tipoBase ? (
+              <div className="info-box">
+                Lavada base: <strong>{tipoBase.nombre}</strong> ({formatMoney(tipoBase.precio)})
+              </div>
+            ) : (
+              <div className="info-box warning">
+                No hay lavada base configurada. Ve a Tipos de Servicio y marca una como "Base".
+              </div>
+            )
+          })()}
           <div className="form-group">
             <label>% sobre lavada básica (ej: 40 = 40%)</label>
             <input type="number" value={numVal(formObj.pago_porcentaje_lavada)} onChange={changeHandler('pago_porcentaje_lavada')} />
@@ -998,6 +1153,9 @@ export default function Configuracion() {
             <div className="form-group checkbox-group">
               <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
             </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={!!formData.es_base} onChange={(e) => setFormData({ ...formData, es_base: e.target.checked })} /> Lavada base (para cálculo de pago %)</label>
+            </div>
           </>
         )
       case 'metodos':
@@ -1043,6 +1201,31 @@ export default function Configuracion() {
             <div className="form-group">
               <label>Cantidad disponible</label>
               <input type="number" min="0" value={numVal(formData.cantidad)} onChange={numChange('cantidad')} required />
+            </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
+            </div>
+          </>
+        )
+      case 'mensajes':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre de la plantilla</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+            </div>
+            <div className="form-group">
+              <label>Texto del mensaje</label>
+              <textarea
+                rows={5}
+                value={formData.texto || ''}
+                onChange={(e) => setFormData({ ...formData, texto: e.target.value })}
+                required
+                style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 'inherit', padding: '8px 12px', borderRadius: '8px', border: '1px solid #ddd' }}
+              />
+              <p style={{ fontSize: '0.8em', color: '#888', marginTop: '6px' }}>
+                Variables disponibles: {'{nombre}'}, {'{telefono}'}, {'{negocio}'}, {'{membresia}'}, {'{estado_membresia}'}, {'{vencimiento}'}, {'{placa}'}, {'{ultimo_servicio}'}, {'{valor_ultimo}'}
+              </p>
             </div>
             <div className="form-group checkbox-group">
               <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
@@ -1156,7 +1339,7 @@ export default function Configuracion() {
           {editingField === 'email' ? (
             <div className="cuenta-datos-edit-fields">
               <input type="email" className="cuenta-datos-input" value={emailEdit} onChange={(e) => setEmailEdit(e.target.value)} placeholder="Nuevo correo" autoFocus />
-              <input type="password" className="cuenta-datos-input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Contraseña actual" />
+              <PasswordInput className="cuenta-datos-input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Contraseña actual" />
             </div>
           ) : (
             <span className="cuenta-datos-value">{userEmail || '—'}</span>
@@ -1180,9 +1363,9 @@ export default function Configuracion() {
           <span className="cuenta-datos-label">Contraseña</span>
           {editingField === 'password' ? (
             <div className="cuenta-datos-edit-fields">
-              <input type="password" className="cuenta-datos-input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Contraseña actual" autoFocus />
-              <input type="password" className="cuenta-datos-input" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Nueva contraseña" />
-              <input type="password" className="cuenta-datos-input" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirmar nueva contraseña" />
+              <PasswordInput className="cuenta-datos-input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Contraseña actual" autoFocus />
+              <PasswordInput className="cuenta-datos-input" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Nueva contraseña" />
+              <PasswordInput className="cuenta-datos-input" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirmar nueva contraseña" />
             </div>
           ) : (
             <span className="cuenta-datos-value">••••••••</span>
@@ -1231,22 +1414,12 @@ export default function Configuracion() {
           )
         )}
       </div>
-    </div>
-  )
 
-  const renderSeguridadTab = () => (
-    <div className="plan-panel">
-      <div className="plan-panel-header">
-        <Lock size={32} />
-        <div>
-          <h2>Seguridad</h2>
-        </div>
-      </div>
-      <div className="plan-panel-info">
-        <div className="cuenta-actions">
-          <button className="btn-secondary btn-danger-outline" onClick={handleLogout}>
-            <LogOut size={18} /> Cerrar sesión
-          </button>
+      {/* Cerrar sesión */}
+      <div className="cuenta-datos-row cuenta-datos-logout" onClick={handleLogout}>
+        <div className="cuenta-datos-left">
+          <LogOut size={18} />
+          <span className="cuenta-datos-label">Cerrar sesión</span>
         </div>
       </div>
     </div>
@@ -1283,9 +1456,11 @@ export default function Configuracion() {
     </div>
   )
 
-  const handleCancelSubscription = async () => {
-    if (!confirm('¿Estás seguro de cancelar tu suscripción? Seguirás con acceso PRO hasta que expire.')) return
+  const requestCancelSubscription = () => {
+    setPendingCancelSub(true)
+  }
 
+  const executeCancelSubscription = async () => {
     try {
       const token = localStorage.getItem(TOKEN_KEY)
       const res = await fetch(`${API_URL}/api/wompi/cancel`, {
@@ -1299,6 +1474,7 @@ export default function Configuracion() {
     } catch {
       // silently fail
     }
+    setPendingCancelSub(false)
   }
 
   const renderPlanTab = () => {
@@ -1322,7 +1498,7 @@ export default function Configuracion() {
             <span className={`plan-status-badge ${statusClass}`}>{statusLabel}</span>
           </div>
           {isPro && !planCancelled && (
-            <button className="btn-cancel-sub" onClick={handleCancelSubscription}>
+            <button className="btn-cancel-sub" onClick={requestCancelSubscription}>
               Cancelar suscripción
             </button>
           )}
@@ -1510,9 +1686,6 @@ export default function Configuracion() {
         </>
       )}
 
-      {/* Seguridad tab */}
-      {activeTab === 'seguridad' && renderSeguridadTab()}
-
       {/* Soporte tab */}
       {activeTab === 'soporte' && renderSoporteTab()}
 
@@ -1558,6 +1731,27 @@ export default function Configuracion() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingDeleteId}
+        onClose={() => setPendingDeleteId(null)}
+        onConfirm={executeDeleteConfig}
+        message="Se eliminará este registro permanentemente. Ingresa tu contraseña para confirmar."
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingAdicionalDeleteId}
+        onClose={() => setPendingAdicionalDeleteId(null)}
+        onConfirm={executeAdicionalDelete}
+        message="Se eliminará este adicional permanentemente. Ingresa tu contraseña para confirmar."
+      />
+
+      <ConfirmDeleteModal
+        isOpen={pendingCancelSub}
+        onClose={() => setPendingCancelSub(false)}
+        onConfirm={executeCancelSubscription}
+        message="¿Estás seguro de cancelar tu suscripción? Seguirás con acceso PRO hasta que expire. Ingresa tu contraseña para confirmar."
+      />
     </div>
   )
 }

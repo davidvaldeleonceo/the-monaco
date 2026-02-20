@@ -9,6 +9,7 @@ import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney } from '../utils/money'
 import Select from 'react-select'
+import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 
 registerLocale('es', es)
 
@@ -41,7 +42,7 @@ function generarRangoDias(desdeStr, hastaStr) {
 }
 
 export default function PagoTrabajadores() {
-  const { metodosPago, negocioId } = useData()
+  const { metodosPago, negocioId, tiposLavado } = useData()
   const { userEmail } = useTenant()
 
   const [pagos, setPagos] = useState([])
@@ -51,6 +52,7 @@ export default function PagoTrabajadores() {
   const [lavadasPeriodo, setLavadasPeriodo] = useState([])
   const [calculando, setCalculando] = useState(false)
   const [editandoId, setEditandoId] = useState(null)
+  const [pendingAnularPago, setPendingAnularPago] = useState(null)
   const [diasYaPagados, setDiasYaPagados] = useState([])
   const [lavadasExcluidas, setLavadasExcluidas] = useState(0)
   const [descuentosFocused, setDescuentosFocused] = useState(false)
@@ -253,10 +255,9 @@ export default function PagoTrabajadores() {
       detalleInfo.pago_por_lavada = lavador.pago_por_lavada
       detalleInfo.pago_por_adicional = lavador.pago_por_adicional
     } else if (tipo === 'porcentaje_lavada') {
-      const sumaPorcentajeLavada = lavadas.reduce((sum, l) => {
-        const precioTipo = Number(l.tipo_lavado?.precio || 0)
-        return sum + (precioTipo * (Number(lavador.pago_porcentaje_lavada || 0) / 100))
-      }, 0)
+      const tipoBase = tiposLavado.find(t => t.es_base)
+      const precioBase = Number(tipoBase?.precio || 0)
+      const sumaPorcentajeLavada = numLavadas * (precioBase * (Number(lavador.pago_porcentaje_lavada || 0) / 100))
       let sumaAdicionales = 0
       if (lavador.pago_adicionales_detalle) {
         lavadas.forEach(l => {
@@ -271,6 +272,8 @@ export default function PagoTrabajadores() {
       detalleInfo.porcentaje_lavada = lavador.pago_porcentaje_lavada
       detalleInfo.pago_adicional_fijo = lavador.pago_adicional_fijo
       detalleInfo.pago_adicionales_detalle = lavador.pago_adicionales_detalle
+      detalleInfo.tipo_base_nombre = tipoBase?.nombre || null
+      detalleInfo.tipo_base_precio = precioBase
     }
 
     return { total: Math.round(total), detalle: detalleInfo, adicionales_cantidad: numAdicionales, lavadas_cantidad: numLavadas }
@@ -496,9 +499,13 @@ export default function PagoTrabajadores() {
     fetchData()
   }
 
-  const handleAnular = async (pago) => {
-    const confirmado = confirm(`¿Estás seguro de anular el pago de ${pago.lavador?.nombre || 'este trabajador'}?`)
-    if (!confirmado) return
+  const requestAnularPago = (pago) => {
+    setPendingAnularPago(pago)
+  }
+
+  const executeAnularPago = async () => {
+    const pago = pendingAnularPago
+    if (!pago) return
 
     await supabase
       .from('pago_trabajadores')
@@ -519,7 +526,7 @@ export default function PagoTrabajadores() {
       .ilike('placa_o_persona', nombreLavador)
       .ilike('descripcion', `%${descripcionBuscada}%`)
 
-
+    setPendingAnularPago(null)
     fetchData()
   }
 
@@ -785,12 +792,21 @@ export default function PagoTrabajadores() {
                 <p className="pago-resumen-linea">+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_por_adicional || 0)}</p>
               </>
             )}
-            {lavador?.tipo_pago === 'porcentaje_lavada' && (
-              <>
-                <p className="pago-resumen-linea">% por tipo de servicio: {lavador.pago_porcentaje_lavada || 0}%</p>
-                <p className="pago-resumen-linea">+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_adicional_fijo || 0)}</p>
-              </>
-            )}
+            {lavador?.tipo_pago === 'porcentaje_lavada' && (() => {
+              const tipoBase = tiposLavado.find(t => t.es_base)
+              const precioBase = Number(tipoBase?.precio || 0)
+              return (
+                <>
+                  <p className="pago-resumen-linea">
+                    {formData.lavadas_cantidad} servicios x {formatMoney(precioBase)}{tipoBase ? ` (${tipoBase.nombre})` : ''} x {lavador.pago_porcentaje_lavada || 0}%
+                  </p>
+                  <p className="pago-resumen-linea">+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_adicional_fijo || 0)}</p>
+                  {!tipoBase && (
+                    <p className="pago-resumen-excluidos">Sin lavada base configurada — el cálculo usa $0</p>
+                  )}
+                </>
+              )
+            })()}
             <div className="pago-linea-total pago-resumen-subtotal">
               <span>Subtotal</span>
               <strong>{formatMoney(formData.total)}</strong>
@@ -1187,7 +1203,7 @@ export default function PagoTrabajadores() {
                     ) : (
                       <div className="acciones">
                         <button className="btn-icon" onClick={() => handleEditar(pago)} title="Editar"><Pencil size={16} /></button>
-                        <button className="btn-icon delete" onClick={() => handleAnular(pago)} title="Anular"><Trash2 size={16} /></button>
+                        <button className="btn-icon delete" onClick={() => requestAnularPago(pago)} title="Anular"><Trash2 size={16} /></button>
                       </div>
                     )}
                   </td>
@@ -1243,7 +1259,7 @@ export default function PagoTrabajadores() {
                 {!esAnulado && (
                   <div className="acciones">
                     <button className="btn-icon" onClick={() => handleEditar(pago)} title="Editar"><Pencil size={16} /></button>
-                    <button className="btn-icon delete" onClick={() => handleAnular(pago)} title="Anular"><Trash2 size={16} /></button>
+                    <button className="btn-icon delete" onClick={() => requestAnularPago(pago)} title="Anular"><Trash2 size={16} /></button>
                   </div>
                 )}
               </div>
@@ -1331,6 +1347,13 @@ export default function PagoTrabajadores() {
       )}
 
       {selectedWorker && renderWorkerDetailModal()}
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingAnularPago}
+        onClose={() => setPendingAnularPago(null)}
+        onConfirm={executeAnularPago}
+        message={`Se anulará el pago de ${pendingAnularPago?.lavador?.nombre || 'este trabajador'}. Ingresa tu contraseña para confirmar.`}
+      />
     </div>
   )
 }

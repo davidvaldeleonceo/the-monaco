@@ -1,3 +1,5 @@
+import { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Timer from './common/Timer'
 import { formatMoney } from '../utils/money'
 import { ESTADO_LABELS } from '../config/constants'
@@ -39,7 +41,15 @@ export default function ServiceCard({
   onToggleSelect,
   // Highlight
   isHighlighted = false,
+  // Cliente info
+  onPlacaClick,
+  // Plantillas
+  plantillasMensaje = [],
 }) {
+  const navigate = useNavigate()
+  const [waMenu, setWaMenu] = useState(false)
+  const [waMenuPos, setWaMenuPos] = useState({ top: 0, right: 0 })
+  const waButtonRef = useRef(null)
   const pagos = lavada.pagos || []
 
   const total = Math.round(lavada.valor || 0)
@@ -74,18 +84,8 @@ export default function ServiceCard({
         onClick={() => selectionMode && onToggleSelect ? onToggleSelect(lavada.id) : onToggleExpand()}
       >
         <div className="lavada-card-cliente">
-          {selectionMode && onToggleSelect && (
-            <label className="custom-check" onClick={(e) => e.stopPropagation()}>
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => onToggleSelect(lavada.id)}
-              />
-              <span className="checkmark"></span>
-            </label>
-          )}
           <span className="lavada-card-nombre">{lavada.cliente?.nombre || 'No encontrado'} <span className="lavada-card-fecha">{new Date(lavada.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}</span></span>
-          <span className="lavada-card-placa">{lavada.placa}</span>
+          <span className="lavada-card-placa" onClick={(e) => { e.stopPropagation(); onPlacaClick?.(lavada) }} style={{ cursor: 'pointer' }}>{lavada.placa}</span>
         </div>
         <div className="lavada-card-summary">
           <span className={`pago-badge pago-badge-${pagoStatus}`}>{pagoLabel}</span>
@@ -304,14 +304,42 @@ export default function ServiceCard({
               )}
             </div>
             <div className="lavada-card-actions">
-              <button
-                className="btn-whatsapp"
-                onClick={() => onWhatsApp(lavada)}
-                title="Enviar WhatsApp"
-                disabled={!pagosOk}
-              >
-                <MessageCircle size={18} />
-              </button>
+              <div className="wa-menu-wrapper">
+                <button
+                  ref={waButtonRef}
+                  className="btn-whatsapp"
+                  onClick={() => {
+                    if (!waMenu && waButtonRef.current) {
+                      const rect = waButtonRef.current.getBoundingClientRect()
+                      setWaMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+                    }
+                    setWaMenu(!waMenu)
+                  }}
+                  title="Enviar WhatsApp"
+                >
+                  <MessageCircle size={18} />
+                </button>
+                {waMenu && (
+                  <>
+                    <div className="wa-menu-overlay" onClick={() => setWaMenu(false)} />
+                    <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
+                      {plantillasMensaje.length > 0 ? plantillasMensaje.map(p => (
+                        <button key={p.id} onClick={() => { setWaMenu(false); onWhatsApp(lavada, { plantillaId: p.id }) }}>
+                          {p.nombre}
+                        </button>
+                      )) : (
+                        <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em' }}>No hay plantillas</span>
+                      )}
+                      <button onClick={() => { setWaMenu(false); onWhatsApp(lavada, {}) }}>
+                        Ir al contacto
+                      </button>
+                      <button onClick={() => { setWaMenu(false); navigate('/cuenta?tab=config&subtab=mensajes') }}>
+                        + Agregar plantilla
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 className="btn-eliminar-card"
                 onClick={() => onEliminar(lavada.id)}

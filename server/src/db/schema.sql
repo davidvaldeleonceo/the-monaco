@@ -217,6 +217,27 @@ CREATE TABLE IF NOT EXISTS reservas (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS plantillas_mensaje (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre TEXT NOT NULL,
+  texto TEXT NOT NULL,
+  activo BOOLEAN DEFAULT true,
+  negocio_id UUID NOT NULL REFERENCES negocios(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS mensajes_enviados (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cliente_id UUID REFERENCES clientes(id) ON DELETE SET NULL,
+  plantilla_id UUID REFERENCES plantillas_mensaje(id) ON DELETE SET NULL,
+  plantilla_nombre TEXT,
+  mensaje_texto TEXT NOT NULL,
+  enviado_por TEXT,
+  origen TEXT DEFAULT 'clientes',
+  negocio_id UUID NOT NULL REFERENCES negocios(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tabla TEXT,
@@ -270,6 +291,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_negocio ON audit_log(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_pagos_suscripcion_negocio ON pagos_suscripcion(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_pagos_suscripcion_referencia ON pagos_suscripcion(wompi_reference);
+CREATE INDEX IF NOT EXISTS idx_plantillas_mensaje_negocio ON plantillas_mensaje(negocio_id);
+CREATE INDEX IF NOT EXISTS idx_mensajes_enviados_negocio ON mensajes_enviados(negocio_id);
+CREATE INDEX IF NOT EXISTS idx_mensajes_enviados_cliente ON mensajes_enviados(cliente_id);
 
 -- Unique constraint for placa per negocio
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_placa_negocio ON clientes(placa, negocio_id);
@@ -293,6 +317,7 @@ DO $$ BEGIN
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMPTZ;
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS subscription_period TEXT;
+  ALTER TABLE tipos_lavado ADD COLUMN IF NOT EXISTS es_base BOOLEAN DEFAULT false;
 END $$;
 
 -- Mark existing negocios as already configured so they skip the wizard

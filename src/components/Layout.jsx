@@ -11,7 +11,7 @@ import {
   Droplets,
   Users,
   DollarSign,
-  FileText,
+
   CheckSquare,
   Wallet,
   CreditCard,
@@ -22,14 +22,21 @@ import {
   ChevronLeft,
   ChevronRight,
   Sun,
-  Moon
+  Moon,
 } from 'lucide-react'
 
 const PRO_ROUTES = ['/pagos', '/membresias']
 
+const truncName = (name) => {
+  if (!name) return 'monaco'
+  const words = name.trim().split(/\s+/)
+  return words.slice(0, 2).join(' ')
+}
+
 export default function Layout({ user }) {
   const navigate = useNavigate()
   const { negocioNombre, userProfile, isPro, planStatus, daysLeftInTrial } = useTenant()
+  const appTitle = truncName(negocioNombre)
   const { theme, toggleTheme } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -48,7 +55,7 @@ export default function Layout({ user }) {
     { to: '/dashboard', icon: LayoutDashboard, label: 'Análisis' },
     { to: '/clientes', icon: Users, label: 'Clientes' },
     { to: '/balance', icon: DollarSign, label: 'Balance' },
-    { to: '/reportes', icon: FileText, label: 'Reportes' },
+
     { to: '/tareas', icon: CheckSquare, label: 'Control Tareas' },
     { to: '/membresias', icon: CreditCard, label: 'Membresías' },
     { to: '/pagos', icon: Wallet, label: 'Pago Trabajadores' },
@@ -65,11 +72,11 @@ export default function Layout({ user }) {
     <div className="layout">
       {/* Mobile Header */}
       <header className="mobile-header">
-        <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)}>
-          {menuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-        <h1 className="mobile-title">monaco</h1>
         <span className={`badge ${isPro ? '' : 'badge-free'} badge-clickable`} onClick={() => navigate('/cuenta?tab=plan')}>{isPro ? 'PRO' : 'FREE'}</span>
+        <button onClick={toggleTheme} className="theme-switch" title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
+          <Sun size={14} className={`theme-switch-icon ${theme === 'light' ? 'active' : ''}`} />
+          <Moon size={14} className={`theme-switch-icon ${theme === 'dark' ? 'active' : ''}`} />
+        </button>
       </header>
 
       {/* Overlay */}
@@ -77,7 +84,7 @@ export default function Layout({ user }) {
 
       <aside className={`sidebar ${menuOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
-          {!sidebarCollapsed && <h1>monaco</h1>}
+          {!sidebarCollapsed && <h1>{appTitle}</h1>}
           {!sidebarCollapsed && <span className={`badge ${isPro ? '' : 'badge-free'} badge-clickable`} onClick={() => navigate('/cuenta?tab=plan')}>{isPro ? 'PRO' : 'FREE'}</span>}
           <button
             className="sidebar-close-btn"
