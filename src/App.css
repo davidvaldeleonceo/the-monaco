@@ -3481,6 +3481,10 @@ body {
   display: block;
 }
 
+.desktop-only {
+  display: none;
+}
+
 .clientes-cards-mobile,
 .balance-cards-mobile,
 .membresias-cards-mobile,
@@ -5867,6 +5871,11 @@ input:checked + .slider:before {
   /* Visibility */
   .mobile-only {
     display: none;
+  }
+
+  .desktop-only {
+    display: flex;
+    width: auto;
   }
 
   .clientes-cards-mobile,

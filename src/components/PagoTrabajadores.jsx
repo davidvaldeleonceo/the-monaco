@@ -1017,6 +1017,9 @@ export default function PagoTrabajadores() {
     <div className="pagos-page">
       <div className="clientes-title-row">
         <h1 className="page-title">Pago Trabajadores</h1>
+        <button className="btn-primary desktop-only" onClick={() => { resetForm(); setEditandoId(null); setModalMinimized(false); setShowModal(true) }}>
+          <Plus size={18} /> Agregar Pago
+        </button>
       </div>
 
       <div className="clientes-search-row">
