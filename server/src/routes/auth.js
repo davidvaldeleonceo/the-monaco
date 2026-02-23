@@ -4,7 +4,10 @@ import {
   findUserByEmail,
   comparePassword,
   buildSession,
+  hashPassword,
 } from '../services/authService.js'
+import pool from '../config/database.js'
+import auth from '../middleware/auth.js'
 
 const router = Router()
 
@@ -79,21 +82,14 @@ router.post('/verify-password', async (req, res, next) => {
 })
 
 // PUT /api/auth/update-email
-router.put('/update-email', async (req, res, next) => {
+router.put('/update-email', auth, async (req, res, next) => {
   try {
     const { currentPassword, newEmail } = req.body
     if (!currentPassword || !newEmail) {
       return res.status(400).json({ error: 'Current password and new email are required' })
     }
 
-    const header = req.headers.authorization
-    if (!header?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Not authenticated' })
-    }
-
-    const { verifyToken } = await import('../services/authService.js')
-    const payload = verifyToken(header.slice(7))
-    const user = await findUserByEmail(payload.email)
+    const user = await findUserByEmail(req.user.email)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
     const valid = await comparePassword(currentPassword, user.password_hash)
@@ -102,7 +98,6 @@ router.put('/update-email', async (req, res, next) => {
     const existing = await findUserByEmail(newEmail)
     if (existing) return res.status(400).json({ error: 'Ese correo ya está registrado' })
 
-    const { default: pool } = await import('../config/database.js')
     await pool.query('UPDATE users SET email = $1 WHERE id = $2', [newEmail.toLowerCase(), user.id])
 
     const session = await buildSession({ ...user, email: newEmail.toLowerCase() })
@@ -113,7 +108,7 @@ router.put('/update-email', async (req, res, next) => {
 })
 
 // PUT /api/auth/update-password
-router.put('/update-password', async (req, res, next) => {
+router.put('/update-password', auth, async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body
     if (!currentPassword || !newPassword) {
@@ -123,21 +118,13 @@ router.put('/update-password', async (req, res, next) => {
       return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' })
     }
 
-    const header = req.headers.authorization
-    if (!header?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Not authenticated' })
-    }
-
-    const { verifyToken, hashPassword } = await import('../services/authService.js')
-    const payload = verifyToken(header.slice(7))
-    const user = await findUserByEmail(payload.email)
+    const user = await findUserByEmail(req.user.email)
     if (!user) return res.status(404).json({ error: 'User not found' })
 
     const valid = await comparePassword(currentPassword, user.password_hash)
     if (!valid) return res.status(400).json({ error: 'Contraseña actual incorrecta' })
 
     const newHash = await hashPassword(newPassword)
-    const { default: pool } = await import('../config/database.js')
     await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, user.id])
 
     res.json({ data: { success: true }, error: null })

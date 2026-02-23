@@ -2,13 +2,13 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
+import { useToast } from './Toast'
 import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash, Minus, ChevronRight, Search, SlidersHorizontal } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney } from '../utils/money'
-import Select from 'react-select'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 
 registerLocale('es', es)
@@ -44,6 +44,7 @@ function generarRangoDias(desdeStr, hastaStr) {
 export default function PagoTrabajadores() {
   const { metodosPago, negocioId, tiposLavado } = useData()
   const { userEmail } = useTenant()
+  const toast = useToast()
 
   const [pagos, setPagos] = useState([])
   const [lavadores, setLavadores] = useState([])
@@ -58,6 +59,12 @@ export default function PagoTrabajadores() {
   const [descuentosFocused, setDescuentosFocused] = useState(false)
   const [valorPagadoManual, setValorPagadoManual] = useState(false)
   const [selectedWorker, setSelectedWorker] = useState(null)
+  const [trabajadorSearch, setTrabajadorSearch] = useState('')
+  const [showTrabajadorDropdown, setShowTrabajadorDropdown] = useState(false)
+  const [showNuevoTrabajador, setShowNuevoTrabajador] = useState(false)
+  const [nuevoTrabajadorNombre, setNuevoTrabajadorNombre] = useState('')
+  const [periodoTipo, setPeriodoTipo] = useState('')
+  const trabajadorWrapperRef = useRef(null)
 
   // Filtros de fecha (igual que Balance)
   const hoyInit = new Date()
@@ -84,12 +91,58 @@ export default function PagoTrabajadores() {
     valor_pagado: 0,
     adicionales_cantidad: 0,
     detalle: null,
-    metodo_pago_id: ''
+    metodo_pago_id: '',
+    abonos_detalle: []
   })
 
   useEffect(() => {
     fetchData()
   }, [filtroDesde, filtroHasta])
+
+  // Close trabajador dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (trabajadorWrapperRef.current && !trabajadorWrapperRef.current.contains(e.target)) {
+        setShowTrabajadorDropdown(false)
+        setShowNuevoTrabajador(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleSelectTrabajador = (lavador) => {
+    handleChange('lavador_id', lavador.id)
+    setTrabajadorSearch(`${lavador.nombre}`)
+    setShowTrabajadorDropdown(false)
+  }
+
+  const handleClearTrabajador = () => {
+    handleChange('lavador_id', '')
+    setTrabajadorSearch('')
+    setShowTrabajadorDropdown(false)
+  }
+
+  const handleCrearTrabajador = async () => {
+    const nombre = nuevoTrabajadorNombre.trim()
+    if (!nombre) return
+    const { data, error } = await supabase
+      .from('lavadores')
+      .insert({ nombre, negocio_id: negocioId, activo: true })
+      .select()
+      .single()
+    if (error) {
+      toast.error('Error al crear trabajador: ' + error.message)
+      return
+    }
+    setLavadores(prev => [...prev, data])
+    handleChange('lavador_id', data.id)
+    setTrabajadorSearch(data.nombre)
+    setShowNuevoTrabajador(false)
+    setNuevoTrabajadorNombre('')
+    setShowTrabajadorDropdown(false)
+    toast.success(`Trabajador "${nombre}" creado`)
+  }
 
   const fetchData = async () => {
     let query = supabase
@@ -234,7 +287,8 @@ export default function PagoTrabajadores() {
   }
 
   // Auto-calculate payment based on worker config
-  const calcularPagoAutomatico = (lavador, lavadas) => {
+  // hayDiasNuevos: true if the selected range has at least one unpaid day
+  const calcularPagoAutomatico = (lavador, lavadas, hayDiasNuevos = true) => {
     const tipo = lavador.tipo_pago
     let total = 0
     let numLavadas = lavadas.length
@@ -247,11 +301,11 @@ export default function PagoTrabajadores() {
       detalleInfo.suma_valor_lavadas = sumaValor
       detalleInfo.porcentaje = lavador.pago_porcentaje
     } else if (tipo === 'sueldo_fijo') {
-      const sueldo = Number(lavador.pago_sueldo_base || 0)
+      const sueldo = hayDiasNuevos ? Number(lavador.pago_sueldo_base || 0) : 0
       const porLavada = numLavadas * Number(lavador.pago_por_lavada || 0)
       const porAdicional = numAdicionales * Number(lavador.pago_por_adicional || 0)
       total = sueldo + porLavada + porAdicional
-      detalleInfo.sueldo_base = lavador.pago_sueldo_base
+      detalleInfo.sueldo_base = hayDiasNuevos ? lavador.pago_sueldo_base : 0
       detalleInfo.pago_por_lavada = lavador.pago_por_lavada
       detalleInfo.pago_por_adicional = lavador.pago_por_adicional
     } else if (tipo === 'porcentaje_lavada') {
@@ -293,7 +347,17 @@ export default function PagoTrabajadores() {
       const excluidas = todasLavadas.length - lavadasFiltradas.length
       setLavadasExcluidas(excluidas)
 
-      const result = calcularPagoAutomatico(lavador, lavadasFiltradas)
+      // Verificar si hay al menos un día no pagado en el rango
+      const rangoDias = generarRangoDias(formData.fecha_desde, formData.fecha_hasta)
+      const hayDiasNuevos = rangoDias.some(d =>
+        !diasYaPagados.some(yp =>
+          yp.getFullYear() === d.getFullYear() &&
+          yp.getMonth() === d.getMonth() &&
+          yp.getDate() === d.getDate()
+        )
+      )
+
+      const result = calcularPagoAutomatico(lavador, lavadasFiltradas, hayDiasNuevos)
       const totalPagar = result.total - Number(formData.descuentos)
       setFormData(prev => ({
         ...prev,
@@ -313,15 +377,63 @@ export default function PagoTrabajadores() {
     setFormData(prev => ({ ...prev, total_pagar: prev.total - Number(prev.descuentos) }))
   }, [formData.descuentos])
 
-  // Auto-sync valor_pagado with total_pagar when user hasn't manually edited it
+  // Auto-sync valor_pagado: if no abonos and user hasn't manually set, default to total_pagar
   useEffect(() => {
-    if (!valorPagadoManual) {
+    if (!valorPagadoManual && (!formData.abonos_detalle || formData.abonos_detalle.length === 0)) {
       setFormData(prev => ({ ...prev, valor_pagado: prev.total_pagar }))
     }
   }, [formData.total_pagar, valorPagadoManual])
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const aplicarPeriodoPago = async (tipo) => {
+    setPeriodoTipo(tipo)
+    if (tipo === 'fechas') return
+
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    const hoyStr = fechaLocalStr(hoy)
+
+    switch (tipo) {
+      case 'hoy':
+        handleChange('fecha_desde', hoyStr)
+        handleChange('fecha_hasta', hoyStr)
+        break
+      case 'semana': {
+        const dia = hoy.getDay()
+        const lunes = new Date(hoy)
+        lunes.setDate(hoy.getDate() - (dia === 0 ? 6 : dia - 1))
+        handleChange('fecha_desde', fechaLocalStr(lunes))
+        handleChange('fecha_hasta', hoyStr)
+        break
+      }
+      case 'mes': {
+        const primero = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+        handleChange('fecha_desde', fechaLocalStr(primero))
+        handleChange('fecha_hasta', hoyStr)
+        break
+      }
+      case 'todo': {
+        const lavadorId = formData.lavador_id
+        if (!lavadorId) break
+        const { data } = await supabase
+          .from('lavadas')
+          .select('fecha')
+          .eq('lavador_id', lavadorId)
+          .order('fecha', { ascending: true })
+          .limit(1)
+        const primeraFecha = data?.[0]?.fecha?.split('T')[0]
+        if (primeraFecha) {
+          handleChange('fecha_desde', primeraFecha)
+          handleChange('fecha_hasta', hoyStr)
+        }
+        break
+      }
+      default:
+        break
+    }
   }
 
   const resetForm = () => {
@@ -338,11 +450,16 @@ export default function PagoTrabajadores() {
       valor_pagado: 0,
       adicionales_cantidad: 0,
       detalle: null,
-      metodo_pago_id: ''
+      metodo_pago_id: '',
+      abonos_detalle: []
     })
     setLavadasPeriodo([])
     setLavadasExcluidas(0)
     setValorPagadoManual(false)
+    setPeriodoTipo('')
+    setTrabajadorSearch('')
+    setShowNuevoTrabajador(false)
+    setNuevoTrabajadorNombre('')
   }
 
   // Abrir modal en modo edición
@@ -350,6 +467,19 @@ export default function PagoTrabajadores() {
     setEditandoId(pago.id)
     const valorPagado = pago.valor_pagado != null ? Number(pago.valor_pagado) : Number(pago.total_pagar || 0)
     const totalPagar = Number(pago.total_pagar || 0)
+
+    // Backward compat: si no tiene abonos_detalle pero tiene valor_pagado, convertir
+    let abonos = pago.abonos_detalle || []
+    if ((!abonos || abonos.length === 0) && valorPagado > 0) {
+      abonos = [{
+        monto: valorPagado,
+        metodo_pago_id: pago.metodo_pago_id || '',
+        metodo_pago_nombre: metodosPago.find(m => m.id === pago.metodo_pago_id)?.nombre || '',
+        fecha: pago.fecha?.split('T')[0] || '',
+        hora: ''
+      }]
+    }
+
     setFormData({
       lavador_id: pago.lavador_id || '',
       fecha: pago.fecha?.split('T')[0] || new Date().toISOString().split('T')[0],
@@ -366,9 +496,37 @@ export default function PagoTrabajadores() {
       valor_pagado: valorPagado,
       adicionales_cantidad: pago.adicionales_cantidad || 0,
       detalle: pago.detalle || null,
-      metodo_pago_id: pago.metodo_pago_id || ''
+      metodo_pago_id: pago.metodo_pago_id || '',
+      abonos_detalle: abonos
     })
-    setValorPagadoManual(valorPagado !== totalPagar)
+    setValorPagadoManual(true)
+    setTrabajadorSearch(pago.lavador?.nombre || '')
+
+    // Detect matching pill
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    const hoyStr = fechaLocalStr(hoy)
+    const desde = pago.fecha_desde?.split('T')[0] || ''
+    const hasta = pago.fecha_hasta?.split('T')[0] || ''
+
+    const dia = hoy.getDay()
+    const lunes = new Date(hoy)
+    lunes.setDate(hoy.getDate() - (dia === 0 ? 6 : dia - 1))
+    const lunesStr = fechaLocalStr(lunes)
+    const primeroMes = fechaLocalStr(new Date(hoy.getFullYear(), hoy.getMonth(), 1))
+
+    if (desde === hoyStr && hasta === hoyStr) {
+      setPeriodoTipo('hoy')
+    } else if (desde === lunesStr && hasta === hoyStr) {
+      setPeriodoTipo('semana')
+    } else if (desde === primeroMes && hasta === hoyStr) {
+      setPeriodoTipo('mes')
+    } else if (desde && hasta) {
+      setPeriodoTipo('fechas')
+    } else {
+      setPeriodoTipo('')
+    }
+
     setModalMinimized(false)
     setShowModal(true)
   }
@@ -377,17 +535,19 @@ export default function PagoTrabajadores() {
     e.preventDefault()
 
     if (!formData.lavador_id) {
-      alert('Debes seleccionar un trabajador.')
+      toast.error('Debes seleccionar un trabajador.')
       return
     }
 
-    if (!formData.metodo_pago_id) {
-      alert('Debes seleccionar un método de pago.')
+    const abonosValidos = (formData.abonos_detalle || []).filter(a => a.monto > 0)
+    if (abonosValidos.length === 0) {
+      toast.error('Debes agregar al menos un abono con monto mayor a cero.')
       return
     }
 
-    if (formData.valor_pagado <= 0) {
-      alert('El valor pagado debe ser mayor a cero.')
+    const abonoSinMetodo = abonosValidos.find(a => !a.metodo_pago_id)
+    if (abonoSinMetodo) {
+      toast.error('Cada abono debe tener un método de pago.')
       return
     }
 
@@ -396,12 +556,47 @@ export default function PagoTrabajadores() {
       ? `${formData.fecha_desde} a ${formData.fecha_hasta}`
       : formData.fecha
 
+    // Backward compat: metodo_pago_id = primer abono
+    const metodoPagoPrincipal = abonosValidos[0]?.metodo_pago_id || formData.metodo_pago_id
+
+    // Build transaction rows — one per abono
+    const transacciones = abonosValidos.map(a => ({
+      tipo: 'EGRESO',
+      categoria: 'PAGO TRABAJADOR',
+      valor: a.monto,
+      metodo_pago_id: a.metodo_pago_id,
+      placa_o_persona: lavador?.nombre || '',
+      descripcion: `Pago trabajador (abono) - ${periodo}`,
+      fecha: formData.fecha + 'T12:00:00-05:00',
+      negocio_id: negocioId
+    }))
+
     if (editandoId) {
       const pagoAnterior = pagos.find(p => p.id === editandoId)
       const periodoAnterior = pagoAnterior?.fecha_desde && pagoAnterior?.fecha_hasta
         ? `${pagoAnterior.fecha_desde} a ${pagoAnterior.fecha_hasta}`
         : pagoAnterior?.fecha?.split('T')[0]
       const nombreAnterior = pagoAnterior?.lavador?.nombre || ''
+
+      // Validar que no se cruce con otro pago existente (excluyendo el que se edita)
+      if (formData.fecha_desde && formData.fecha_hasta) {
+        const { data: existentes } = await supabase
+          .from('pago_trabajadores')
+          .select('id, fecha_desde, fecha_hasta')
+          .eq('lavador_id', formData.lavador_id)
+          .neq('id', editandoId)
+          .or(`anulado.is.null,anulado.eq.false`)
+
+        const duplicado = (existentes || []).some(p => {
+          if (!p.fecha_desde || !p.fecha_hasta) return false
+          return p.fecha_desde <= formData.fecha_hasta && p.fecha_hasta >= formData.fecha_desde
+        })
+
+        if (duplicado) {
+          toast.error('Ya existe un pago para este trabajador en ese período. No se puede pagar dos veces el mismo rango.')
+          return
+        }
+      }
 
       const { error: pagoError } = await supabase
         .from('pago_trabajadores')
@@ -418,33 +613,34 @@ export default function PagoTrabajadores() {
           valor_pagado: formData.valor_pagado,
           adicionales_cantidad: formData.adicionales_cantidad,
           detalle: formData.detalle,
-          metodo_pago_id: formData.metodo_pago_id
+          metodo_pago_id: metodoPagoPrincipal,
+          abonos_detalle: formData.abonos_detalle
         })
         .eq('id', editandoId)
 
       if (pagoError) {
-        alert('Error al actualizar el pago: ' + pagoError.message)
+        toast.error('Error al actualizar el pago: ' + pagoError.message)
         return
       }
 
+      // Delete old transactions (match both old and new description format)
       const descripcionAnterior = `Pago trabajador - ${periodoAnterior}`
+      const descripcionAbonoAnterior = `Pago trabajador (abono) - ${periodoAnterior}`
       await supabase
         .from('transacciones')
         .delete()
         .eq('categoria', 'PAGO TRABAJADOR')
         .ilike('placa_o_persona', nombreAnterior)
         .ilike('descripcion', `%${descripcionAnterior}%`)
+      await supabase
+        .from('transacciones')
+        .delete()
+        .eq('categoria', 'PAGO TRABAJADOR')
+        .ilike('placa_o_persona', nombreAnterior)
+        .ilike('descripcion', `%${descripcionAbonoAnterior}%`)
 
-      await supabase.from('transacciones').insert([{
-        tipo: 'EGRESO',
-        categoria: 'PAGO TRABAJADOR',
-        valor: formData.valor_pagado,
-        metodo_pago_id: formData.metodo_pago_id,
-        placa_o_persona: lavador?.nombre || '',
-        descripcion: `Pago trabajador - ${periodo}`,
-        fecha: formData.fecha + 'T12:00:00-05:00',
-        negocio_id: negocioId
-      }])
+      // Insert new transactions (one per abono)
+      await supabase.from('transacciones').insert(transacciones)
 
     } else {
       if (formData.fecha_desde && formData.fecha_hasta) {
@@ -460,37 +656,28 @@ export default function PagoTrabajadores() {
         })
 
         if (duplicado) {
-          const continuar = confirm('Ya existe un pago para este trabajador con un período que se cruza. ¿Deseas continuar de todas formas?')
-          if (!continuar) return
+          toast.error('Ya existe un pago para este trabajador en ese período. No se puede pagar dos veces el mismo rango.')
+          return
         }
       }
 
-      const { descuentos_detalle, ...formDataRest } = formData
+      const { descuentos_detalle, abonos_detalle, ...formDataRest } = formData
       const { error: pagoError } = await supabase.from('pago_trabajadores').insert([{
         ...formDataRest,
         descuentos_detalle: descuentos_detalle || [],
-        metodo_pago_id: formData.metodo_pago_id,
+        abonos_detalle: abonos_detalle || [],
+        metodo_pago_id: metodoPagoPrincipal,
         negocio_id: negocioId
       }])
 
       if (pagoError) {
-        alert('Error al guardar el pago: ' + pagoError.message)
+        toast.error('Error al guardar el pago: ' + pagoError.message)
         return
       }
 
-      await supabase.from('transacciones').insert([{
-        tipo: 'EGRESO',
-        categoria: 'PAGO TRABAJADOR',
-        valor: formData.valor_pagado,
-        metodo_pago_id: formData.metodo_pago_id,
-        placa_o_persona: lavador?.nombre || '',
-        descripcion: `Pago trabajador - ${periodo}`,
-        fecha: formData.fecha + 'T12:00:00-05:00',
-        negocio_id: negocioId
-      }])
+      // Insert transactions (one per abono)
+      await supabase.from('transacciones').insert(transacciones)
     }
-
-    const lavadorNombre = lavador?.nombre || 'Trabajador'
 
     setShowModal(false)
     setModalMinimized(false)
@@ -517,14 +704,24 @@ export default function PagoTrabajadores() {
       : pago.fecha?.split('T')[0]
 
     const nombreLavador = pago.lavador?.nombre || ''
-    const descripcionBuscada = `Pago trabajador - ${periodo}`
 
+    // Delete old format transactions
+    const descripcionBuscada = `Pago trabajador - ${periodo}`
     await supabase
       .from('transacciones')
       .delete()
       .eq('categoria', 'PAGO TRABAJADOR')
       .ilike('placa_o_persona', nombreLavador)
       .ilike('descripcion', `%${descripcionBuscada}%`)
+
+    // Delete new abono format transactions
+    const descripcionAbono = `Pago trabajador (abono) - ${periodo}`
+    await supabase
+      .from('transacciones')
+      .delete()
+      .eq('categoria', 'PAGO TRABAJADOR')
+      .ilike('placa_o_persona', nombreLavador)
+      .ilike('descripcion', `%${descripcionAbono}%`)
 
     setPendingAnularPago(null)
     fetchData()
@@ -663,11 +860,42 @@ export default function PagoTrabajadores() {
     setFormData(prev => ({ ...prev, descuentos_detalle: nuevos, descuentos: suma }))
   }
 
-  const handleValorPagadoChange = (e) => {
-    const raw = e.target.value.replace(/[^\d]/g, '')
-    const valor = raw === '' ? 0 : Number(raw)
-    setFormData(prev => ({ ...prev, valor_pagado: valor }))
-    setValorPagadoManual(true)
+  const handleAddAbono = () => {
+    const now = new Date()
+    const fecha = fechaLocalStr(now)
+    const hora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const nuevos = [...(formData.abonos_detalle || []), { monto: 0, metodo_pago_id: '', metodo_pago_nombre: '', fecha, hora }]
+    setFormData(prev => ({ ...prev, abonos_detalle: nuevos }))
+  }
+
+  const handleRemoveAbono = (idx) => {
+    const nuevos = (formData.abonos_detalle || []).filter((_, i) => i !== idx)
+    const sumaAbonos = nuevos.reduce((s, a) => s + Number(a.monto || 0), 0)
+    setFormData(prev => ({
+      ...prev,
+      abonos_detalle: nuevos,
+      valor_pagado: sumaAbonos,
+      metodo_pago_id: nuevos[0]?.metodo_pago_id || ''
+    }))
+  }
+
+  const handleAbonoChange = (idx, field, value) => {
+    const nuevos = (formData.abonos_detalle || []).map((a, i) => {
+      if (i !== idx) return a
+      const updated = { ...a, [field]: value }
+      // If metodo_pago_id changed, also update nombre
+      if (field === 'metodo_pago_id') {
+        updated.metodo_pago_nombre = metodosPago.find(m => m.id === value)?.nombre || ''
+      }
+      return updated
+    })
+    const sumaAbonos = nuevos.reduce((s, a) => s + Number(a.monto || 0), 0)
+    setFormData(prev => ({
+      ...prev,
+      abonos_detalle: nuevos,
+      valor_pagado: sumaAbonos,
+      metodo_pago_id: nuevos[0]?.metodo_pago_id || ''
+    }))
   }
 
   const saldo = formData.total_pagar - formData.valor_pagado
@@ -677,7 +905,10 @@ export default function PagoTrabajadores() {
     return (
       <div className="descuentos-section">
         <div className="descuentos-header">
-          <span>Descuentos</span>
+          <div>
+            <span>Descuentos</span>
+            <span className="section-subtitle">Deducciones antes del pago (multas, daños)</span>
+          </div>
           <button type="button" className="btn-add-descuento" onClick={handleAddDescuento}>
             <Plus size={14} /> Descuento
           </button>
@@ -688,7 +919,7 @@ export default function PagoTrabajadores() {
               type="text"
               value={d.concepto}
               onChange={(e) => handleDescuentoChange(idx, 'concepto', e.target.value)}
-              placeholder="Concepto"
+              placeholder="Ej: Adelanto, multa..."
               className="descuento-concepto"
             />
             <input
@@ -708,7 +939,7 @@ export default function PagoTrabajadores() {
           </div>
         ))}
         {detalle.length === 0 && (
-          <span className="descuentos-empty">Sin descuentos</span>
+          <span className="descuentos-empty">Sin deducciones</span>
         )}
         <div className="pago-linea-total descuentos-total-line">
           <span>Total descuentos</span>
@@ -718,57 +949,104 @@ export default function PagoTrabajadores() {
     )
   }
 
-  const renderMetodoPagoSelect = () => (
-    <div className="form-group">
-      <label>Método de Pago</label>
-      <select
-        value={formData.metodo_pago_id}
-        onChange={(e) => handleChange('metodo_pago_id', e.target.value)}
-        required
-      >
-        <option value="">Seleccionar</option>
-        {metodosPago.map(m => (
-          <option key={m.id} value={m.id}>{m.nombre}</option>
+  const renderAbonosSection = () => {
+    const abonos = formData.abonos_detalle || []
+    const totalAbonado = abonos.reduce((s, a) => s + Number(a.monto || 0), 0)
+    return (
+      <div className="abonos-section">
+        <div className="abonos-header">
+          <div>
+            <span>Abonos</span>
+            <span className="section-subtitle">Dinero entregado al trabajador</span>
+          </div>
+          <button type="button" className="btn-add-abono" onClick={handleAddAbono}>
+            <Plus size={14} /> Abono
+          </button>
+        </div>
+        {abonos.map((a, idx) => (
+          <div key={idx} className="abono-row">
+            <select
+              className="abono-metodo-select"
+              value={a.metodo_pago_id}
+              onChange={(e) => handleAbonoChange(idx, 'metodo_pago_id', e.target.value)}
+            >
+              <option value="">Método</option>
+              {metodosPago.map(m => (
+                <option key={m.id} value={m.id}>{m.nombre}</option>
+              ))}
+            </select>
+            <input
+              type="text"
+              inputMode="numeric"
+              className="abono-valor"
+              value={a.monto === 0 ? '' : Number(a.monto).toLocaleString('es-CO')}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^\d]/g, '')
+                handleAbonoChange(idx, 'monto', raw === '' ? 0 : Number(raw))
+              }}
+              placeholder="$0"
+            />
+            <button type="button" className="abono-remove" onClick={() => handleRemoveAbono(idx)}>
+              <X size={14} />
+            </button>
+          </div>
         ))}
-      </select>
-    </div>
-  )
+        {abonos.length === 0 && (
+          <span className="abonos-empty">Agrega un abono para registrar cuánto se le pagó</span>
+        )}
+        <div className="pago-linea-total abonos-total-line">
+          <span>Total abonado</span>
+          <strong className="abonos-total-valor">{formatMoney(totalAbonado)}</strong>
+        </div>
+      </div>
+    )
+  }
 
   const renderAutoForm = () => {
     const lavador = getSelectedLavador()
     return (
       <>
-        <div className="pago-form-fechas">
-          <div className="form-group">
-            <label>Fecha Desde</label>
+        <div className="pago-periodo-section pago-form-fullwidth">
+          <div className="pago-periodo-label">Período a pagar</div>
+          <div className="cfd-rapido">
+            {[
+              { key: 'hoy', label: 'Hoy' },
+              { key: 'semana', label: 'Semana' },
+              { key: 'mes', label: 'Mes' },
+              { key: 'todo', label: 'Todo' },
+              { key: 'fechas', label: 'Fechas' }
+            ].map(p => (
+              <button
+                key={p.key}
+                type="button"
+                className={`filter-btn${periodoTipo === p.key ? ' active' : ''}`}
+                disabled={!formData.lavador_id}
+                onClick={() => aplicarPeriodoPago(p.key)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {periodoTipo === 'fechas' && (
             <DatePicker
-              selected={parseDateStr(formData.fecha_desde)}
-              onChange={(date) => handleChange('fecha_desde', date ? fechaLocalStr(date) : '')}
-              dateFormat="dd/MM/yyyy"
+              selectsRange
+              startDate={parseDateStr(formData.fecha_desde)}
+              endDate={parseDateStr(formData.fecha_hasta)}
+              onChange={([start, end]) => {
+                handleChange('fecha_desde', start ? fechaLocalStr(start) : '')
+                handleChange('fecha_hasta', end ? fechaLocalStr(end) : '')
+              }}
+              inline
               locale="es"
-              placeholderText="Seleccionar"
-              isClearable
-              todayButton="Hoy"
               highlightDates={highlightPagados}
             />
-          </div>
-          <div className="form-group">
-            <label>Fecha Hasta</label>
-            <DatePicker
-              selected={parseDateStr(formData.fecha_hasta)}
-              onChange={(date) => handleChange('fecha_hasta', date ? fechaLocalStr(date) : '')}
-              dateFormat="dd/MM/yyyy"
-              locale="es"
-              placeholderText="Seleccionar"
-              isClearable
-              todayButton="Hoy"
-              minDate={parseDateStr(formData.fecha_desde)}
-              highlightDates={highlightPagados}
-            />
-          </div>
+          )}
+          {formData.fecha_desde && formData.fecha_hasta && (
+            <div className="pago-periodo-resumen">
+              {formatFechaLocal(formData.fecha_desde)} → {formatFechaLocal(formData.fecha_hasta)}
+            </div>
+          )}
         </div>
-
-        {renderMetodoPagoSelect()}
 
         {calculando && <p className="pago-calculando">Calculando...</p>}
 
@@ -820,20 +1098,10 @@ export default function PagoTrabajadores() {
             <span>Total a Pagar</span>
             <strong>{formatMoney(formData.total_pagar)}</strong>
           </div>
-          <div className="pago-linea-total">
-            <span>Valor Pagado</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              className="pago-valor-pagado-input"
-              value={formData.valor_pagado === 0 ? '' : Number(formData.valor_pagado).toLocaleString('es-CO')}
-              onChange={handleValorPagadoChange}
-              placeholder={formatMoney(formData.total_pagar)}
-            />
-          </div>
-          {formData.valor_pagado !== formData.total_pagar && (
+          {renderAbonosSection()}
+          {formData.valor_pagado !== formData.total_pagar && formData.valor_pagado > 0 && (
             <div className="pago-linea-total pago-linea-saldo">
-              <span>{saldo > 0 ? 'Falta por pagar' : 'Pagado de más'}</span>
+              <span>{saldo > 0 ? 'Pendiente' : 'Pagado de más'}</span>
               <strong className={saldo > 0 ? 'saldo-pendiente' : 'saldo-favor'}>
                 {formatMoney(Math.abs(saldo))}
               </strong>
@@ -931,6 +1199,7 @@ export default function PagoTrabajadores() {
                           <strong>{formatMoney(valorPagado)}</strong>
                           {valorPagado < totalPagar && <span className="badge-parcial">Parcial</span>}
                           {valorPagado > totalPagar && <span className="badge-excede">Excede</span>}
+                          {(p.abonos_detalle || []).length > 1 && <span className="badge-abonos">{(p.abonos_detalle || []).length} abonos</span>}
                         </td>
                         <td className={p.saldo_acumulado >= 0 ? 'saldo-favor' : 'saldo-pendiente'}>
                           <strong>{p.saldo_acumulado >= 0 ? '+' : ''}{formatMoney(p.saldo_acumulado)}</strong>
@@ -967,6 +1236,7 @@ export default function PagoTrabajadores() {
                       </span>
                       {valorPagado < totalPagar && <span className="badge-parcial">Parcial</span>}
                       {valorPagado > totalPagar && <span className="badge-excede">Excede</span>}
+                      {(p.abonos_detalle || []).length > 1 && <span className="badge-abonos">{(p.abonos_detalle || []).length} abonos</span>}
                     </div>
                   </div>
                   <div className="pago-card-bottom">
@@ -1294,30 +1564,102 @@ export default function PagoTrabajadores() {
             </div>
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
-                <div className="form-group">
+                <div className="form-group cliente-search-group">
                   <label>Trabajador</label>
-                  <Select
-                    value={lavadoresParaSelector.filter(l => l.id == formData.lavador_id).map(l => ({ value: l.id, label: l.nombre, tipo_pago: l.tipo_pago }))[0] || null}
-                    onChange={(opt) => handleChange('lavador_id', opt?.value || '')}
-                    options={lavadoresParaSelector.map(l => ({ value: l.id, label: l.nombre, tipo_pago: l.tipo_pago }))}
-                    placeholder="Buscar trabajador..."
-                    isClearable
-                    noOptionsMessage={() => 'Sin resultados'}
-                    formatOptionLabel={(opt) => (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>{opt.label}</span>
-                        {opt.tipo_pago && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{tipoPagoLabel(opt.tipo_pago)}</span>}
+                  <div className="cliente-search-wrapper" ref={trabajadorWrapperRef}>
+                    <input
+                      type="text"
+                      value={trabajadorSearch}
+                      onChange={(e) => {
+                        setTrabajadorSearch(e.target.value)
+                        setShowTrabajadorDropdown(true)
+                        if (!e.target.value) {
+                          handleChange('lavador_id', '')
+                        }
+                      }}
+                      onFocus={() => { if (!formData.lavador_id) setShowTrabajadorDropdown(true) }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setShowTrabajadorDropdown(false)
+                          e.target.blur()
+                        }
+                      }}
+                      placeholder="Buscar trabajador..."
+                      autoComplete="off"
+                    />
+                    {formData.lavador_id && (
+                      <button type="button" className="cliente-search-clear" onClick={handleClearTrabajador}>
+                        <X size={14} />
+                      </button>
+                    )}
+                    {showTrabajadorDropdown && !formData.lavador_id && !showNuevoTrabajador && (
+                      <div className="cliente-search-dropdown">
+                        {(() => {
+                          const q = trabajadorSearch.toLowerCase().trim()
+                          const filtered = lavadoresParaSelector.filter(l =>
+                            !q || l.nombre?.toLowerCase().includes(q)
+                          )
+                          return (
+                            <>
+                              {filtered.slice(0, 8).map(l => (
+                                <div
+                                  key={l.id}
+                                  className="cliente-search-option"
+                                  onMouseDown={() => handleSelectTrabajador(l)}
+                                >
+                                  <span className="cliente-search-nombre">{l.nombre}</span>
+                                  {l.tipo_pago && <span className="cliente-search-tag">{tipoPagoLabel(l.tipo_pago)}</span>}
+                                </div>
+                              ))}
+                              {filtered.length === 0 && (
+                                <div className="cliente-search-empty">No se encontraron trabajadores</div>
+                              )}
+                              <div className="cliente-search-add">
+                                <button
+                                  type="button"
+                                  className="btn-nuevo-cliente-inline"
+                                  onMouseDown={() => {
+                                    setNuevoTrabajadorNombre(trabajadorSearch.trim())
+                                    setShowNuevoTrabajador(true)
+                                    setShowTrabajadorDropdown(false)
+                                  }}
+                                >
+                                  <Plus size={14} /> Agregar trabajador
+                                </button>
+                              </div>
+                            </>
+                          )
+                        })()}
                       </div>
                     )}
-                    styles={{
-                      control: (base) => ({ ...base, background: 'var(--bg-hover)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', minHeight: '42px' }),
-                      menu: (base) => ({ ...base, background: 'var(--bg-card)', border: '1px solid var(--border-color)', zIndex: 10 }),
-                      option: (base, state) => ({ ...base, background: state.isFocused ? 'var(--bg-hover)' : 'transparent', color: 'var(--text-primary)' }),
-                      singleValue: (base) => ({ ...base, color: 'var(--text-primary)' }),
-                      input: (base) => ({ ...base, color: 'var(--text-primary)' }),
-                      placeholder: (base) => ({ ...base, color: 'var(--text-secondary)' }),
-                    }}
-                  />
+                    {showNuevoTrabajador && (
+                      <div className="nuevo-cliente-inline">
+                        <div className="nuevo-cliente-inline-header">
+                          <span>Nuevo trabajador</span>
+                          <button type="button" onClick={() => setShowNuevoTrabajador(false)}><X size={14} /></button>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Nombre"
+                          value={nuevoTrabajadorNombre}
+                          onChange={(e) => setNuevoTrabajadorNombre(e.target.value)}
+                          autoFocus
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCrearTrabajador() } }}
+                        />
+                        {nuevoTrabajadorNombre.trim() && lavadores.some(l => l.nombre?.trim().toLowerCase() === nuevoTrabajadorNombre.trim().toLowerCase()) && (
+                          <span className="cliente-ya-existe-warning">Trabajador ya existe</span>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-nuevo-cliente-inline"
+                          onClick={handleCrearTrabajador}
+                          disabled={!nuevoTrabajadorNombre.trim()}
+                        >
+                          <Plus size={14} /> Crear trabajador
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {renderAutoForm()}

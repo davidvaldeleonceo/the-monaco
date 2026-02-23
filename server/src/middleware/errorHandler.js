@@ -37,6 +37,21 @@ export default function errorHandler(err, req, res, _next) {
     })
   }
 
+  // PostgreSQL undefined column (e.g. missing migration)
+  if (err.code === '42703') {
+    return res.status(400).json({
+      error: 'Undefined column',
+      message: err.message,
+    })
+  }
+
+  if (err.message?.startsWith('Invalid column name')) {
+    return res.status(400).json({
+      error: 'Invalid query parameter',
+      message: 'Invalid field name in select',
+    })
+  }
+
   res.status(500).json({
     error: 'Internal server error',
     message: err.message,

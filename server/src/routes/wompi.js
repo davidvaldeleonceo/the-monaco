@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import pool from '../config/database.js'
 import env from '../config/env.js'
 import auth from '../middleware/auth.js'
+import logger from '../config/logger.js'
 
 const router = Router()
 
@@ -32,117 +33,132 @@ router.get('/config', auth, async (req, res) => {
 
 // POST /api/wompi/create-payment-reference — generate reference + integrity hash
 router.post('/create-payment-reference', auth, async (req, res) => {
-  const { period } = req.body
-  if (!period || !PLANS[period]) {
-    return res.status(400).json({ error: 'Invalid period. Use "monthly" or "yearly".' })
+  try {
+    const { period } = req.body
+    if (!period || !PLANS[period]) {
+      return res.status(400).json({ error: 'Invalid period. Use "monthly" or "yearly".' })
+    }
+
+    const negocioId = req.user?.negocio_id
+    if (!negocioId) return res.status(401).json({ error: 'No negocio' })
+
+    const plan = PLANS[period]
+    const reference = `MONACO_${negocioId}_${period}_${Date.now()}`
+    const currency = 'COP'
+
+    // Integrity hash: SHA256(reference + amount + currency + integrity_secret)
+    const integrityString = `${reference}${plan.amount}${currency}${env.wompiIntegritySecret}`
+    const integrityHash = crypto.createHash('sha256').update(integrityString).digest('hex')
+
+    res.json({
+      reference,
+      amount: plan.amount,
+      currency,
+      integrityHash,
+      publicKey: env.wompiPublicKey,
+    })
+  } catch (err) {
+    logger.error('Create payment reference error:', err)
+    res.status(500).json({ error: 'Error al crear referencia de pago' })
   }
-
-  const negocioId = req.user?.negocio_id
-  if (!negocioId) return res.status(401).json({ error: 'No negocio' })
-
-  const plan = PLANS[period]
-  const reference = `MONACO_${negocioId}_${period}_${Date.now()}`
-  const currency = 'COP'
-
-  // Integrity hash: SHA256(reference + amount + currency + integrity_secret)
-  const integrityString = `${reference}${plan.amount}${currency}${env.wompiIntegritySecret}`
-  const integrityHash = crypto.createHash('sha256').update(integrityString).digest('hex')
-
-  res.json({
-    reference,
-    amount: plan.amount,
-    currency,
-    integrityHash,
-    publicKey: env.wompiPublicKey,
-  })
 })
 
 // GET /api/wompi/status — computed plan status
 router.get('/status', auth, async (req, res) => {
-  const negocioId = req.user?.negocio_id
-  if (!negocioId) return res.status(401).json({ error: 'No negocio' })
+  try {
+    const negocioId = req.user?.negocio_id
+    if (!negocioId) return res.status(401).json({ error: 'No negocio' })
 
-  const { rows } = await pool.query(
-    'SELECT plan, trial_ends_at, subscription_expires_at, subscription_period FROM negocios WHERE id = $1',
-    [negocioId]
-  )
-  const negocio = rows[0]
-  if (!negocio) return res.status(404).json({ error: 'Negocio not found' })
+    const { rows } = await pool.query(
+      'SELECT plan, trial_ends_at, subscription_expires_at, subscription_period FROM negocios WHERE id = $1',
+      [negocioId]
+    )
+    const negocio = rows[0]
+    if (!negocio) return res.status(404).json({ error: 'Negocio not found' })
 
-  const now = new Date()
-  let status = 'free'
-  let isPro = false
-  let daysLeftInTrial = null
+    const now = new Date()
+    let status = 'free'
+    let isPro = false
+    let daysLeftInTrial = null
 
-  if (negocio.subscription_expires_at && new Date(negocio.subscription_expires_at) > now) {
-    isPro = true
-    status = 'active'
-  } else if (negocio.trial_ends_at && new Date(negocio.trial_ends_at) > now) {
-    isPro = true
-    status = 'trial'
-    daysLeftInTrial = Math.ceil((new Date(negocio.trial_ends_at) - now) / 86400000)
-  }
-
-  const cancelled = negocio.plan === 'cancelled'
-
-  const result = {
-    plan: isPro ? 'pro' : 'free',
-    status: cancelled && isPro ? 'cancelled' : status,
-    cancelled,
-    trialEndsAt: negocio.trial_ends_at,
-    subscriptionExpiresAt: negocio.subscription_expires_at,
-    subscriptionPeriod: negocio.subscription_period,
-    daysLeftInTrial,
-  }
-
-  // Include limits if free
-  if (!isPro) {
-    const [lavadaCount, clienteCount] = await Promise.all([
-      pool.query(
-        `SELECT COUNT(*) FROM lavadas WHERE negocio_id = $1 AND fecha >= date_trunc('month', now())`,
-        [negocioId]
-      ),
-      pool.query('SELECT COUNT(*) FROM clientes WHERE negocio_id = $1', [negocioId]),
-    ])
-    result.limits = {
-      lavadas: { used: parseInt(lavadaCount.rows[0].count), max: 50 },
-      clientes: { used: parseInt(clienteCount.rows[0].count), max: 30 },
+    if (negocio.subscription_expires_at && new Date(negocio.subscription_expires_at) > now) {
+      isPro = true
+      status = 'active'
+    } else if (negocio.trial_ends_at && new Date(negocio.trial_ends_at) > now) {
+      isPro = true
+      status = 'trial'
+      daysLeftInTrial = Math.ceil((new Date(negocio.trial_ends_at) - now) / 86400000)
     }
-  }
 
-  res.json(result)
+    const cancelled = negocio.plan === 'cancelled'
+
+    const result = {
+      plan: isPro ? 'pro' : 'free',
+      status: cancelled && isPro ? 'cancelled' : status,
+      cancelled,
+      trialEndsAt: negocio.trial_ends_at,
+      subscriptionExpiresAt: negocio.subscription_expires_at,
+      subscriptionPeriod: negocio.subscription_period,
+      daysLeftInTrial,
+    }
+
+    // Include limits if free
+    if (!isPro) {
+      const [lavadaCount, clienteCount] = await Promise.all([
+        pool.query(
+          `SELECT COUNT(*) FROM lavadas WHERE negocio_id = $1 AND fecha >= date_trunc('month', now())`,
+          [negocioId]
+        ),
+        pool.query('SELECT COUNT(*) FROM clientes WHERE negocio_id = $1', [negocioId]),
+      ])
+      result.limits = {
+        lavadas: { used: parseInt(lavadaCount.rows[0].count), max: 50 },
+        clientes: { used: parseInt(clienteCount.rows[0].count), max: 30 },
+      }
+    }
+
+    res.json(result)
+  } catch (err) {
+    logger.error('Wompi status error:', err)
+    res.status(500).json({ error: 'Error al obtener estado de suscripción' })
+  }
 })
 
 // POST /api/wompi/start-trial — start/restart 14-day trial
 router.post('/start-trial', auth, async (req, res) => {
-  const negocioId = req.user?.negocio_id
-  if (!negocioId) return res.status(401).json({ error: 'No negocio' })
+  try {
+    const negocioId = req.user?.negocio_id
+    if (!negocioId) return res.status(401).json({ error: 'No negocio' })
 
-  const { rows } = await pool.query(
-    'SELECT trial_ends_at, subscription_expires_at FROM negocios WHERE id = $1',
-    [negocioId]
-  )
-  const negocio = rows[0]
-  if (!negocio) return res.status(404).json({ error: 'Negocio not found' })
+    const { rows } = await pool.query(
+      'SELECT trial_ends_at, subscription_expires_at FROM negocios WHERE id = $1',
+      [negocioId]
+    )
+    const negocio = rows[0]
+    if (!negocio) return res.status(404).json({ error: 'Negocio not found' })
 
-  const now = new Date()
+    const now = new Date()
 
-  // Can't start trial if subscription is active
-  if (negocio.subscription_expires_at && new Date(negocio.subscription_expires_at) > now) {
-    return res.status(400).json({ error: 'Already has active subscription' })
+    // Can't start trial if subscription is active
+    if (negocio.subscription_expires_at && new Date(negocio.subscription_expires_at) > now) {
+      return res.status(400).json({ error: 'Already has active subscription' })
+    }
+
+    // Can't start trial if trial is still active
+    if (negocio.trial_ends_at && new Date(negocio.trial_ends_at) > now) {
+      return res.status(400).json({ error: 'Trial is still active' })
+    }
+
+    await pool.query(
+      "UPDATE negocios SET plan = 'pro', trial_ends_at = now() + INTERVAL '14 days' WHERE id = $1",
+      [negocioId]
+    )
+
+    res.json({ success: true, trialEndsAt: new Date(Date.now() + 14 * 86400000) })
+  } catch (err) {
+    logger.error('Start trial error:', err)
+    res.status(500).json({ error: 'Error al iniciar período de prueba' })
   }
-
-  // Can't start trial if trial is still active
-  if (negocio.trial_ends_at && new Date(negocio.trial_ends_at) > now) {
-    return res.status(400).json({ error: 'Trial is still active' })
-  }
-
-  await pool.query(
-    "UPDATE negocios SET plan = 'pro', trial_ends_at = now() + INTERVAL '14 days' WHERE id = $1",
-    [negocioId]
-  )
-
-  res.json({ success: true, trialEndsAt: new Date(Date.now() + 14 * 86400000) })
 })
 
 // POST /api/wompi/cancel — cancel subscription (keeps PRO until expiration)
@@ -172,7 +188,7 @@ router.post('/cancel', auth, async (req, res) => {
 
     res.json({ success: true })
   } catch (err) {
-    console.error('Cancel subscription error:', err)
+    logger.error('Cancel subscription error:', err)
     res.status(500).json({ error: 'Error al cancelar' })
   }
 })
@@ -187,6 +203,7 @@ async function pollTransactionStatus(transactionId, maxAttempts = 10, delayMs = 
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise(r => setTimeout(r, delayMs))
     const res = await fetch(`${WOMPI_API}/transactions/${transactionId}`)
+    if (!res.ok) continue
     const data = await res.json()
     const status = data.data?.status
     if (status && status !== 'PENDING') return data
@@ -227,6 +244,9 @@ router.post('/pay', auth, async (req, res) => {
         card_holder: card.card_holder,
       }),
     })
+    if (!tokenRes.ok) {
+      return res.json({ success: false, error: 'Error al comunicarse con el procesador de pagos (tokenización)' })
+    }
     const tokenData = await tokenRes.json()
 
     if (!tokenData.data?.id) {
@@ -235,6 +255,9 @@ router.post('/pay', auth, async (req, res) => {
 
     // 2. Get acceptance token
     const merchantRes = await fetch(`${WOMPI_API}/merchants/${env.wompiPublicKey}`)
+    if (!merchantRes.ok) {
+      return res.json({ success: false, error: 'Error al obtener configuración del comercio' })
+    }
     const merchantData = await merchantRes.json()
     const acceptanceToken = merchantData.data?.presigned_acceptance?.acceptance_token
 
@@ -263,6 +286,9 @@ router.post('/pay', auth, async (req, res) => {
         },
       }),
     })
+    if (!txRes.ok) {
+      return res.json({ success: false, error: 'Error al crear la transacción con el procesador de pagos' })
+    }
     const txData = await txRes.json()
 
     const transactionId = txData.data?.id
@@ -312,8 +338,230 @@ router.post('/pay', auth, async (req, res) => {
     }
     return res.json({ success: false, error: 'El pago está siendo procesado. Esto puede tomar unos segundos. Intenta recargar la página en un momento.' })
   } catch (err) {
-    console.error('Wompi pay error:', err)
+    logger.error('Wompi pay error:', err)
     res.json({ success: false, error: 'Error al procesar el pago' })
+  }
+})
+
+// POST /api/wompi/public-pay — public checkout (NO auth, pay first)
+router.post('/public-pay', async (req, res) => {
+  try {
+    const { email, period, card } = req.body
+    if (!email || !period || !PLANS[period]) {
+      return res.status(400).json({ success: false, error: 'Datos incompletos' })
+    }
+    if (!card?.number || !card?.cvc || !card?.exp_month || !card?.exp_year || !card?.card_holder) {
+      return res.status(400).json({ success: false, error: 'Datos de tarjeta incompletos' })
+    }
+
+    const plan = PLANS[period]
+    const currency = 'COP'
+
+    // 1. Insert checkout_payments row to get UUID
+    const { rows: checkoutRows } = await pool.query(
+      `INSERT INTO checkout_payments (customer_email, periodo, wompi_reference, monto)
+       VALUES ($1, $2, 'PENDING', $3) RETURNING id`,
+      [email.toLowerCase(), period, plan.amount]
+    )
+    const checkoutId = checkoutRows[0].id
+    const reference = `CHECKOUT_${checkoutId}_${period}_${Date.now()}`
+
+    // Update reference now that we have the UUID
+    await pool.query(
+      'UPDATE checkout_payments SET wompi_reference = $1 WHERE id = $2',
+      [reference, checkoutId]
+    )
+
+    // 2. Tokenize card
+    const tokenRes = await fetch(`${WOMPI_API}/tokens/cards`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.wompiPublicKey}`,
+      },
+      body: JSON.stringify({
+        number: card.number,
+        cvc: card.cvc,
+        exp_month: card.exp_month,
+        exp_year: card.exp_year,
+        card_holder: card.card_holder,
+      }),
+    })
+    if (!tokenRes.ok) {
+      return res.json({ success: false, error: 'Error al comunicarse con el procesador de pagos (tokenización)' })
+    }
+    const tokenData = await tokenRes.json()
+    if (!tokenData.data?.id) {
+      return res.json({ success: false, error: 'Error al tokenizar la tarjeta. Verifica los datos.' })
+    }
+
+    // 3. Get acceptance token
+    const merchantRes = await fetch(`${WOMPI_API}/merchants/${env.wompiPublicKey}`)
+    if (!merchantRes.ok) {
+      return res.json({ success: false, error: 'Error al obtener configuración del comercio' })
+    }
+    const merchantData = await merchantRes.json()
+    const acceptanceToken = merchantData.data?.presigned_acceptance?.acceptance_token
+
+    // 4. Compute integrity hash
+    const integrityString = `${reference}${plan.amount}${currency}${env.wompiIntegritySecret}`
+    const integrityHash = crypto.createHash('sha256').update(integrityString).digest('hex')
+
+    // 5. Create transaction
+    const txRes = await fetch(`${WOMPI_API}/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.wompiPrivateKey}`,
+      },
+      body: JSON.stringify({
+        amount_in_cents: plan.amount,
+        currency,
+        customer_email: email.toLowerCase(),
+        reference,
+        signature: integrityHash,
+        acceptance_token: acceptanceToken,
+        payment_method: {
+          type: 'CARD',
+          token: tokenData.data.id,
+          installments: 1,
+        },
+      }),
+    })
+    if (!txRes.ok) {
+      return res.json({ success: false, error: 'Error al crear la transacción con el procesador de pagos' })
+    }
+    const txData = await txRes.json()
+
+    const transactionId = txData.data?.id
+    let finalStatus = txData.data?.status
+
+    // 6. If PENDING, poll until resolved
+    if (finalStatus === 'PENDING' && transactionId) {
+      const polledData = await pollTransactionStatus(transactionId)
+      if (polledData?.data?.status) {
+        finalStatus = polledData.data.status
+      }
+    }
+
+    // 7. Update checkout_payments with result
+    await pool.query(
+      `UPDATE checkout_payments SET wompi_transaction_id = $1, estado = $2, datos_wompi = $3 WHERE id = $4`,
+      [transactionId, finalStatus || 'PENDING', JSON.stringify(txData.data), checkoutId]
+    )
+
+    if (finalStatus === 'APPROVED') {
+      return res.json({ success: true, checkoutId })
+    }
+
+    if (finalStatus === 'DECLINED' || finalStatus === 'ERROR' || finalStatus === 'VOIDED') {
+      const declineReason = txData.data?.status_message || 'Pago rechazado por el banco'
+      return res.json({ success: false, error: declineReason })
+    }
+
+    // Still PENDING after polling
+    return res.json({ success: false, error: 'Tu pago está siendo procesado. Esto puede tardar unos segundos. Intenta de nuevo en un momento.' })
+  } catch (err) {
+    logger.error('Wompi public-pay error:', err)
+    res.json({ success: false, error: 'Error al procesar el pago' })
+  }
+})
+
+// POST /api/wompi/claim-checkout — claim an approved checkout (WITH auth)
+router.post('/claim-checkout', auth, async (req, res) => {
+  try {
+    const { checkoutId } = req.body
+    if (!checkoutId) {
+      return res.status(400).json({ success: false, error: 'checkoutId es requerido' })
+    }
+
+    const negocioId = req.user?.negocio_id
+    if (!negocioId) {
+      return res.status(401).json({ success: false, error: 'No tienes un negocio asociado' })
+    }
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      // Lock and fetch the checkout
+      const { rows: checkoutRows } = await client.query(
+        `SELECT * FROM checkout_payments WHERE id = $1 FOR UPDATE`,
+        [checkoutId]
+      )
+      const checkout = checkoutRows[0]
+
+      if (!checkout) {
+        await client.query('ROLLBACK')
+        return res.status(404).json({ success: false, error: 'Checkout no encontrado' })
+      }
+      if (checkout.estado !== 'APPROVED') {
+        await client.query('ROLLBACK')
+        return res.status(400).json({ success: false, error: 'Este pago no fue aprobado' })
+      }
+      if (checkout.claimed_at) {
+        await client.query('ROLLBACK')
+        return res.status(400).json({ success: false, error: 'Este pago ya fue utilizado' })
+      }
+
+      // Calculate subscription period
+      const period = checkout.periodo
+      const plan = PLANS[period]
+      if (!plan) {
+        await client.query('ROLLBACK')
+        return res.status(400).json({ success: false, error: 'Período inválido en el checkout' })
+      }
+
+      // Get current negocio to check existing subscription
+      const { rows: negocioRows } = await client.query(
+        'SELECT subscription_expires_at FROM negocios WHERE id = $1 FOR UPDATE',
+        [negocioId]
+      )
+      const negocio = negocioRows[0]
+      if (!negocio) {
+        await client.query('ROLLBACK')
+        return res.status(404).json({ success: false, error: 'Negocio no encontrado' })
+      }
+
+      // Extend from MAX(subscription_expires_at, now())
+      const now = new Date()
+      const baseDate = negocio.subscription_expires_at && new Date(negocio.subscription_expires_at) > now
+        ? new Date(negocio.subscription_expires_at)
+        : now
+      const expiresAt = new Date(baseDate)
+      expiresAt.setDate(expiresAt.getDate() + plan.days)
+
+      // Activate subscription
+      await client.query(
+        `UPDATE negocios SET plan = 'pro', subscription_expires_at = $2, subscription_period = $3 WHERE id = $1`,
+        [negocioId, expiresAt, period]
+      )
+
+      // Record in pagos_suscripcion
+      await client.query(
+        `INSERT INTO pagos_suscripcion (negocio_id, wompi_transaction_id, wompi_reference, monto, moneda, estado, periodo, datos_wompi, periodo_desde, periodo_hasta)
+         VALUES ($1, $2, $3, $4, 'COP', 'APPROVED', $5, $6, CURRENT_DATE, $7)
+         ON CONFLICT (wompi_transaction_id) DO UPDATE SET estado = 'APPROVED', negocio_id = $1, periodo_desde = CURRENT_DATE, periodo_hasta = $7`,
+        [negocioId, checkout.wompi_transaction_id, checkout.wompi_reference, checkout.monto, period, checkout.datos_wompi, expiresAt]
+      )
+
+      // Mark checkout as claimed
+      await client.query(
+        'UPDATE checkout_payments SET claimed_at = now(), negocio_id = $1 WHERE id = $2',
+        [negocioId, checkoutId]
+      )
+
+      await client.query('COMMIT')
+      res.json({ success: true })
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+  } catch (err) {
+    logger.error('Wompi claim-checkout error:', err)
+    res.status(500).json({ success: false, error: 'Error al reclamar el pago' })
   }
 })
 
@@ -330,25 +578,38 @@ router.post('/webhook', async (req, res) => {
     const timestamp = event.timestamp
     const signature = event.signature?.checksum
 
-    // Verify signature
-    if (env.wompiEventsSecret && signature) {
-      const signString = `${tx.id}${tx.status}${tx.amount_in_cents}${tx.currency}${timestamp}${env.wompiEventsSecret}`
-      const expectedSig = crypto.createHash('sha256').update(signString).digest('hex')
-      if (signature !== expectedSig) {
-        console.warn('Wompi webhook signature mismatch')
-        return res.status(401).json({ error: 'Invalid signature' })
-      }
+    // Verify signature — always required
+    if (!env.wompiEventsSecret || !signature) {
+      return res.status(401).json({ error: 'Missing webhook signature or events secret' })
+    }
+    const signString = `${tx.id}${tx.status}${tx.amount_in_cents}${tx.currency}${timestamp}${env.wompiEventsSecret}`
+    const expectedSig = crypto.createHash('sha256').update(signString).digest('hex')
+    if (signature !== expectedSig) {
+      return res.status(401).json({ error: 'Invalid signature' })
     }
 
-    // Parse reference: MONACO_{negocioId}_{period}_{timestamp}
+    // Parse reference: MONACO_{negocioId}_{period}_{timestamp} or CHECKOUT_{checkoutId}_{period}_{timestamp}
     const reference = tx.reference || ''
-    const refMatch = reference.match(/^MONACO_([0-9a-f-]{36})_(monthly|yearly)_(\d+)$/)
-    if (!refMatch) {
+    const monacoMatch = reference.match(/^MONACO_([0-9a-f-]{36})_(monthly|yearly)_(\d+)$/)
+    const checkoutMatch = reference.match(/^CHECKOUT_([0-9a-f-]{36})_(monthly|yearly)_(\d+)$/)
+
+    if (!monacoMatch && !checkoutMatch) {
       return res.status(200).json({ received: true, ignored: true })
     }
 
-    const negocioId = refMatch[1]
-    const period = refMatch[2]
+    // Handle CHECKOUT_ references — update checkout_payments, do NOT activate subscription
+    if (checkoutMatch) {
+      const checkoutId = checkoutMatch[1]
+      await pool.query(
+        `UPDATE checkout_payments SET estado = $1, datos_wompi = $2 WHERE id = $3`,
+        [tx.status, JSON.stringify(tx), checkoutId]
+      )
+      return res.status(200).json({ received: true })
+    }
+
+    // Handle MONACO_ references (existing flow)
+    const negocioId = monacoMatch[1]
+    const period = monacoMatch[2]
 
     // Record payment
     await pool.query(
@@ -358,32 +619,52 @@ router.post('/webhook', async (req, res) => {
       [negocioId, tx.id, reference, tx.amount_in_cents, tx.currency, tx.status, period, JSON.stringify(tx)]
     )
 
-    // If approved, activate subscription
+    // If approved, activate subscription — only if not already activated by /pay
+    // Uses a transaction with FOR UPDATE to prevent race conditions from duplicate webhooks
     if (tx.status === 'APPROVED') {
       const plan = PLANS[period]
       if (!plan) {
-        console.warn('Unknown period in Wompi reference:', period)
         return res.status(200).json({ received: true })
       }
 
-      const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + plan.days)
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
 
-      await pool.query(
-        `UPDATE negocios SET plan = 'pro', subscription_expires_at = $2, subscription_period = $3 WHERE id = $1`,
-        [negocioId, expiresAt, period]
-      )
+        // Lock the row to prevent concurrent webhook from reading stale state
+        const { rows: existingPayment } = await client.query(
+          `SELECT estado, periodo_desde FROM pagos_suscripcion WHERE wompi_transaction_id = $1 FOR UPDATE`,
+          [tx.id]
+        )
+        const alreadyActivated = existingPayment[0]?.estado === 'APPROVED' && existingPayment[0]?.periodo_desde
 
-      // Update payment record with period dates
-      await pool.query(
-        `UPDATE pagos_suscripcion SET periodo_desde = CURRENT_DATE, periodo_hasta = $2 WHERE wompi_transaction_id = $1`,
-        [tx.id, expiresAt]
-      )
+        if (!alreadyActivated) {
+          const expiresAt = new Date()
+          expiresAt.setDate(expiresAt.getDate() + plan.days)
+
+          await client.query(
+            `UPDATE negocios SET plan = 'pro', subscription_expires_at = $2, subscription_period = $3 WHERE id = $1`,
+            [negocioId, expiresAt, period]
+          )
+
+          await client.query(
+            `UPDATE pagos_suscripcion SET periodo_desde = CURRENT_DATE, periodo_hasta = $2 WHERE wompi_transaction_id = $1`,
+            [tx.id, expiresAt]
+          )
+        }
+
+        await client.query('COMMIT')
+      } catch (e) {
+        await client.query('ROLLBACK')
+        throw e
+      } finally {
+        client.release()
+      }
     }
 
     res.status(200).json({ received: true })
   } catch (err) {
-    console.error('Wompi webhook error:', err)
+    logger.error('Wompi webhook error:', err)
     res.status(500).json({ error: 'Internal error' })
   }
 })

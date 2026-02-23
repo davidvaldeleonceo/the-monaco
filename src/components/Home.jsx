@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
@@ -8,10 +8,12 @@ import ServiceCard from './ServiceCard'
 import NuevoServicioSheet from './NuevoServicioSheet'
 import { formatMoney, formatMoneyShort } from '../utils/money'
 import { useMoneyVisibility } from './MoneyVisibilityContext'
+import { useToast } from './Toast'
 import { AreaChart, Area, XAxis, ResponsiveContainer } from 'recharts'
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../config/constants'
-import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download, ChevronDown, Pencil, Check, Eye, EyeOff, TrendingUp, TrendingDown, UserPlus } from 'lucide-react'
+import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download, ChevronDown, Pencil, Check, Eye, EyeOff, TrendingUp, TrendingDown, UserPlus, Calendar, Flag, CreditCard, User, ArrowUpDown, Wallet, Tag } from 'lucide-react'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
+import UpgradeModal from './UpgradeModal'
 import DatePicker, { registerLocale } from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import es from 'date-fns/locale/es'
@@ -20,9 +22,11 @@ import * as XLSX from 'xlsx'
 
 export default function Home() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal } = useData()
   const { negocioNombre, userEmail } = useTenant()
   const { showMoney, toggleMoney, displayMoney, displayMoneyShort } = useMoneyVisibility()
+  const toast = useToast()
 
   const {
     expandedCards, setExpandedCards,
@@ -78,11 +82,19 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false)
   const [visibleCount, setVisibleCount] = useState({ servicios: 10, productos: 10, movimientos: 10 })
   const [searchQuery, setSearchQuery] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
-  const [filtroEstado, setFiltroEstado] = useState('')
-  const [filtroLavador, setFiltroLavador] = useState('')
+  const [showFilterCards, setShowFilterCards] = useState(false)
+  const [expandedFilterCard, setExpandedFilterCard] = useState(null)
+  const [filtroEstado, setFiltroEstado] = useState([])
+  const [filtroLavador, setFiltroLavador] = useState([])
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroMetodoPago, setFiltroMetodoPago] = useState('')
+  // Nuevos filtros avanzados
+  const [filtroPago, setFiltroPago] = useState('')
+  const [filtroTipoLavado, setFiltroTipoLavado] = useState([])
+  const [filtroAdicionales, setFiltroAdicionales] = useState([])
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState(null)
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState(null)
+  const [filtroCategoria, setFiltroCategoria] = useState('')
   const searchInputRef = useRef(null)
   const [modoSeleccion, setModoSeleccion] = useState(false)
   const [selectedItems, setSelectedItems] = useState(new Set())
@@ -142,8 +154,19 @@ export default function Home() {
   const [ventaDragY, setVentaDragY] = useState(0)
   const ventaDragStartY = useRef(null)
 
-  // Bubble position from period index
-  const periodIdx = ['d', 's', 'm', 'a'].indexOf(periodo)
+  // Auto-open UpgradeModal when coming from "Comprar ahora" flow
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [upgradePeriod, setUpgradePeriod] = useState(null)
+  useEffect(() => {
+    if (searchParams.get('upgrade') === '1') {
+      const p = searchParams.get('period')
+      if (p === 'monthly' || p === 'yearly') setUpgradePeriod(p)
+      setShowUpgradeModal(true)
+      searchParams.delete('upgrade')
+      searchParams.delete('period')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [])
 
   // Calculate date range from period
   const getDateRange = (p) => {
@@ -236,6 +259,35 @@ export default function Home() {
     localStorage.setItem('home-periodo', periodo)
   }, [periodo])
 
+  // Persist advanced filters to localStorage
+  useEffect(() => {
+    const filtros = {
+      filtroEstado, filtroLavador,
+      filtroPago, filtroTipoLavado, filtroAdicionales,
+      filtroFechaDesde: filtroFechaDesde ? filtroFechaDesde.toISOString() : null,
+      filtroFechaHasta: filtroFechaHasta ? filtroFechaHasta.toISOString() : null,
+      filtroCategoria,
+    }
+    localStorage.setItem('home-filtros', JSON.stringify(filtros))
+  }, [filtroEstado, filtroLavador, filtroPago, filtroTipoLavado, filtroAdicionales, filtroFechaDesde, filtroFechaHasta, filtroCategoria])
+
+  // Restore advanced filters from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('home-filtros'))
+      if (saved) {
+        if (saved.filtroEstado?.length) setFiltroEstado(saved.filtroEstado)
+        if (saved.filtroLavador?.length) setFiltroLavador(saved.filtroLavador)
+        if (saved.filtroPago) setFiltroPago(saved.filtroPago)
+        if (saved.filtroTipoLavado?.length) setFiltroTipoLavado(saved.filtroTipoLavado)
+        if (saved.filtroAdicionales?.length) setFiltroAdicionales(saved.filtroAdicionales)
+        if (saved.filtroFechaDesde) setFiltroFechaDesde(new Date(saved.filtroFechaDesde))
+        if (saved.filtroFechaHasta) setFiltroFechaHasta(new Date(saved.filtroFechaHasta))
+        if (saved.filtroCategoria) setFiltroCategoria(saved.filtroCategoria)
+      }
+    } catch {}
+  }, [])
+
   // Close venta cliente dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -309,7 +361,283 @@ export default function Home() {
 
   // Period label
   const periodoLabels = { d: 'Hoy', s: 'Esta semana', m: 'Este mes', a: 'Este año' }
-  const periodoLabel = periodoLabels[periodo]
+
+  // Filter card config
+  const FILTER_CARDS = {
+    servicios: ['fechas', 'estado', 'estadoPago', 'tipoLavado', 'adicionales', 'lavador'],
+    productos: ['fechas', 'tipo', 'metodoPago'],
+    movimientos: ['fechas', 'tipo', 'categoria', 'metodoPago'],
+  }
+  const FILTER_CARD_LABELS = {
+    fechas: 'Fechas', estado: 'Estado', estadoPago: 'Estado de pago',
+    tipoLavado: 'Tipo de lavado', adicionales: 'Adicionales', lavador: 'Lavador',
+    tipo: 'Tipo', metodoPago: 'Método de pago', categoria: 'Categoría',
+  }
+  const FILTER_CARD_ICONS = {
+    fechas: Calendar, estado: Flag, estadoPago: CreditCard,
+    tipoLavado: Droplets, adicionales: Plus, lavador: User,
+    tipo: ArrowUpDown, metodoPago: Wallet, categoria: Tag,
+  }
+
+  const handleQuickDatePill = (key) => {
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    switch (key) {
+      case 'hoy':
+        setPeriodo('d'); setFiltroFechaDesde(null); setFiltroFechaHasta(null); break
+      case 'ayer': {
+        const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
+        setPeriodo('s'); setFiltroFechaDesde(ayer); setFiltroFechaHasta(ayer); break
+      }
+      case 'manana': {
+        const manana = new Date(hoy); manana.setDate(manana.getDate() + 1)
+        setPeriodo('s'); setFiltroFechaDesde(manana); setFiltroFechaHasta(manana); break
+      }
+      case 'semana':
+        setPeriodo('s'); setFiltroFechaDesde(null); setFiltroFechaHasta(null); break
+      case 'mes':
+        setPeriodo('m'); setFiltroFechaDesde(null); setFiltroFechaHasta(null); break
+      case 'ano':
+        setPeriodo('a'); setFiltroFechaDesde(null); setFiltroFechaHasta(null); break
+    }
+  }
+
+  const getActiveQuickPill = () => {
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    if (filtroFechaDesde && filtroFechaHasta) {
+      const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
+      const manana = new Date(hoy); manana.setDate(manana.getDate() + 1)
+      const dDesde = new Date(filtroFechaDesde); dDesde.setHours(0, 0, 0, 0)
+      const dHasta = new Date(filtroFechaHasta); dHasta.setHours(0, 0, 0, 0)
+      if (dDesde.getTime() === ayer.getTime() && dHasta.getTime() === ayer.getTime()) return 'ayer'
+      if (dDesde.getTime() === manana.getTime() && dHasta.getTime() === manana.getTime()) return 'manana'
+      return null
+    }
+    if (!filtroFechaDesde && !filtroFechaHasta) {
+      if (periodo === 'd') return 'hoy'
+      if (periodo === 's') return 'semana'
+      if (periodo === 'm') return 'mes'
+      if (periodo === 'a') return 'ano'
+    }
+    return null
+  }
+
+  const getCardActiveCount = (cardKey) => {
+    switch (cardKey) {
+      case 'fechas': return (filtroFechaDesde || filtroFechaHasta || periodo !== 'm') ? 1 : 0
+      case 'estado': return filtroEstado.length
+      case 'estadoPago': return filtroPago ? 1 : 0
+      case 'tipoLavado': return filtroTipoLavado.length
+      case 'adicionales': return filtroAdicionales.length
+      case 'lavador': return filtroLavador.length
+      case 'tipo': return filtroTipo ? 1 : 0
+      case 'metodoPago': return filtroMetodoPago ? 1 : 0
+      case 'categoria': return filtroCategoria ? 1 : 0
+      default: return 0
+    }
+  }
+
+  const displayPeriodoLabel = useMemo(() => {
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    if (filtroFechaDesde && filtroFechaHasta) {
+      const dDesde = new Date(filtroFechaDesde); dDesde.setHours(0, 0, 0, 0)
+      const dHasta = new Date(filtroFechaHasta); dHasta.setHours(0, 0, 0, 0)
+      const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
+      const manana = new Date(hoy); manana.setDate(manana.getDate() + 1)
+      if (dDesde.getTime() === ayer.getTime() && dHasta.getTime() === ayer.getTime()) return 'Ayer'
+      if (dDesde.getTime() === manana.getTime() && dHasta.getTime() === manana.getTime()) return 'Mañana'
+      const fmtD = `${dDesde.getDate()}/${dDesde.getMonth() + 1}`
+      const fmtH = `${dHasta.getDate()}/${dHasta.getMonth() + 1}`
+      return `${fmtD} - ${fmtH}`
+    }
+    return periodoLabels[periodo] || 'Este mes'
+  }, [filtroFechaDesde, filtroFechaHasta, periodo])
+
+  const clearCardFilter = (cardKey) => {
+    switch (cardKey) {
+      case 'fechas': setFiltroFechaDesde(null); setFiltroFechaHasta(null); setPeriodo('m'); break
+      case 'estado': setFiltroEstado([]); break
+      case 'estadoPago': setFiltroPago(''); break
+      case 'tipoLavado': setFiltroTipoLavado([]); break
+      case 'adicionales': setFiltroAdicionales([]); break
+      case 'lavador': setFiltroLavador([]); break
+      case 'tipo': setFiltroTipo(''); setFiltroCategoria(''); break
+      case 'metodoPago': setFiltroMetodoPago(''); break
+      case 'categoria': setFiltroCategoria(''); break
+    }
+  }
+
+  const renderFilterCardContent = (cardKey) => {
+    const activeQuickPill = getActiveQuickPill()
+    switch (cardKey) {
+      case 'fechas':
+        return (
+          <div className="home-filter-fechas-layout">
+            <div className="home-filter-fechas-range">
+              <DatePicker
+                selectsRange
+                startDate={filtroFechaDesde}
+                endDate={filtroFechaHasta}
+                onChange={([start, end]) => { setFiltroFechaDesde(start); setFiltroFechaHasta(end); }}
+                locale="es"
+                inline
+              />
+            </div>
+            <div className="home-filter-fechas-quick">
+              {[
+                { key: 'hoy', label: 'Hoy' },
+                { key: 'ayer', label: 'Ayer' },
+                { key: 'manana', label: 'Mañana' },
+                { key: 'semana', label: 'Esta semana' },
+                { key: 'mes', label: 'Este mes' },
+                { key: 'ano', label: 'Este año' },
+              ].map(p => (
+                <button
+                  key={p.key}
+                  className={`home-filter-quick-pill ${activeQuickPill === p.key ? 'active' : ''}`}
+                  onClick={() => handleQuickDatePill(p.key)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+      case 'estado':
+        return (
+          <div className="home-filter-chips">
+            {Object.entries(ESTADO_LABELS).map(([key, label]) => (
+              <button
+                key={key}
+                className={`home-filter-chip ${filtroEstado.includes(key) ? 'active' : ''}`}
+                onClick={() => setFiltroEstado(prev =>
+                  prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )
+      case 'estadoPago':
+        return (
+          <div className="home-filter-chips">
+            {[
+              { key: 'pagado', label: 'Pagado' },
+              { key: 'parcial', label: 'Parcial' },
+              { key: 'sin-pagar', label: 'Sin pagar' },
+            ].map(p => (
+              <button
+                key={p.key}
+                className={`home-filter-chip ${filtroPago === p.key ? 'active' : ''}`}
+                onClick={() => setFiltroPago(prev => prev === p.key ? '' : p.key)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )
+      case 'tipoLavado':
+        return tiposLavado.length > 0 ? (
+          <div className="home-filter-chips">
+            {tiposLavado.map(t => (
+              <button
+                key={t.id}
+                className={`home-filter-chip ${filtroTipoLavado.includes(String(t.id)) ? 'active' : ''}`}
+                onClick={() => setFiltroTipoLavado(prev => {
+                  const id = String(t.id)
+                  return prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id]
+                })}
+              >
+                {t.nombre}
+              </button>
+            ))}
+          </div>
+        ) : <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>No hay tipos configurados</span>
+      case 'adicionales':
+        return serviciosAdicionales.length > 0 ? (
+          <div className="home-filter-chips">
+            {serviciosAdicionales.map(a => (
+              <button
+                key={a.id}
+                className={`home-filter-chip ${filtroAdicionales.includes(a.id) ? 'active' : ''}`}
+                onClick={() => setFiltroAdicionales(prev =>
+                  prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id]
+                )}
+              >
+                {a.nombre}
+              </button>
+            ))}
+          </div>
+        ) : <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>No hay adicionales configurados</span>
+      case 'lavador':
+        return lavadores.length > 0 ? (
+          <div className="home-filter-chips">
+            {lavadores.map(l => (
+              <button
+                key={l.id}
+                className={`home-filter-chip ${filtroLavador.includes(String(l.id)) ? 'active' : ''}`}
+                onClick={() => setFiltroLavador(prev => {
+                  const id = String(l.id)
+                  return prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id]
+                })}
+              >
+                {l.nombre}
+              </button>
+            ))}
+          </div>
+        ) : <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>No hay lavadores configurados</span>
+      case 'tipo':
+        return (
+          <div className="home-filter-chips">
+            {[
+              { key: 'INGRESO', label: 'Ingreso' },
+              { key: 'EGRESO', label: 'Egreso' },
+            ].map(p => (
+              <button
+                key={p.key}
+                className={`home-filter-chip ${filtroTipo === p.key ? 'active' : ''}`}
+                onClick={() => { setFiltroTipo(prev => prev === p.key ? '' : p.key); setFiltroCategoria('') }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )
+      case 'metodoPago':
+        return (
+          <div className="home-filter-chips">
+            {metodosPago.map(m => (
+              <button
+                key={m.id}
+                className={`home-filter-chip ${filtroMetodoPago == m.id ? 'active' : ''}`}
+                onClick={() => setFiltroMetodoPago(prev => prev == m.id ? '' : String(m.id))}
+              >
+                {m.nombre}
+              </button>
+            ))}
+          </div>
+        )
+      case 'categoria':
+        return (
+          <div className="home-filter-chips">
+            {(filtroTipo ? categoriasMovimiento[filtroTipo] || [] : [...new Set([...categoriasMovimiento.INGRESO, ...categoriasMovimiento.EGRESO])]).map(c => (
+              <button
+                key={c}
+                className={`home-filter-chip ${filtroCategoria === c ? 'active' : ''}`}
+                onClick={() => setFiltroCategoria(prev => prev === c ? '' : c)}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )
+      default:
+        return null
+    }
+  }
 
   // Filter lavadas by period for recent services
   const lavadasFiltradas = lavadas.filter(l => {
@@ -328,8 +656,45 @@ export default function Home() {
 
   // Recent items
   const allServicios = lavadasFiltradas.filter(l => {
-    if (filtroEstado && l.estado !== filtroEstado) return false
-    if (filtroLavador && l.lavador_id != filtroLavador) return false
+    if (filtroEstado.length > 0 && !filtroEstado.includes(l.estado)) return false
+    if (filtroLavador.length > 0 && !filtroLavador.some(id => id == l.lavador_id)) return false
+
+    // Estado de pago
+    if (filtroPago) {
+      const sumaPagos = (l.pagos || []).reduce((s, p) => s + Number(p.valor || 0), 0)
+      const total = Number(l.valor || 0)
+      const esPagado = total === 0
+        ? (l.pagos?.length === 0 || Math.abs(sumaPagos - total) < 1)
+        : (l.pagos?.length > 0 && Math.abs(sumaPagos - total) < 1)
+      const esParcial = sumaPagos > 0 && !esPagado
+      const esSinPagar = sumaPagos === 0 && !esPagado
+      if (filtroPago === 'pagado' && !esPagado) return false
+      if (filtroPago === 'parcial' && !esParcial) return false
+      if (filtroPago === 'sin-pagar' && !esSinPagar) return false
+    }
+
+    // Tipo de lavado
+    if (filtroTipoLavado.length > 0 && !filtroTipoLavado.some(id => id == l.tipo_lavado_id)) return false
+
+    // Adicionales (TODOS los seleccionados deben estar presentes)
+    if (filtroAdicionales.length > 0) {
+      const idsLavada = (l.adicionales || []).map(a => a.id)
+      if (!filtroAdicionales.every(id => idsLavada.includes(id))) return false
+    }
+
+    // Fecha personalizada (se aplica DESPUES del filtro de periodo)
+    if (filtroFechaDesde || filtroFechaHasta) {
+      const dateOnly = typeof l.fecha === 'string' ? l.fecha.split('T')[0] : null
+      if (!dateOnly) return false
+      const fechaL = new Date(dateOnly + 'T00:00:00')
+      if (filtroFechaDesde && fechaL < filtroFechaDesde) return false
+      if (filtroFechaHasta) {
+        const h = new Date(filtroFechaHasta)
+        h.setHours(23, 59, 59, 999)
+        if (fechaL > h) return false
+      }
+    }
+
     const q = searchQuery.trim().toLowerCase()
     if (q && !(l.placa || '').toLowerCase().includes(q) && !(l.cliente?.nombre || '').toLowerCase().includes(q)) return false
     return true
@@ -339,6 +704,18 @@ export default function Home() {
     .filter(t => {
       if (filtroTipo && t.tipo !== filtroTipo) return false
       if (filtroMetodoPago && t.metodo_pago_id != filtroMetodoPago) return false
+      // Fecha personalizada
+      if (filtroFechaDesde || filtroFechaHasta) {
+        const dateOnly = typeof t.fecha === 'string' ? t.fecha.split('T')[0] : null
+        if (!dateOnly) return false
+        const fechaT = new Date(dateOnly + 'T00:00:00')
+        if (filtroFechaDesde && fechaT < filtroFechaDesde) return false
+        if (filtroFechaHasta) {
+          const h = new Date(filtroFechaHasta)
+          h.setHours(23, 59, 59, 999)
+          if (fechaT > h) return false
+        }
+      }
       const q = searchQuery.trim().toLowerCase()
       if (q && !(t.descripcion || '').toLowerCase().includes(q) && !(t.placa_o_persona || '').toLowerCase().includes(q) && !(t.categoria || '').toLowerCase().includes(q)) return false
       return true
@@ -349,6 +726,19 @@ export default function Home() {
     .filter(t => {
       if (filtroTipo && t.tipo !== filtroTipo) return false
       if (filtroMetodoPago && t.metodo_pago_id != filtroMetodoPago) return false
+      if (filtroCategoria && t.categoria !== filtroCategoria) return false
+      // Fecha personalizada
+      if (filtroFechaDesde || filtroFechaHasta) {
+        const dateOnly = typeof t.fecha === 'string' ? t.fecha.split('T')[0] : null
+        if (!dateOnly) return false
+        const fechaT = new Date(dateOnly + 'T00:00:00')
+        if (filtroFechaDesde && fechaT < filtroFechaDesde) return false
+        if (filtroFechaHasta) {
+          const h = new Date(filtroFechaHasta)
+          h.setHours(23, 59, 59, 999)
+          if (fechaT > h) return false
+        }
+      }
       const q = searchQuery.trim().toLowerCase()
       if (q && !(t.descripcion || '').toLowerCase().includes(q) && !(t.placa_o_persona || '').toLowerCase().includes(q) && !(t.categoria || '').toLowerCase().includes(q)) return false
       return true
@@ -527,6 +917,31 @@ export default function Home() {
     return { segments, gradient }
   }, [entradasParaBalance, chartModeEgresos])
 
+  // Active filter count for badge
+  const activeFilterCount = [
+    filtroEstado.length > 0, filtroLavador.length > 0,
+    filtroTipo, filtroMetodoPago,
+    filtroPago, filtroTipoLavado.length > 0, filtroCategoria,
+    filtroFechaDesde, filtroFechaHasta,
+    filtroAdicionales.length > 0,
+    periodo !== 'm',
+  ].filter(Boolean).length
+
+  const limpiarFiltros = () => {
+    setFiltroEstado([]); setFiltroLavador([]); setFiltroTipo(''); setFiltroMetodoPago('')
+    setFiltroPago(''); setFiltroTipoLavado([]); setFiltroAdicionales([])
+    setFiltroFechaDesde(null); setFiltroFechaHasta(null); setFiltroCategoria('')
+    setSearchQuery(''); setPeriodo('m')
+    localStorage.removeItem('home-filtros')
+  }
+
+  const resetFiltrosTab = () => {
+    setFiltroEstado([]); setFiltroLavador([]); setFiltroTipo(''); setFiltroMetodoPago('')
+    setFiltroPago(''); setFiltroTipoLavado([]); setFiltroAdicionales([])
+    setFiltroFechaDesde(null); setFiltroFechaHasta(null); setFiltroCategoria('')
+    setModoSeleccion(false); setSelectedItems(new Set()); setExpandedFilterCard(null)
+  }
+
   const recentServicios = allServicios.slice(0, visibleCount.servicios)
   const recentProductos = allProductos.slice(0, visibleCount.productos)
   const recentMovimientos = allMovimientos.slice(0, visibleCount.movimientos)
@@ -587,7 +1002,7 @@ export default function Home() {
     setDeleting(false)
     setSelectedItems(new Set())
     setModoSeleccion(false)
-    if (eliminados > 0) alert(`Se eliminaron ${eliminados} elemento${eliminados > 1 ? 's' : ''}`)
+    if (eliminados > 0) toast.info(`Se eliminaron ${eliminados} elemento${eliminados > 1 ? 's' : ''}`)
   }
 
 
@@ -718,7 +1133,7 @@ export default function Home() {
         handleVentaClienteChange(existente.id)
         return
       }
-      alert('Error al crear cliente: ' + (error.message || 'Error desconocido'))
+      toast.error('Error al crear cliente: ' + (error.message || 'Error desconocido'))
       return
     }
     if (data) {
@@ -782,7 +1197,7 @@ export default function Home() {
       .single()
     setCreandoCliente(false)
     if (error) {
-      alert('Error al crear cliente: ' + (error.message || 'Error desconocido'))
+      toast.error('Error al crear cliente: ' + (error.message || 'Error desconocido'))
       return
     }
     if (data) {
@@ -1306,7 +1721,7 @@ export default function Home() {
           <button className="money-toggle-btn money-toggle-card" onClick={toggleMoney} title={showMoney ? 'Ocultar valores' : 'Mostrar valores'}>
             {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
           </button>
-          <span className="home-balance-label balance-title">Balance - {periodoLabel}</span>
+          <span className="home-balance-label balance-title">Balance - {displayPeriodoLabel}</span>
           <span className={`home-balance-amount ${balance >= 0 ? 'positivo' : 'negativo'}`}>
             {displayMoney(balance)}
           </span>
@@ -1329,7 +1744,7 @@ export default function Home() {
           {donutData ? (
             <>
               <div className="ingresos-header">
-                <span className="home-balance-label ingresos-title">Ingresos - {periodoLabel}</span>
+                <span className="home-balance-label ingresos-title">Ingresos - {displayPeriodoLabel}</span>
                 <div className="ingresos-chart-toggle">
                   <button
                     className={`ingresos-toggle-btn ${chartMode === 'categoria' ? 'active' : ''}`}
@@ -1367,7 +1782,7 @@ export default function Home() {
             </>
           ) : (
             <>
-              <span className="home-balance-label ingresos-title">Ingresos - {periodoLabel}</span>
+              <span className="home-balance-label ingresos-title">Ingresos - {displayPeriodoLabel}</span>
               <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
             </>
           )}
@@ -1376,7 +1791,7 @@ export default function Home() {
           {donutDataEgresos ? (
             <>
               <div className="egresos-header">
-                <span className="home-balance-label egresos-title">Egresos - {periodoLabel}</span>
+                <span className="home-balance-label egresos-title">Egresos - {displayPeriodoLabel}</span>
                 <div className="egresos-chart-toggle">
                   <button
                     className={`egresos-toggle-btn ${chartModeEgresos === 'categoria' ? 'active' : ''}`}
@@ -1414,7 +1829,7 @@ export default function Home() {
             </>
           ) : (
             <>
-              <span className="home-balance-label egresos-title">Egresos - {periodoLabel}</span>
+              <span className="home-balance-label egresos-title">Egresos - {displayPeriodoLabel}</span>
               <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
             </>
           )}
@@ -1436,39 +1851,82 @@ export default function Home() {
             <button onClick={() => setSearchQuery('')}><X size={14} /></button>
           )}
         </div>
-        <div className="home-period-pills">
-          <div className="home-period-bubble" style={{ transform: `translateX(${periodIdx * 100}%)` }} />
-          {['d', 's', 'm', 'a'].map(p => (
-            <button
-              key={p}
-              className={`home-period-pill ${periodo === p ? 'active' : ''}`}
-              onClick={() => setPeriodo(p)}
-            >
-              {p.toUpperCase()}
-            </button>
-          ))}
+        <button
+          className={`home-filtros-btn ${showFilterCards ? 'active' : ''}`}
+          onClick={() => setShowFilterCards(prev => !prev)}
+          style={{ position: 'relative' }}
+        >
+          <SlidersHorizontal size={16} />
+          <span>Filtros</span>
+          {activeFilterCount > 0 && <span className="home-filter-badge">{activeFilterCount}</span>}
+        </button>
+      </div>
+
+      {showFilterCards && (
+        <div className="home-filter-cards">
+          {FILTER_CARDS[tab].map((cardKey, index) => {
+            const expanded = expandedFilterCard === cardKey
+            return (
+              <div
+                key={cardKey}
+                className={`home-filter-card ${expanded ? 'expanded' : ''}`}
+                style={{ animationDelay: `${index * 0.05}s` }}
+              >
+                <button
+                  className="home-filter-card-header"
+                  onClick={() => setExpandedFilterCard(prev => prev === cardKey ? null : cardKey)}
+                >
+                  {FILTER_CARD_ICONS[cardKey] && (() => { const CardIcon = FILTER_CARD_ICONS[cardKey]; return <CardIcon size={14} className="home-filter-card-icon" /> })()}
+                  <span className="home-filter-card-title">{FILTER_CARD_LABELS[cardKey]}</span>
+                  {getCardActiveCount(cardKey) > 0 && (
+                    <span className="home-filter-card-badge">{getCardActiveCount(cardKey)}</span>
+                  )}
+                  <ChevronDown size={14} className={`home-filter-card-chevron ${expanded ? 'rotated' : ''}`} />
+                </button>
+                <div className="home-filter-card-body">
+                  {renderFilterCardContent(cardKey)}
+                  {getCardActiveCount(cardKey) > 0 && (
+                    <button className="home-filter-clear-card" onClick={() => clearCardFilter(cardKey)}>
+                      Limpiar {FILTER_CARD_LABELS[cardKey].toLowerCase()}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          {activeFilterCount > 0 && (
+            <div className="home-filter-actions">
+              <button className="home-filter-clear" onClick={limpiarFiltros}>
+                Limpiar filtros
+              </button>
+              <button className="home-filter-apply" onClick={() => setShowFilterCards(false)}>
+                Aplicar filtros
+              </button>
+            </div>
+          )}
         </div>
-        {/* Tab Pills: Servicios / Productos / Movimientos */}
-        <div className="home-tab-pills">
+      )}
+
+      {/* Tab Pills: Servicios / Productos / Movimientos */}
+      <div className="home-tab-pills">
         <button
           className={`home-tab-pill ${tab === 'servicios' ? 'active' : ''}`}
-          onClick={() => { setTab('servicios'); setFiltroEstado(''); setFiltroLavador(''); setFiltroTipo(''); setFiltroMetodoPago(''); setModoSeleccion(false); setSelectedItems(new Set()) }}
+          onClick={() => { setTab('servicios'); resetFiltrosTab() }}
         >
           Servicios
         </button>
         <button
           className={`home-tab-pill ${tab === 'productos' ? 'active' : ''}`}
-          onClick={() => { setTab('productos'); setFiltroEstado(''); setFiltroLavador(''); setFiltroTipo(''); setFiltroMetodoPago(''); setModoSeleccion(false); setSelectedItems(new Set()) }}
+          onClick={() => { setTab('productos'); resetFiltrosTab() }}
         >
           Prod/Memb
         </button>
         <button
           className={`home-tab-pill ${tab === 'movimientos' ? 'active' : ''}`}
-          onClick={() => { setTab('movimientos'); setFiltroEstado(''); setFiltroLavador(''); setFiltroTipo(''); setFiltroMetodoPago(''); setModoSeleccion(false); setSelectedItems(new Set()) }}
+          onClick={() => { setTab('movimientos'); resetFiltrosTab() }}
         >
           Movimientos
         </button>
-        </div>
       </div>
 
       {/* Recent Cards */}
@@ -1484,12 +1942,6 @@ export default function Home() {
             <CheckSquare size={16} />
           </button>
           <button
-            className={`home-filter-btn ${showFilters ? 'active' : ''}`}
-            onClick={() => setShowFilters(prev => !prev)}
-          >
-            <SlidersHorizontal size={16} />
-          </button>
-          <button
             className="btn-primary home-desktop-add"
             onClick={() => setShowFabMenu(!showFabMenu)}
           >
@@ -1498,41 +1950,6 @@ export default function Home() {
           </button>
         </div>
       </div>
-      {showFilters && (
-        <div className="home-filters-panel">
-          {tab === 'servicios' && (
-            <>
-              <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}>
-                <option value="">Todos los estados</option>
-                {Object.entries(ESTADO_LABELS).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-              <select value={filtroLavador} onChange={e => setFiltroLavador(e.target.value)}>
-                <option value="">Todos los lavadores</option>
-                {lavadores.map(l => (
-                  <option key={l.id} value={l.id}>{l.nombre}</option>
-                ))}
-              </select>
-            </>
-          )}
-          {(tab === 'productos' || tab === 'movimientos') && (
-            <>
-              <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}>
-                <option value="">Ingreso y Egreso</option>
-                <option value="INGRESO">Ingreso</option>
-                <option value="EGRESO">Egreso</option>
-              </select>
-              <select value={filtroMetodoPago} onChange={e => setFiltroMetodoPago(e.target.value)}>
-                <option value="">Todos los metodos</option>
-                {metodosPago.map(m => (
-                  <option key={m.id} value={m.id}>{m.nombre}</option>
-                ))}
-              </select>
-            </>
-          )}
-        </div>
-      )}
       <div className="home-recent-list">
         {tab === 'servicios' && (
           recentServicios.length > 0 ? (
@@ -1569,6 +1986,7 @@ export default function Home() {
                   isSelected={selectedItems.has(item.id)}
                   onToggleSelect={toggleSelectItem}
                   isHighlighted={highlightId === item.id}
+                  onValidationToast={(msg) => toast.error(msg)}
                   onPlacaClick={(lavada) => {
                     const cliente = clientes.find(c => c.id == lavada.cliente_id)
                     if (cliente) setClienteInfoModal(cliente)
@@ -2778,6 +3196,8 @@ export default function Home() {
         onClose={() => setShowServicioModal(false)}
         onSuccess={() => setShowServicioModal(false)}
       />
+
+      {showUpgradeModal && <UpgradeModal onClose={() => { setShowUpgradeModal(false); setUpgradePeriod(null) }} initialPeriod={upgradePeriod} />}
 
     </div>
   )

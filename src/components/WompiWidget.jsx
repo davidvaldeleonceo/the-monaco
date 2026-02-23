@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { API_URL, TOKEN_KEY } from '../config/constants'
 import { CreditCard, Loader, Lock, CheckCircle } from 'lucide-react'
 
@@ -46,15 +46,27 @@ export default function WompiWidget({ period, onSuccess }) {
     }
   }
 
+  const timersRef = useRef([])
+
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout)
+    }
+  }, [])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setStep('processing')
     setError(null)
     setProcessingMsg('Procesando pago...')
 
+    // Clear previous timers
+    timersRef.current.forEach(clearTimeout)
+
     // Update processing message after a few seconds
     const msgTimer = setTimeout(() => setProcessingMsg('Verificando con el banco...'), 4000)
     const msgTimer2 = setTimeout(() => setProcessingMsg('Confirmando transacción...'), 10000)
+    timersRef.current = [msgTimer, msgTimer2]
 
     try {
       const result = await apiFetchAuth('/api/wompi/pay', {
@@ -71,19 +83,18 @@ export default function WompiWidget({ period, onSuccess }) {
         }),
       })
 
-      clearTimeout(msgTimer)
-      clearTimeout(msgTimer2)
+      timersRef.current.forEach(clearTimeout)
 
       if (result.success) {
         setStep('success')
-        setTimeout(() => onSuccess?.(), 2000)
+        const successTimer = setTimeout(() => onSuccess?.(), 2000)
+        timersRef.current = [successTimer]
       } else {
         setError(result.error || 'Error al procesar el pago')
         setStep('form')
       }
     } catch {
-      clearTimeout(msgTimer)
-      clearTimeout(msgTimer2)
+      timersRef.current.forEach(clearTimeout)
       setError('Error de conexión. Intenta de nuevo.')
       setStep('form')
     }

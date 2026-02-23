@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Timer, Users, DollarSign, BarChart3, Check, MessageCircle } from 'lucide-react'
+import { Timer, Users, DollarSign, BarChart3, Check, MessageCircle, Crown, Star } from 'lucide-react'
+import CheckoutModal from './CheckoutModal'
 
 const features = [
   {
@@ -53,6 +55,8 @@ const testimonials = [
 ]
 
 export default function LandingPage() {
+  const [checkoutPeriod, setCheckoutPeriod] = useState(null)
+
   return (
     <div className="landing-page">
       {/* Navbar */}
@@ -71,8 +75,11 @@ export default function LandingPage() {
       <section className="landing-hero">
         <h1>Gestiona tu lavadero de motos desde el celular</h1>
         <p>Control de turnos, clientes, pagos a trabajadores y reportes en tiempo real. Todo en una sola app.</p>
-        <Link to="/registro" className="landing-cta-primary">Prueba gratis 14 días</Link>
-        <span className="landing-hero-note">Sin tarjeta de crédito requerida</span>
+        <div className="landing-hero-buttons">
+          <Link to="/registro" className="landing-cta-primary">Prueba gratis 14 días</Link>
+          <a href="#pricing" className="landing-cta-secondary" onClick={(e) => { e.preventDefault(); document.getElementById('pricing').scrollIntoView({ behavior: 'smooth' }) }}>Comprar ahora</a>
+        </div>
+        <span className="landing-hero-note">Sin tarjeta de crédito para la prueba</span>
       </section>
 
       {/* Features */}
@@ -90,23 +97,40 @@ export default function LandingPage() {
       </section>
 
       {/* Pricing */}
-      <section className="landing-pricing">
-        <h2>Un solo plan. Todo incluido.</h2>
-        <div className="landing-pricing-card">
-          <div className="landing-price-row">
-            <span className="landing-price">$49.900</span>
-            <span className="landing-price-period">/mes</span>
+      <section className="landing-pricing" id="pricing">
+        <h2>Elige tu plan</h2>
+        <ul className="landing-plan-list landing-plan-list-shared">
+          {planFeatures.map((feat) => (
+            <li key={feat}>
+              <Check size={18} strokeWidth={2} />
+              <span>{feat}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="landing-pricing-grid">
+          <div className="landing-pricing-card">
+            <Star size={28} className="landing-pricing-icon" />
+            <h3>Mensual</h3>
+            <div className="landing-price-row">
+              <span className="landing-price">$49.900</span>
+              <span className="landing-price-period">/mes</span>
+            </div>
+            <p className="landing-price-desc">Facturado mensualmente</p>
+            <button className="landing-cta-primary" onClick={() => setCheckoutPeriod('monthly')}>Comprar mensual</button>
           </div>
-          <ul className="landing-plan-list">
-            {planFeatures.map((feat) => (
-              <li key={feat}>
-                <Check size={18} strokeWidth={2} />
-                <span>{feat}</span>
-              </li>
-            ))}
-          </ul>
-          <Link to="/registro" className="landing-cta-primary">Empieza gratis — 14 días</Link>
+          <div className="landing-pricing-card landing-pricing-card-recommended">
+            <span className="landing-pricing-badge">Mejor precio</span>
+            <Crown size={28} className="landing-pricing-icon" />
+            <h3>Anual</h3>
+            <div className="landing-price-row">
+              <span className="landing-price">$490.000</span>
+              <span className="landing-price-period">/año</span>
+            </div>
+            <p className="landing-price-desc">Ahorra 18% vs mensual</p>
+            <button className="landing-cta-secondary" onClick={() => setCheckoutPeriod('yearly')}>Comprar anual</button>
+          </div>
         </div>
+        <Link to="/registro" className="landing-pricing-free">O prueba gratis 14 días — sin tarjeta</Link>
       </section>
 
       {/* Testimonials */}
@@ -127,9 +151,12 @@ export default function LandingPage() {
         <p>&copy; 2026 Monaco PRO — Hecho en Colombia</p>
         <p>
           <MessageCircle size={16} strokeWidth={1.5} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-          ¿Preguntas? <a href="https://wa.me/57XXXXXXXXXX" target="_blank" rel="noopener noreferrer">Escríbenos por WhatsApp</a>
+          ¿Preguntas? <a href="https://wa.me/573144016349" target="_blank" rel="noopener noreferrer">Escríbenos por WhatsApp</a>
         </p>
       </footer>
+
+      {/* Checkout Modal */}
+      {checkoutPeriod && <CheckoutModal period={checkoutPeriod} onClose={() => setCheckoutPeriod(null)} />}
     </div>
   )
 }

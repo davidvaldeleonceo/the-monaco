@@ -5,10 +5,12 @@ import { useServiceHandlers } from '../hooks/useServiceHandlers'
 import { formatMoney } from '../utils/money'
 import { Plus, X } from 'lucide-react'
 import UpgradeModal from './UpgradeModal'
+import { useToast } from './Toast'
 
 export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
   const { clientes, tiposMembresia, negocioId, addLavadaLocal, addClienteLocal, serviciosAdicionales: _sa } = useData()
   const { tiposLavado, serviciosAdicionales, lavadores, calcularValor, autoAddIncluidos } = useServiceHandlers()
+  const toast = useToast()
 
   const [formData, setFormData] = useState({
     cliente_id: '',
@@ -180,7 +182,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
         handleClienteChange(existente.id)
         return
       }
-      alert('Error al crear cliente: ' + (error.message || 'Error desconocido'))
+      toast.error('Error al crear cliente: ' + (error.message || 'Error desconocido'))
       return
     }
     if (data) {
@@ -260,7 +262,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
   const doSubmit = async () => {
     if (submitting) return
     if (!formData.cliente_id) {
-      alert('Selecciona un cliente antes de guardar')
+      toast.error('Selecciona un cliente antes de guardar')
       return
     }
     setSubmitting(true)

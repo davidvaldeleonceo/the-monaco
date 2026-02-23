@@ -18,6 +18,7 @@ import { DataProvider } from './components/DataContext'
 import { TenantProvider, useTenant } from './components/TenantContext'
 import { ThemeProvider } from './components/ThemeContext'
 import { MoneyVisibilityProvider } from './components/MoneyVisibilityContext'
+import { ToastProvider } from './components/Toast'
 import Onboarding from './components/Onboarding'
 import SetupWizard from './components/SetupWizard'
 import RoleGuard from './components/RoleGuard'
@@ -86,6 +87,7 @@ function App() {
   return (
     <ThemeProvider>
       <MoneyVisibilityProvider>
+      <ToastProvider>
       <BrowserRouter>
         <Routes>
           {!session ? (
@@ -107,6 +109,7 @@ function App() {
           )}
         </Routes>
       </BrowserRouter>
+      </ToastProvider>
       </MoneyVisibilityProvider>
     </ThemeProvider>
   )

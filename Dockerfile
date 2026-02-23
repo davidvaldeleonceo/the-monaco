@@ -32,5 +32,15 @@ ENV PORT=3000
 
 EXPOSE 3000
 
-# Run migrations (safe — all IF NOT EXISTS), then start server
-CMD ["sh", "-c", "node src/db/migrate.js && node src/index.js"]
+# Run migrations with retry (DB may not be ready immediately), then start server
+CMD ["sh", "-c", "\
+  attempts=0; max=5; \
+  until node src/db/migrate.js; do \
+    attempts=$((attempts+1)); \
+    if [ $attempts -ge $max ]; then \
+      echo 'Migration failed after '$max' attempts'; exit 1; \
+    fi; \
+    echo 'Migration attempt '$attempts' failed, retrying in 5s...'; \
+    sleep 5; \
+  done && \
+  node src/index.js"]

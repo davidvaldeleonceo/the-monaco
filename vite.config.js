@@ -83,6 +83,10 @@ export default defineConfig({
           charts: ['recharts']
         }
       }
-    }
+    },
+    minify: 'esbuild',
+  },
+  esbuild: {
+    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
   }
 })

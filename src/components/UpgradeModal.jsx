@@ -4,10 +4,10 @@ import { useTenant } from './TenantContext'
 import { API_URL, TOKEN_KEY } from '../config/constants'
 import WompiWidget from './WompiWidget'
 
-export default function UpgradeModal({ onClose, reason }) {
+export default function UpgradeModal({ onClose, reason, initialPeriod }) {
   const { refresh, planStatus } = useTenant()
   const [startingTrial, setStartingTrial] = useState(false)
-  const [paymentPeriod, setPaymentPeriod] = useState(null)
+  const [paymentPeriod, setPaymentPeriod] = useState(initialPeriod || null)
   const [trialError, setTrialError] = useState(null)
 
   const handleStartTrial = async () => {

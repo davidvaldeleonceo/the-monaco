@@ -15,6 +15,9 @@
  *   aliases: map of alias → { table, fields, tableAlias }
  */
 
+import { validateColumnName } from './queryBuilder.js'
+import { isAllowedTable } from './queryBuilder.js'
+
 const JOIN_PATTERN = /(\w+):(\w+)\(([^)]+)\)/g
 
 export function parseSelect(table, selectStr) {
@@ -38,6 +41,7 @@ export function parseSelect(table, selectStr) {
       if (col === '*') {
         columns.push(`"${table}".*`)
       } else {
+        validateColumnName(col)
         columns.push(`"${table}"."${col}"`)
       }
     }
@@ -51,6 +55,13 @@ export function parseSelect(table, selectStr) {
     const joinTable = match[2]      // e.g. "clientes"
     const fields = match[3].split(',').map(f => f.trim())
     const tableAlias = `_j${joinIndex++}`
+
+    validateColumnName(alias)
+    validateColumnName(joinTable)
+    if (!isAllowedTable(joinTable)) {
+      throw new Error(`Invalid column name: "${joinTable}"`)
+    }
+    fields.forEach(f => validateColumnName(f))
 
     // FK convention: alias_id on source table
     const fkColumn = `${alias}_id`

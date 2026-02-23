@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useData } from '../components/DataContext'
+import { useToast } from '../components/Toast'
 import { ESTADO_CLASSES } from '../config/constants'
 
 export function useServiceHandlers() {
@@ -8,6 +9,7 @@ export function useServiceHandlers() {
     lavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales,
     updateLavadaLocal, deleteLavadaLocal, plantillasMensaje, negocioId
   } = useData()
+  const toast = useToast()
 
   const [expandedCards, setExpandedCards] = useState({})
   const [editingPago, setEditingPago] = useState(null)
@@ -124,7 +126,7 @@ export function useServiceHandlers() {
         .eq('id', lavadaId)
 
       if (error) {
-        alert('Error al cambiar estado: ' + error.message)
+        toast.error('Error al cambiar estado: ' + error.message)
         return
       }
       updateLavadaLocal(lavadaId, updates)
@@ -139,7 +141,7 @@ export function useServiceHandlers() {
         .eq('id', lavadaId)
 
       if (error) {
-        alert('Error al cambiar lavador: ' + error.message)
+        toast.error('Error al cambiar lavador: ' + error.message)
         return
       }
       const lavador = lavadores.find(l => l.id == lavadorId)
@@ -160,7 +162,7 @@ export function useServiceHandlers() {
         .eq('id', lavadaId)
 
       if (error) {
-        alert('Error al cambiar tipo de lavado: ' + error.message)
+        toast.error('Error al cambiar tipo de lavado: ' + error.message)
         return
       }
       updateLavadaLocal(lavadaId, {
@@ -189,7 +191,7 @@ export function useServiceHandlers() {
         .eq('id', lavadaId)
 
       if (error) {
-        alert('Error al actualizar pagos: ' + error.message)
+        toast.error('Error al actualizar pagos: ' + error.message)
         return
       }
       updateLavadaLocal(lavadaId, { pagos: pagosSanitized, metodo_pago_id: metodoCompatible })
@@ -216,7 +218,7 @@ export function useServiceHandlers() {
         .eq('id', lavadaId)
 
       if (error) {
-        alert('Error al actualizar adicionales: ' + error.message)
+        toast.error('Error al actualizar adicionales: ' + error.message)
         return
       }
       updateLavadaLocal(lavadaId, {
@@ -242,7 +244,7 @@ export function useServiceHandlers() {
         .eq('id', lavadaId)
 
       if (error) {
-        alert('Error al eliminar servicio: ' + error.message)
+        toast.error('Error al eliminar servicio: ' + error.message)
         return
       }
       deleteLavadaLocal(lavadaId)
@@ -290,7 +292,7 @@ export function useServiceHandlers() {
   const enviarWhatsApp = (lavada, { plantillaId, negocioNombre, userEmail, origen } = {}) => {
     const cliente = clientes.find(c => c.id == lavada.cliente_id)
     if (!cliente?.telefono) {
-      alert('El cliente no tiene número de teléfono registrado')
+      toast.info('El cliente no tiene número de teléfono registrado')
       return
     }
 

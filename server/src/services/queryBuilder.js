@@ -10,7 +10,7 @@ import { parseSelect } from './joinResolver.js'
 
 const COLUMN_NAME_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 
-function validateColumnName(col) {
+export function validateColumnName(col) {
   if (!COLUMN_NAME_REGEX.test(col)) {
     throw new Error(`Invalid column name: "${col}"`)
   }

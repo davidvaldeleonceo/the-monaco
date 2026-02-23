@@ -9,11 +9,13 @@ import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney } from '../utils/money'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
+import { useToast } from './Toast'
 
 registerLocale('es', es)
 
 export default function Membresias() {
   const { clientes, tiposMembresia, metodosPago, loading, updateClienteLocal, addClienteLocal, negocioId } = useData()
+  const toast = useToast()
 
   const [pagos, setPagos] = useState([])
   const [loadingPagos, setLoadingPagos] = useState(false)
@@ -181,7 +183,7 @@ export default function Membresias() {
           .single()
 
         if (error || !nuevoC) {
-          alert('Error al crear cliente: ' + (error?.message || ''))
+          toast.error('Error al crear cliente: ' + (error?.message || ''))
           return
         }
 

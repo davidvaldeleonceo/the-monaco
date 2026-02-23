@@ -84,8 +84,9 @@ export default function Reportes() {
 
   useEffect(() => { if (fechaDesde && fechaHasta) fetchAll() }, [fechaDesde, fechaHasta])
 
-  const FILTRO_LABELS = { d: 'D', s: 'S', m: 'M', a: 'A' }
-  const filtroIdx = ['d', 's', 'm', 'a'].indexOf(filtroRapido)
+  const FILTRO_LABELS = { d: 'D', s: 'S', m: 'M', a: 'A', fechas: 'Fechas' }
+  const pillKeys = ['d', 's', 'm', 'a', 'fechas']
+  const filtroIdx = pillKeys.indexOf(filtroRapido)
 
   const aplicarFiltroRapido = (tipo) => {
     setFiltroRapido(tipo)
@@ -1031,29 +1032,42 @@ export default function Reportes() {
 
       <div className="analisis-filters">
         <div className="home-period-pills">
-          {filtroIdx >= 0 && <div className="home-period-bubble" style={{ transform: `translateX(${filtroIdx * 100}%)` }} />}
-          {['d', 's', 'm', 'a'].map(p => (
+          {filtroIdx >= 0 && <div className="home-period-bubble" style={{ width: `${100 / pillKeys.length}%`, transform: `translateX(${filtroIdx * 100}%)` }} />}
+          {pillKeys.map(p => (
             <button
               key={p}
               className={`home-period-pill ${filtroRapido === p ? 'active' : ''}`}
-              onClick={() => aplicarFiltroRapido(p)}
+              onClick={() => p === 'fechas' ? setFiltroRapido('fechas') : aplicarFiltroRapido(p)}
             >
-              {p.toUpperCase()}
+              {FILTRO_LABELS[p]}
             </button>
           ))}
         </div>
-        <div className="analisis-filters-right">
-          <div className="filter-fechas">
-            <DatePicker selected={fechaDesde} onChange={d => { setFechaDesde(d); setFiltroRapido('') }} selectsStart startDate={fechaDesde} endDate={fechaHasta} placeholderText="Desde" className="filter-date" dateFormat="dd/MM/yyyy" locale="es" isClearable />
-            <span className="filter-separator">→</span>
-            <DatePicker selected={fechaHasta} onChange={d => { setFechaHasta(d); setFiltroRapido('') }} selectsEnd startDate={fechaDesde} endDate={fechaHasta} minDate={fechaDesde} placeholderText="Hasta" className="filter-date" dateFormat="dd/MM/yyyy" locale="es" isClearable />
-          </div>
-          <div className="reportes-actions">
-            <button className="btn-export btn-pdf" onClick={descargarPDF} disabled={!data}><FileText size={18} /><span>PDF</span></button>
-            <button className="btn-export btn-excel" onClick={descargarExcel} disabled={!data}><FileSpreadsheet size={18} /><span>Excel</span></button>
-          </div>
+        <div className="reportes-actions">
+          <button className="btn-export btn-pdf" onClick={descargarPDF} disabled={!data}><FileText size={18} /><span>PDF</span></button>
+          <button className="btn-export btn-excel" onClick={descargarExcel} disabled={!data}><FileSpreadsheet size={18} /><span>Excel</span></button>
         </div>
       </div>
+      {filtroRapido === 'fechas' && (
+        <div className="analisis-range-calendar">
+          <DatePicker
+            selectsRange
+            startDate={fechaDesde}
+            endDate={fechaHasta}
+            onChange={([start, end]) => {
+              setFechaDesde(start)
+              setFechaHasta(end)
+            }}
+            inline
+            locale="es"
+          />
+        </div>
+      )}
+      {fechaDesde && fechaHasta && (
+        <div className="analisis-range-resumen">
+          {fechaDesde.toLocaleDateString('es-CO')} → {fechaHasta.toLocaleDateString('es-CO')}
+        </div>
+      )}
 
       {cargando && !data && (
         <div className="dash-v2">

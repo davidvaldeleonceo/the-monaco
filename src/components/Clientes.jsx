@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
+import { useToast } from './Toast'
 import { formatMoney } from '../utils/money'
 import { LAVADAS_SELECT } from '../config/constants'
 import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles, Droplets, DollarSign, MessageCircle } from 'lucide-react'
@@ -19,6 +20,7 @@ registerLocale('es', es)
 export default function Clientes() {
   const { clientes, tiposMembresia, tiposLavado, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, refreshLavadas, negocioId, plantillasMensaje } = useData()
   const { userEmail, negocioNombre } = useTenant()
+  const toast = useToast()
   const location = useLocation()
   const navigate = useNavigate()
   const [highlightId, setHighlightId] = useState(null)
@@ -259,7 +261,7 @@ export default function Clientes() {
     if (!id) return
     const { error } = await supabase.from('clientes').delete().eq('id', id)
     if (error) {
-      alert('No se pudo eliminar: ' + (error.message.includes('foreign key') ? 'El cliente tiene servicios asociados. Elimina sus servicios primero.' : error.message))
+      toast.error('No se pudo eliminar: ' + (error.message.includes('foreign key') ? 'El cliente tiene servicios asociados. Elimina sus servicios primero.' : error.message))
     } else {
       deleteClienteLocal(id)
       setSelectedClientes(prev => { const next = new Set(prev); next.delete(id); return next })
@@ -315,7 +317,7 @@ export default function Clientes() {
     })
 
     if (fallos > 0) {
-      alert(`Se eliminaron ${eliminados} de ${count} clientes. ${fallos} no se pudieron eliminar porque tienen servicios asociados.`)
+      toast.error(`Se eliminaron ${eliminados} de ${ids.length} clientes. ${fallos} no se pudieron eliminar porque tienen servicios asociados.`)
     }
   }
 
@@ -789,7 +791,7 @@ export default function Clientes() {
   const sendWhatsApp = (cliente, tipo, plantillaId) => {
     setWhatsappMenu(null)
     if (!cliente.telefono) {
-      alert('Este cliente no tiene teléfono registrado')
+      toast.info('Este cliente no tiene teléfono registrado')
       return
     }
     const telefono = cliente.telefono.replace(/\D/g, '')

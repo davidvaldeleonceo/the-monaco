@@ -268,12 +268,35 @@ CREATE TABLE IF NOT EXISTS pagos_suscripcion (
 );
 
 -- ============================================
+-- CHECKOUT PAYMENTS (public checkout — pay first, register later)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS checkout_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_email TEXT NOT NULL,
+  periodo TEXT NOT NULL,
+  wompi_transaction_id TEXT UNIQUE,
+  wompi_reference TEXT NOT NULL,
+  monto INTEGER NOT NULL,
+  estado TEXT NOT NULL DEFAULT 'PENDING',
+  datos_wompi JSONB,
+  negocio_id UUID REFERENCES negocios(id),
+  claimed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================
 -- INDEXES
 -- ============================================
 
 CREATE INDEX IF NOT EXISTS idx_user_profiles_negocio ON user_profiles(negocio_id);
+CREATE INDEX IF NOT EXISTS idx_tipos_membresia_negocio ON tipos_membresia(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_clientes_negocio ON clientes(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_clientes_placa ON clientes(placa);
+CREATE INDEX IF NOT EXISTS idx_tipos_lavado_negocio ON tipos_lavado(negocio_id);
+CREATE INDEX IF NOT EXISTS idx_lavadores_negocio ON lavadores(negocio_id);
+CREATE INDEX IF NOT EXISTS idx_metodos_pago_negocio ON metodos_pago(negocio_id);
+CREATE INDEX IF NOT EXISTS idx_servicios_adicionales_negocio ON servicios_adicionales(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_lavadas_negocio ON lavadas(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_lavadas_fecha ON lavadas(fecha);
 CREATE INDEX IF NOT EXISTS idx_lavadas_cliente ON lavadas(cliente_id);
@@ -294,6 +317,9 @@ CREATE INDEX IF NOT EXISTS idx_pagos_suscripcion_referencia ON pagos_suscripcion
 CREATE INDEX IF NOT EXISTS idx_plantillas_mensaje_negocio ON plantillas_mensaje(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_mensajes_enviados_negocio ON mensajes_enviados(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_mensajes_enviados_cliente ON mensajes_enviados(cliente_id);
+
+CREATE INDEX IF NOT EXISTS idx_checkout_payments_estado ON checkout_payments(estado);
+CREATE INDEX IF NOT EXISTS idx_checkout_payments_reference ON checkout_payments(wompi_reference);
 
 -- Unique constraint for placa per negocio
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_placa_negocio ON clientes(placa, negocio_id);
@@ -318,6 +344,18 @@ DO $$ BEGIN
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMPTZ;
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS subscription_period TEXT;
   ALTER TABLE tipos_lavado ADD COLUMN IF NOT EXISTS es_base BOOLEAN DEFAULT false;
+  ALTER TABLE pago_trabajadores ADD COLUMN IF NOT EXISTS abonos_detalle JSONB DEFAULT '[]';
+END $$;
+
+-- Ensure nombre/placa are NOT NULL (idempotent — safe to re-run)
+DO $$ BEGIN
+  UPDATE user_profiles SET nombre = 'Sin nombre' WHERE nombre IS NULL;
+  ALTER TABLE user_profiles ALTER COLUMN nombre SET NOT NULL;
+  ALTER TABLE user_profiles ALTER COLUMN nombre SET DEFAULT '';
+  UPDATE reservas SET placa = '' WHERE placa IS NULL;
+  ALTER TABLE reservas ALTER COLUMN placa SET NOT NULL;
+  ALTER TABLE reservas ALTER COLUMN placa SET DEFAULT '';
+EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
 -- Mark existing negocios as already configured so they skip the wizard

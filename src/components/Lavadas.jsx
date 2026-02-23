@@ -11,6 +11,7 @@ import { Plus, Search, X, Trash2, SlidersHorizontal, Upload, Download, CheckSqua
 import Select from 'react-select'
 import * as XLSX from 'xlsx'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
+import { useToast } from './Toast'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -22,6 +23,7 @@ export default function Lavadas() {
   const { lavadas: allLavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales, tiposMembresia, loading, updateLavadaLocal, deleteLavadaLocal, refreshLavadas, refreshClientes, negocioId, loadAllLavadas, lavadasAllLoaded } = useData()
   const { userProfile, userEmail } = useTenant()
   const navigate = useNavigate()
+  const toast = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Auto-open modal when navigating with ?new=1 or ?import=1 (e.g. from Home FAB)
@@ -203,7 +205,7 @@ export default function Lavadas() {
     setDeleting(false)
     setSelectedLavadas(new Set())
     setModoSeleccion(false)
-    if (eliminados > 0) alert(`Se eliminaron ${eliminados} servicios`)
+    if (eliminados > 0) toast.info(`Se eliminaron ${eliminados} servicios`)
   }
 
 
@@ -745,6 +747,7 @@ export default function Lavadas() {
             selectionMode={modoSeleccion}
             isSelected={selectedLavadas.has(lavada.id)}
             onToggleSelect={toggleSelectLavada}
+            onValidationToast={(msg) => toast.error(msg)}
           />
         ))}
       </div>

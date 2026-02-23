@@ -1,6 +1,6 @@
 import 'dotenv/config'
 
-const required = ['DATABASE_URL', 'JWT_SECRET']
+const required = ['DATABASE_URL', 'JWT_SECRET', 'WOMPI_PUBLIC_KEY', 'WOMPI_PRIVATE_KEY', 'WOMPI_EVENTS_SECRET', 'WOMPI_INTEGRITY_SECRET']
 
 for (const key of required) {
   if (!process.env[key]) {

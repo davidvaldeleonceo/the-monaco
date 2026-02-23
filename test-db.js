@@ -1,8 +1,13 @@
+import 'dotenv/config'
 import pg from 'pg'
-const pool = new pg.Pool({
-    connectionString: 'postgresql://MonacoPro:M0n4c0*moto@localhost:5433/MonacoProDB',
-    connectionTimeoutMillis: 5000,
-})
+
+const connectionString = process.env.DATABASE_URL
+if (!connectionString) {
+  console.error('Missing DATABASE_URL environment variable')
+  process.exit(1)
+}
+
+const pool = new pg.Pool({ connectionString, connectionTimeoutMillis: 5000 })
 
 try {
     console.log('Testing connection...')

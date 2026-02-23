@@ -25,7 +25,7 @@ export function getAccessibleRoutes(rol) {
 export function canAccess(rol, path) {
   const role = (rol || 'admin').toLowerCase()
   const allowed = ROLE_ACCESS[path]
-  if (!allowed) return true // unknown routes default to allowed
+  if (!allowed) return false // unknown routes denied by default
   return allowed.includes(role)
 }
 

@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
+import { useToast } from './Toast'
 import { Plus, X, Edit, Trash2, Settings, ChevronDown, Crown, Shield, MessageCircle, Mail, User, Check, LogOut } from 'lucide-react'
 import { formatMoney } from '../utils/money'
 import { API_URL, TOKEN_KEY, SESSION_KEY } from '../config/constants'
@@ -14,6 +15,7 @@ export default function Configuracion() {
   const navigate = useNavigate()
   const { refreshConfig, serviciosAdicionales, productos, negocioId, tiposLavado } = useData()
   const { userProfile, isPro, planStatus, planCancelled, daysLeftInTrial, refresh, userEmail, negocioNombre } = useTenant()
+  const toast = useToast()
   const isAdmin = userProfile?.rol === 'admin'
   const [activeTab, setActiveTab] = useState('datos')
   const [configSubTab, setConfigSubTab] = useState('membresias')
@@ -205,7 +207,7 @@ export default function Configuracion() {
     if (!id) return
     const { error } = await supabase.from(getTable()).delete().eq('id', id)
     if (error) {
-      alert('Error al eliminar: ' + error.message)
+      toast.error('Error al eliminar: ' + error.message)
     } else {
       fetchData()
       refreshConfig()
@@ -220,7 +222,7 @@ export default function Configuracion() {
     const { error } = await supabase.from(getTable()).update({ activo: newStatus }).eq('id', item.id)
 
     if (error) {
-      alert(`Error al actualizar estado: ${error.message}`)
+      toast.error(`Error al actualizar estado: ${error.message}`)
       fetchData()
     }
     refreshConfig()
@@ -251,7 +253,7 @@ export default function Configuracion() {
       .eq('id', item.id)
 
     if (error) {
-      alert('Error al actualizar tipo de pago: ' + error.message)
+      toast.error('Error al actualizar tipo de pago: ' + error.message)
       fetchData()
     }
     refreshConfig()
@@ -282,7 +284,7 @@ export default function Configuracion() {
     }
 
     if (error) {
-      alert('Error al guardar: ' + error.message)
+      toast.error('Error al guardar: ' + error.message)
       return
     }
 
@@ -301,7 +303,7 @@ export default function Configuracion() {
       .eq('activo', true)
 
     if (error) {
-      alert('Error al actualizar: ' + error.message)
+      toast.error('Error al actualizar: ' + error.message)
     } else {
       setShowBulkModal(false)
       fetchData()
@@ -322,7 +324,7 @@ export default function Configuracion() {
       const res = await supabase.from('servicios_adicionales').insert([{ ...payload, negocio_id: negocioId }])
       error = res.error
     }
-    if (error) { alert('Error: ' + error.message); return }
+    if (error) { toast.error('Error: ' + error.message); return }
     setAdicionalEdit(null)
     refreshConfig()
   }
@@ -335,14 +337,14 @@ export default function Configuracion() {
     const id = pendingAdicionalDeleteId
     if (!id) return
     const { error } = await supabase.from('servicios_adicionales').delete().eq('id', id)
-    if (error) { alert('Error: ' + error.message); return }
+    if (error) { toast.error('Error: ' + error.message); return }
     refreshConfig()
     setPendingAdicionalDeleteId(null)
   }
 
   const handleAdicionalToggle = async (item) => {
     const { error } = await supabase.from('servicios_adicionales').update({ activo: !item.activo }).eq('id', item.id)
-    if (error) { alert('Error: ' + error.message); return }
+    if (error) { toast.error('Error: ' + error.message); return }
     refreshConfig()
   }
 
@@ -385,7 +387,7 @@ export default function Configuracion() {
     setFn(prev => ({
       ...prev,
       pago_adicionales_detalle: {
-        ...prev.pago_adicionales_detalle,
+        ...(prev.pago_adicionales_detalle || {}),
         [servicioId]: value === '' ? '' : Number(value)
       }
     }))
@@ -1065,7 +1067,7 @@ export default function Configuracion() {
                       setFn(prev => ({
                         ...prev,
                         pago_adicionales_detalle: {
-                          ...prev.pago_adicionales_detalle,
+                          ...(prev.pago_adicionales_detalle || {}),
                           [id]: 0
                         }
                       }))

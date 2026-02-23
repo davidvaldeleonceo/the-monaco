@@ -1,10 +1,13 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import PasswordInput from './common/PasswordInput'
 
 export default function Register() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const planPro = searchParams.get('plan') === 'pro'
+  const period = searchParams.get('period')
   const [nombreNegocio, setNombreNegocio] = useState('')
   const [nombreAdmin, setNombreAdmin] = useState('')
   const [email, setEmail] = useState('')
@@ -66,7 +69,7 @@ export default function Register() {
       return
     }
 
-    navigate('/dashboard')
+    navigate(planPro ? `/home?upgrade=1${period ? `&period=${period}` : ''}` : '/dashboard')
     setLoading(false)
   }
 

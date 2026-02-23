@@ -45,6 +45,8 @@ export default function ServiceCard({
   onPlacaClick,
   // Plantillas
   plantillasMensaje = [],
+  // Validation toast callback
+  onValidationToast,
 }) {
   const navigate = useNavigate()
   const [waMenu, setWaMenu] = useState(false)
@@ -74,6 +76,12 @@ export default function ServiceCard({
     if (!lavadorOk) errs.lavador = true
     if (!pagosOk || !allMetodosSet) errs.pagos = true
     onSetValidationErrors(errs)
+    if (onValidationToast) {
+      const msg = !tipoOk ? 'Falta seleccionar tipo de lavado'
+        : !lavadorOk ? 'Falta asignar un lavador'
+        : 'Revisa los pagos del servicio'
+      onValidationToast(msg)
+    }
     setTimeout(() => onSetValidationErrors(null), 2000)
   }
 
