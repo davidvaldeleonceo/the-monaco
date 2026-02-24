@@ -149,12 +149,22 @@ export function useServiceHandlers() {
     })
   }
 
+  const clienteTieneMembresia = (cliente) => {
+    if (!cliente?.membresia_id) return false
+    const nombre = (cliente.membresia?.nombre || '').toLowerCase().trim()
+    return nombre !== 'cliente' && nombre !== 'cliente frecuente' && nombre !== 'sin membresia' && nombre !== 'sin membresía'
+  }
+
   const handleTipoLavadoChangeInline = async (lavadaId, tipoId) => {
     await withCardUpdate(lavadaId, async () => {
       const tipo = tiposLavado.find(t => t.id == tipoId)
       const lavada = lavadas.find(l => l.id === lavadaId)
       const nuevosAdicionales = autoAddIncluidos(tipo, lavada.adicionales || [])
-      const nuevoValor = calcularValor(tipoId, nuevosAdicionales)
+      let nuevoValor = calcularValor(tipoId, nuevosAdicionales)
+
+      // If client has active membership, force price to 0
+      const cliente = clientes.find(c => c.id == lavada.cliente_id)
+      if (clienteTieneMembresia(cliente)) nuevoValor = 0
 
       const { error } = await supabase
         .from('lavadas')

@@ -6,13 +6,10 @@ import Register from './components/Register'
 import Layout from './components/Layout'
 import Lavadas from './components/Lavadas'
 import Clientes from './components/Clientes'
-import Balance from './components/Balance'
 import Reportes from './components/Reportes'
-import Tareas from './components/Tareas'
 import PagoTrabajadores from './components/PagoTrabajadores'
 import Configuracion from './components/Configuracion'
 import Home from './components/Home'
-import Membresias from './components/Membresias'
 import LandingPage from './components/LandingPage'
 import { DataProvider } from './components/DataContext'
 import { TenantProvider, useTenant } from './components/TenantContext'
@@ -23,6 +20,7 @@ import Onboarding from './components/Onboarding'
 import SetupWizard from './components/SetupWizard'
 import RoleGuard from './components/RoleGuard'
 import PlanGuard from './components/PlanGuard'
+import { TourProvider } from './components/AppTour'
 import './App.css'
 
 function AuthenticatedApp({ session }) {
@@ -42,6 +40,7 @@ function AuthenticatedApp({ session }) {
 
   return (
     <DataProvider>
+      <TourProvider>
       <Routes>
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/login" element={<Navigate to="/home" replace />} />
@@ -51,14 +50,12 @@ function AuthenticatedApp({ session }) {
           <Route path="/reportes" element={<Navigate to="/dashboard" replace />} />
           <Route path="/lavadas" element={<RoleGuard path="/lavadas"><Lavadas /></RoleGuard>} />
           <Route path="/clientes" element={<RoleGuard path="/clientes"><Clientes /></RoleGuard>} />
-          <Route path="/balance" element={<RoleGuard path="/balance"><Balance /></RoleGuard>} />
-          <Route path="/tareas" element={<RoleGuard path="/tareas"><Tareas /></RoleGuard>} />
           <Route path="/pagos" element={<RoleGuard path="/pagos"><PlanGuard feature="Pago de Trabajadores"><PagoTrabajadores /></PlanGuard></RoleGuard>} />
-          <Route path="/membresias" element={<RoleGuard path="/membresias"><PlanGuard feature="Membresias"><Membresias /></PlanGuard></RoleGuard>} />
           <Route path="/cuenta" element={<RoleGuard path="/cuenta"><Configuracion /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
+      </TourProvider>
     </DataProvider>
   )
 }

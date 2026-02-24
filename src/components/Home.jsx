@@ -58,6 +58,7 @@ export default function Home() {
   })
   const [tab, setTab] = useState('servicios')
   const [transacciones, setTransacciones] = useState([])
+  const [prevTransacciones, setPrevTransacciones] = useState([])
   const [showFabMenu, setShowFabMenu] = useState(false)
   const [showServicioModal, setShowServicioModal] = useState(false)
   const [showVentaModal, setShowVentaModal] = useState(false)
@@ -155,6 +156,7 @@ export default function Home() {
   const ventaDragStartY = useRef(null)
 
   // Auto-open UpgradeModal when coming from "Comprar ahora" flow
+  const [showCardDetails, setShowCardDetails] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [upgradePeriod, setUpgradePeriod] = useState(null)
   useEffect(() => {
@@ -199,6 +201,40 @@ export default function Home() {
     }
   }
 
+  const getPreviousPeriodRange = (p) => {
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    switch (p) {
+      case 'd': {
+        const ayer = new Date(hoy)
+        ayer.setDate(ayer.getDate() - 1)
+        return { desde: ayer, hasta: ayer }
+      }
+      case 's': {
+        const inicioSemana = new Date(hoy)
+        const diaS = hoy.getDay()
+        inicioSemana.setDate(hoy.getDate() - (diaS === 0 ? 6 : diaS - 1))
+        const inicioSemanaAnterior = new Date(inicioSemana)
+        inicioSemanaAnterior.setDate(inicioSemanaAnterior.getDate() - 7)
+        const finSemanaAnterior = new Date(inicioSemanaAnterior)
+        finSemanaAnterior.setDate(finSemanaAnterior.getDate() + 6)
+        return { desde: inicioSemanaAnterior, hasta: finSemanaAnterior }
+      }
+      case 'm': {
+        const inicioMesPasado = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+        const finMesPasado = new Date(hoy.getFullYear(), hoy.getMonth(), 0)
+        return { desde: inicioMesPasado, hasta: finMesPasado }
+      }
+      case 'a': {
+        const inicioAnoPasado = new Date(hoy.getFullYear() - 1, 0, 1)
+        const finAnoPasado = new Date(hoy.getFullYear() - 1, 11, 31)
+        return { desde: inicioAnoPasado, hasta: finAnoPasado }
+      }
+      default:
+        return { desde: null, hasta: null }
+    }
+  }
+
   const detectPeriod = (fechaStr) => {
     const dateOnly = typeof fechaStr === 'string' ? fechaStr.split('T')[0] : null
     if (!dateOnly) return 'a'
@@ -220,22 +256,29 @@ export default function Home() {
     return `${y}-${m}-${d}`
   }
 
-  const { desde: fechaDesde, hasta: fechaHasta } = getDateRange(periodo)
+  // Effective date range: union of period range and custom date filters
+  // Ensures custom pills like "Ayer" always include the target dates
+  const _periodRange = getDateRange(periodo)
+  const fechaDesde = (!filtroFechaDesde || !_periodRange.desde)
+    ? (filtroFechaDesde || _periodRange.desde)
+    : (filtroFechaDesde < _periodRange.desde ? filtroFechaDesde : _periodRange.desde)
+  const fechaHasta = (!filtroFechaHasta || !_periodRange.hasta)
+    ? (filtroFechaHasta || _periodRange.hasta)
+    : (filtroFechaHasta > _periodRange.hasta ? filtroFechaHasta : _periodRange.hasta)
 
   // Fetch transacciones
   const fetchTransacciones = async () => {
-    const { desde: d, hasta: h } = getDateRange(periodo)
     let query = supabase
       .from('transacciones')
       .select('*, metodo_pago:metodos_pago(nombre)')
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false })
 
-    if (d) {
-      query = query.gte('fecha', fechaLocalStr(d))
+    if (fechaDesde) {
+      query = query.gte('fecha', fechaLocalStr(fechaDesde))
     }
-    if (h) {
-      const hasta = new Date(h)
+    if (fechaHasta) {
+      const hasta = new Date(fechaHasta)
       hasta.setDate(hasta.getDate() + 1)
       query = query.lt('fecha', fechaLocalStr(hasta))
     }
@@ -246,7 +289,22 @@ export default function Home() {
 
   useEffect(() => {
     fetchTransacciones()
-  }, [periodo])
+    // Fetch previous period transacciones for comparison
+    const fetchPrevTransacciones = async () => {
+      const { desde: d, hasta: h } = getPreviousPeriodRange(periodo)
+      if (!d || !h) { setPrevTransacciones([]); return }
+      let query = supabase
+        .from('transacciones')
+        .select('id, tipo, valor, categoria, fecha')
+        .gte('fecha', fechaLocalStr(d))
+      const hasta = new Date(h)
+      hasta.setDate(hasta.getDate() + 1)
+      query = query.lt('fecha', fechaLocalStr(hasta))
+      const { data } = await query
+      setPrevTransacciones(data || [])
+    }
+    fetchPrevTransacciones()
+  }, [periodo, filtroFechaDesde, filtroFechaHasta])
 
   useEffect(() => {
     if (periodo === 'a' && !lavadasAllLoaded) {
@@ -389,10 +447,6 @@ export default function Home() {
         const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
         setPeriodo('s'); setFiltroFechaDesde(ayer); setFiltroFechaHasta(ayer); break
       }
-      case 'manana': {
-        const manana = new Date(hoy); manana.setDate(manana.getDate() + 1)
-        setPeriodo('s'); setFiltroFechaDesde(manana); setFiltroFechaHasta(manana); break
-      }
       case 'semana':
         setPeriodo('s'); setFiltroFechaDesde(null); setFiltroFechaHasta(null); break
       case 'mes':
@@ -407,11 +461,9 @@ export default function Home() {
     hoy.setHours(0, 0, 0, 0)
     if (filtroFechaDesde && filtroFechaHasta) {
       const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
-      const manana = new Date(hoy); manana.setDate(manana.getDate() + 1)
       const dDesde = new Date(filtroFechaDesde); dDesde.setHours(0, 0, 0, 0)
       const dHasta = new Date(filtroFechaHasta); dHasta.setHours(0, 0, 0, 0)
       if (dDesde.getTime() === ayer.getTime() && dHasta.getTime() === ayer.getTime()) return 'ayer'
-      if (dDesde.getTime() === manana.getTime() && dHasta.getTime() === manana.getTime()) return 'manana'
       return null
     }
     if (!filtroFechaDesde && !filtroFechaHasta) {
@@ -445,9 +497,7 @@ export default function Home() {
       const dDesde = new Date(filtroFechaDesde); dDesde.setHours(0, 0, 0, 0)
       const dHasta = new Date(filtroFechaHasta); dHasta.setHours(0, 0, 0, 0)
       const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
-      const manana = new Date(hoy); manana.setDate(manana.getDate() + 1)
       if (dDesde.getTime() === ayer.getTime() && dHasta.getTime() === ayer.getTime()) return 'Ayer'
-      if (dDesde.getTime() === manana.getTime() && dHasta.getTime() === manana.getTime()) return 'Mañana'
       const fmtD = `${dDesde.getDate()}/${dDesde.getMonth() + 1}`
       const fmtH = `${dHasta.getDate()}/${dHasta.getMonth() + 1}`
       return `${fmtD} - ${fmtH}`
@@ -489,7 +539,6 @@ export default function Home() {
               {[
                 { key: 'hoy', label: 'Hoy' },
                 { key: 'ayer', label: 'Ayer' },
-                { key: 'manana', label: 'Mañana' },
                 { key: 'semana', label: 'Esta semana' },
                 { key: 'mes', label: 'Este mes' },
                 { key: 'ano', label: 'Este año' },
@@ -777,6 +826,55 @@ export default function Home() {
   const egresos = entradasParaBalance.filter(t => t.tipo === 'EGRESO').reduce((sum, t) => sum + Number(t.valor), 0)
   const balance = ingresos - egresos
 
+  // Previous period comparison
+  const { prevIngresos, prevEgresos } = useMemo(() => {
+    const { desde: prevDesde, hasta: prevHasta } = getPreviousPeriodRange(periodo)
+    if (!prevDesde || !prevHasta) return { prevIngresos: 0, prevEgresos: 0 }
+
+    const prevPagosLavadas = lavadas.flatMap(l => {
+      const pagos = l.pagos || []
+      if (pagos.length === 0) return []
+      const dateOnlyL = typeof l.fecha === 'string' ? l.fecha.split('T')[0] : null
+      const fechaLavada = dateOnlyL ? new Date(dateOnlyL + 'T00:00:00') : new Date(l.fecha)
+      if (isNaN(fechaLavada.getTime())) return []
+      const d = new Date(prevDesde); d.setHours(0, 0, 0, 0)
+      const h = new Date(prevHasta); h.setHours(23, 59, 59, 999)
+      if (fechaLavada < d || fechaLavada > h) return []
+      return pagos.map(p => ({ tipo: 'INGRESO', valor: p.valor || 0 }))
+    })
+
+    const prevEntradas = [...prevTransacciones, ...prevPagosLavadas]
+    const pi = prevEntradas.filter(t => t.tipo === 'INGRESO').reduce((sum, t) => sum + Number(t.valor), 0)
+    const pe = prevEntradas.filter(t => t.tipo === 'EGRESO').reduce((sum, t) => sum + Number(t.valor), 0)
+    return { prevIngresos: pi, prevEgresos: pe }
+  }, [periodo, lavadas, prevTransacciones])
+
+  const pctIngresos = prevIngresos === 0
+    ? (ingresos > 0 ? 100 : 0)
+    : ((ingresos - prevIngresos) / prevIngresos) * 100
+  const pctEgresos = prevEgresos === 0
+    ? (egresos > 0 ? 100 : 0)
+    : ((egresos - prevEgresos) / prevEgresos) * 100
+  const prevBalance = prevIngresos - prevEgresos
+  const pctBalance = prevBalance === 0
+    ? (balance !== 0 ? 100 : 0)
+    : ((balance - prevBalance) / Math.abs(prevBalance)) * 100
+  const comparisonLabels = { d: 'vs ayer', s: 'vs semana pasada', m: 'vs mes pasado', a: 'vs año pasado' }
+  const comparisonLabel = comparisonLabels[periodo] || ''
+
+  const balancePorMetodo = useMemo(() => {
+    const grouped = {}
+    entradasParaBalance.forEach(t => {
+      const metodo = t.metodo_pago?.nombre || 'Sin método'
+      if (!grouped[metodo]) grouped[metodo] = { ingresos: 0, egresos: 0 }
+      if (t.tipo === 'INGRESO') grouped[metodo].ingresos += Number(t.valor)
+      else grouped[metodo].egresos += Number(t.valor)
+    })
+    return Object.entries(grouped)
+      .map(([metodo, v]) => ({ metodo, ingresos: v.ingresos, egresos: v.egresos, balance: v.ingresos - v.egresos }))
+      .sort((a, b) => b.balance - a.balance)
+  }, [entradasParaBalance])
+
   const balanceChartData = useMemo(() => {
     const hoy = new Date()
     hoy.setHours(0, 0, 0, 0)
@@ -853,6 +951,81 @@ export default function Home() {
 
     return []
   }, [periodo, todasEntradas, lavadas, transacciones])
+
+  const buildChartData = (tipoFilter) => {
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+
+    if (periodo === 'd') {
+      const hace7 = new Date(hoy)
+      hace7.setDate(hace7.getDate() - 6)
+      const entries = lavadas.flatMap(l => {
+        const fecha = new Date(l.fecha)
+        fecha.setHours(0, 0, 0, 0)
+        if (fecha < hace7 || fecha > hoy) return []
+        const pagos = l.pagos || []
+        return pagos.map(p => ({ fecha: l.fecha, valor: p.valor || 0, tipo: 'INGRESO' }))
+      }).filter(e => e.tipo === tipoFilter)
+      transacciones.filter(t => t.tipo === tipoFilter).forEach(t => {
+        entries.push({ fecha: t.fecha, valor: t.valor, tipo: t.tipo })
+      })
+      const buckets = []
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(hace7)
+        d.setDate(hace7.getDate() + i)
+        buckets.push({ date: d.getTime(), value: 0 })
+      }
+      entries.forEach(e => {
+        const fecha = new Date(e.fecha)
+        fecha.setHours(0, 0, 0, 0)
+        const idx = buckets.findIndex(b => b.date === fecha.getTime())
+        if (idx >= 0) buckets[idx].value += Number(e.valor)
+      })
+      const diasInit = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
+      let acc = 0
+      return buckets.map(b => { acc += b.value; return { name: diasInit[new Date(b.date).getDay()], value: acc } })
+    }
+
+    const entries = todasEntradas.filter(e => e.tipo === tipoFilter)
+    if (periodo === 's') {
+      const dias = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+      const buckets = dias.map(() => 0)
+      entries.forEach(e => {
+        if (!e.fecha) return
+        let day = new Date(e.fecha).getDay()
+        day = day === 0 ? 6 : day - 1
+        buckets[day] += Number(e.valor)
+      })
+      let acc = 0
+      return dias.map((d, i) => { acc += buckets[i]; return { name: d, value: acc } })
+    }
+    if (periodo === 'm') {
+      const daysInMonth = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate()
+      const buckets = Array.from({ length: daysInMonth }, () => 0)
+      entries.forEach(e => {
+        if (!e.fecha) return
+        const day = new Date(e.fecha).getDate()
+        buckets[day - 1] += Number(e.valor)
+      })
+      let acc = 0
+      return buckets.map((v, i) => { acc += v; return { name: String(i + 1), value: acc } })
+    }
+    if (periodo === 'a') {
+      const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+      const buckets = Array.from({ length: 12 }, () => 0)
+      entries.forEach(e => {
+        if (!e.fecha) return
+        const month = new Date(e.fecha).getMonth()
+        buckets[month] += Number(e.valor)
+      })
+      let acc = 0
+      return meses.map((m, i) => { acc += buckets[i]; return { name: m, value: acc } })
+    }
+    return []
+  }
+
+  const ingresosChartData = useMemo(() => buildChartData('INGRESO'), [periodo, todasEntradas, lavadas, transacciones])
+  const egresosChartData = useMemo(() => buildChartData('EGRESO'), [periodo, todasEntradas, lavadas, transacciones])
 
   const [chartMode, setChartMode] = useState('categoria')
   const [chartModeEgresos, setChartModeEgresos] = useState('categoria')
@@ -1108,7 +1281,8 @@ export default function Home() {
     setCreandoVentaCliente(true)
     const hoy = new Date()
     const hoyStr = fechaLocalStr(hoy)
-    const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
+    const defaultMem = tiposMembresia.find(m => m.nombre.toLowerCase().trim() === 'cliente')
+      || tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
 
     const { data, error } = await supabase
       .from('clientes')
@@ -1116,7 +1290,7 @@ export default function Home() {
         nombre: ventaNuevoClienteData.nombre,
         placa: ventaNuevoClienteData.placa.toUpperCase(),
         telefono: ventaNuevoClienteData.telefono || null,
-        membresia_id: sinMembresia?.id || null,
+        membresia_id: defaultMem?.id || null,
         fecha_inicio_membresia: hoyStr,
         fecha_fin_membresia: hoyStr,
         estado: 'Activo',
@@ -1150,7 +1324,8 @@ export default function Home() {
   const handleNuevoClienteMembresiaChange = (membresiaId) => {
     const membresia = tiposMembresia.find(m => m.id === membresiaId)
     const hoy = new Date()
-    if (!membresiaId || membresia?.nombre?.toLowerCase().includes('sin ')) {
+    const nomMem = (membresia?.nombre || '').toLowerCase().trim()
+    if (!membresiaId || nomMem === 'cliente' || nomMem === 'cliente frecuente' || nomMem.includes('sin ')) {
       setNuevoClienteData(prev => ({ ...prev, membresia_id: membresiaId, fecha_inicio_membresia: hoy, fecha_fin_membresia: hoy }))
     } else {
       const fin = new Date()
@@ -1171,10 +1346,11 @@ export default function Home() {
 
     let formToSend = { ...nuevoClienteData }
     if (!formToSend.membresia_id) {
-      const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
-      if (sinMembresia) {
+      const defaultMem2 = tiposMembresia.find(m => m.nombre.toLowerCase().trim() === 'cliente')
+        || tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
+      if (defaultMem2) {
         const hoy = new Date()
-        formToSend.membresia_id = sinMembresia.id
+        formToSend.membresia_id = defaultMem2.id
         formToSend.fecha_inicio_membresia = hoy
         formToSend.fecha_fin_membresia = hoy
       }
@@ -1725,6 +1901,12 @@ export default function Home() {
           <span className={`home-balance-amount ${balance >= 0 ? 'positivo' : 'negativo'}`}>
             {displayMoney(balance)}
           </span>
+          {comparisonLabel && (pctBalance !== 0 || (prevIngresos > 0 || prevEgresos > 0)) && (
+            <div className={`period-comparison ${pctBalance >= 0 ? 'positive' : 'negative'}`}>
+              {pctBalance >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              <span>{pctBalance >= 0 ? '+' : ''}{pctBalance.toFixed(1)}% {comparisonLabel}</span>
+            </div>
+          )}
           <div className="balance-chart">
             <ResponsiveContainer width="100%" height={80}>
               <AreaChart data={balanceChartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
@@ -1739,12 +1921,62 @@ export default function Home() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          <div className="balance-detail-toggle" onClick={() => setShowCardDetails(!showCardDetails)}>
+            <span>{showCardDetails ? 'Ver menos' : 'Ver más'}</span>
+            <ChevronDown size={16} className={showCardDetails ? 'rotated' : ''} />
+          </div>
+          {showCardDetails && (
+            <div className="balance-detail-body">
+              <div className="balance-detail-header">
+                <span>Método</span>
+                <span>Ingresos</span>
+                <span>Egresos</span>
+                <span>Balance</span>
+              </div>
+              {balancePorMetodo.map(m => (
+                <div key={m.metodo} className="balance-detail-row">
+                  <span className="balance-detail-metodo">{m.metodo}</span>
+                  <span className="positivo">{displayMoneyShort(m.ingresos)}</span>
+                  <span className="negativo">{displayMoneyShort(m.egresos)}</span>
+                  <span className={m.balance >= 0 ? 'positivo' : 'negativo'}>{displayMoneyShort(m.balance)}</span>
+                </div>
+              ))}
+              {balancePorMetodo.length === 0 && (
+                <div className="balance-detail-empty">Sin movimientos en este período</div>
+              )}
+            </div>
+          )}
         </div>
         <div className="home-balance-card ingresos">
-          {donutData ? (
+          <span className="home-balance-label ingresos-title">Ingresos - {displayPeriodoLabel}</span>
+          <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
+          {comparisonLabel && (pctIngresos !== 0 || prevIngresos > 0) && (
+            <div className={`period-comparison ${pctIngresos >= 0 ? 'positive' : 'negative'}`}>
+              {pctIngresos >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              <span>{pctIngresos >= 0 ? '+' : ''}{pctIngresos.toFixed(1)}% {comparisonLabel}</span>
+            </div>
+          )}
+          <div className="balance-chart">
+            <ResponsiveContainer width="100%" height={80}>
+              <AreaChart data={ingresosChartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+                <defs>
+                  <linearGradient id="ingresosGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--accent-green)" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="var(--accent-green)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} interval="preserveStartEnd" />
+                <Area type="monotone" dataKey="value" stroke="var(--accent-green)" strokeWidth={2} fill="url(#ingresosGrad)" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="balance-detail-toggle" onClick={() => setShowCardDetails(!showCardDetails)}>
+            <span>{showCardDetails ? 'Ver menos' : 'Ver más'}</span>
+            <ChevronDown size={16} className={showCardDetails ? 'rotated' : ''} />
+          </div>
+          {showCardDetails && donutData && (
             <>
-              <div className="ingresos-header">
-                <span className="home-balance-label ingresos-title">Ingresos - {displayPeriodoLabel}</span>
+              <div className="ingresos-header" style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.6rem' }}>
                 <div className="ingresos-chart-toggle">
                   <button
                     className={`ingresos-toggle-btn ${chartMode === 'categoria' ? 'active' : ''}`}
@@ -1762,7 +1994,6 @@ export default function Home() {
               </div>
               <div className="ingresos-body">
                 <div className="ingresos-left">
-                  <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
                   <div className="ingresos-legend">
                     {donutData.segments.map(s => (
                       <div key={s.label} className="ingresos-legend-item">
@@ -1780,18 +2011,41 @@ export default function Home() {
                 </div>
               </div>
             </>
-          ) : (
-            <>
-              <span className="home-balance-label ingresos-title">Ingresos - {displayPeriodoLabel}</span>
-              <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
-            </>
+          )}
+          {showCardDetails && !donutData && (
+            <div className="balance-detail-empty">Sin ingresos en este período</div>
           )}
         </div>
         <div className="home-balance-card egresos">
-          {donutDataEgresos ? (
+          <span className="home-balance-label egresos-title">Egresos - {displayPeriodoLabel}</span>
+          <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
+          {comparisonLabel && (pctEgresos !== 0 || prevEgresos > 0) && (
+            <div className={`period-comparison ${pctEgresos <= 0 ? 'positive' : 'negative'}`}>
+              {pctEgresos >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              <span>{pctEgresos >= 0 ? '+' : ''}{pctEgresos.toFixed(1)}% {comparisonLabel}</span>
+            </div>
+          )}
+          <div className="balance-chart">
+            <ResponsiveContainer width="100%" height={80}>
+              <AreaChart data={egresosChartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+                <defs>
+                  <linearGradient id="egresosGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--accent-red)" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="var(--accent-red)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} interval="preserveStartEnd" />
+                <Area type="monotone" dataKey="value" stroke="var(--accent-red)" strokeWidth={2} fill="url(#egresosGrad)" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="balance-detail-toggle" onClick={() => setShowCardDetails(!showCardDetails)}>
+            <span>{showCardDetails ? 'Ver menos' : 'Ver más'}</span>
+            <ChevronDown size={16} className={showCardDetails ? 'rotated' : ''} />
+          </div>
+          {showCardDetails && donutDataEgresos && (
             <>
-              <div className="egresos-header">
-                <span className="home-balance-label egresos-title">Egresos - {displayPeriodoLabel}</span>
+              <div className="egresos-header" style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.6rem' }}>
                 <div className="egresos-chart-toggle">
                   <button
                     className={`egresos-toggle-btn ${chartModeEgresos === 'categoria' ? 'active' : ''}`}
@@ -1809,7 +2063,6 @@ export default function Home() {
               </div>
               <div className="egresos-body">
                 <div className="egresos-left">
-                  <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
                   <div className="egresos-legend">
                     {donutDataEgresos.segments.map(s => (
                       <div key={s.label} className="egresos-legend-item">
@@ -1827,11 +2080,9 @@ export default function Home() {
                 </div>
               </div>
             </>
-          ) : (
-            <>
-              <span className="home-balance-label egresos-title">Egresos - {displayPeriodoLabel}</span>
-              <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
-            </>
+          )}
+          {showCardDetails && !donutDataEgresos && (
+            <div className="balance-detail-empty">Sin egresos en este período</div>
           )}
         </div>
       </div>
@@ -2355,7 +2606,7 @@ export default function Home() {
               {clienteInfoModal.correo && <><span className="cliente-info-label">Correo</span><span className="cliente-info-value">{clienteInfoModal.correo}</span></>}
               {clienteInfoModal.placa && <><span className="cliente-info-label">Placa</span><span className="cliente-info-value">{clienteInfoModal.placa}</span></>}
               {clienteInfoModal.moto && <><span className="cliente-info-label">Vehículo</span><span className="cliente-info-value">{clienteInfoModal.moto}</span></>}
-              {clienteInfoModal.membresia && <><span className="cliente-info-label">Membresía</span><span className="cliente-info-value">{typeof clienteInfoModal.membresia === 'object' ? clienteInfoModal.membresia.nombre : clienteInfoModal.membresia}</span></>}
+              {clienteInfoModal.membresia && <><span className="cliente-info-label">Categoría</span><span className="cliente-info-value">{typeof clienteInfoModal.membresia === 'object' ? clienteInfoModal.membresia.nombre : clienteInfoModal.membresia}</span></>}
               <span className="cliente-info-label">Cashback</span><span className="cliente-info-value">{formatMoney(clienteInfoModal.cashback_acumulado || 0)}</span>
             </div>
             <div className="modal-footer">
@@ -3059,7 +3310,10 @@ export default function Home() {
                     >
                       <option value="">Seleccionar membresía</option>
                       {tiposMembresia
-                        .filter(m => !m.nombre.toLowerCase().includes('sin '))
+                        .filter(m => {
+                          const n = m.nombre.toLowerCase().trim()
+                          return n !== 'cliente' && n !== 'cliente frecuente' && !n.includes('sin ')
+                        })
                         .map(m => (
                           <option key={m.id} value={m.id}>{m.nombre} - {formatMoney(m.precio || 0)}</option>
                         ))}

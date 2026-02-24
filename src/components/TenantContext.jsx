@@ -28,6 +28,7 @@ export function TenantProvider({ session, children }) {
   const [negocioNombre, setNegocioNombre] = useState('')
   const [setupComplete, setSetupComplete] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [justCompletedSetup, setJustCompletedSetup] = useState(false)
 
   const fetchProfile = useCallback(async () => {
     if (!session?.user?.id) {
@@ -38,7 +39,7 @@ export function TenantProvider({ session, children }) {
     setLoading(true)
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('*, negocio:negocios(id, nombre, setup_complete, plan, trial_ends_at, subscription_expires_at)')
+      .select('*, negocio:negocios(id, nombre, setup_complete, plan, trial_ends_at, subscription_expires_at, subscription_period)')
       .eq('id', session.user.id)
       .single()
 
@@ -63,7 +64,7 @@ export function TenantProvider({ session, children }) {
 
           const { data: newData } = await supabase
             .from('user_profiles')
-            .select('*, negocio:negocios(id, nombre, setup_complete, plan, trial_ends_at, subscription_expires_at)')
+            .select('*, negocio:negocios(id, nombre, setup_complete, plan, trial_ends_at, subscription_expires_at, subscription_period)')
             .eq('id', session.user.id)
             .single()
           if (newData) {
@@ -91,6 +92,11 @@ export function TenantProvider({ session, children }) {
 
   const markSetupDone = useCallback(() => {
     setSetupComplete(true)
+    setJustCompletedSetup(true)
+  }, [])
+
+  const clearJustCompletedSetup = useCallback(() => {
+    setJustCompletedSetup(false)
   }, [])
 
   const planInfo = useMemo(() => {
@@ -106,6 +112,8 @@ export function TenantProvider({ session, children }) {
     needsOnboarding,
     needsSetup,
     markSetupDone,
+    justCompletedSetup,
+    clearJustCompletedSetup,
     refresh: fetchProfile,
     userEmail: session?.user?.email,
     userId: session?.user?.id,
@@ -113,6 +121,7 @@ export function TenantProvider({ session, children }) {
     planStatus: planInfo.status,
     planCancelled: planInfo.cancelled,
     daysLeftInTrial: planInfo.daysLeft,
+    subscriptionPeriod: userProfile?.negocio?.subscription_period || null,
   }
 
   return (

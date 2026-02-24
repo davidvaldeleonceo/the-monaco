@@ -7,6 +7,11 @@ import logger from '../config/logger.js'
 
 const router = Router()
 
+// Wompi sandbox/production base URL
+const WOMPI_API = env.wompiPublicKey.startsWith('pub_test_')
+  ? 'https://sandbox.wompi.co/v1'
+  : 'https://production.wompi.co/v1'
+
 const PLANS = {
   monthly: { amount: 4990000, label: '$49.900/mes', days: 31 },
   yearly: { amount: 49000000, label: '$490.000/año', days: 366 },
@@ -29,6 +34,44 @@ router.get('/config', auth, async (req, res) => {
     },
     currency: 'COP',
   })
+})
+
+// GET /api/wompi/pse-banks — list PSE financial institutions (no auth)
+router.get('/pse-banks', async (_req, res) => {
+  try {
+    const banksRes = await fetch(`${WOMPI_API}/pse/financial_institutions`, {
+      headers: { Authorization: `Bearer ${env.wompiPublicKey}` },
+    })
+    if (!banksRes.ok) {
+      return res.status(502).json({ error: 'Error al obtener bancos PSE' })
+    }
+    const banksData = await banksRes.json()
+    res.json(banksData.data || [])
+  } catch (err) {
+    logger.error('PSE banks error:', err)
+    res.status(500).json({ error: 'Error al obtener bancos PSE' })
+  }
+})
+
+// GET /api/wompi/check-transaction/:id — poll transaction status (with auth)
+router.get('/check-transaction/:id', auth, async (req, res) => {
+  try {
+    const negocioId = req.user?.negocio_id
+    if (!negocioId) return res.status(401).json({ error: 'No negocio' })
+
+    const { rows } = await pool.query(
+      'SELECT estado FROM pagos_suscripcion WHERE wompi_transaction_id = $1 AND negocio_id = $2',
+      [req.params.id, negocioId]
+    )
+    if (!rows[0]) {
+      // Transaction not found for this negocio — still pending or doesn't exist
+      return res.json({ status: 'PENDING' })
+    }
+    res.json({ status: rows[0].estado })
+  } catch (err) {
+    logger.error('Check transaction error:', err)
+    res.status(500).json({ error: 'Error al verificar transacción' })
+  }
 })
 
 // POST /api/wompi/create-payment-reference — generate reference + integrity hash
@@ -193,11 +236,6 @@ router.post('/cancel', auth, async (req, res) => {
   }
 })
 
-// Wompi sandbox/production base URL
-const WOMPI_API = env.wompiPublicKey.startsWith('pub_test_')
-  ? 'https://sandbox.wompi.co/v1'
-  : 'https://production.wompi.co/v1'
-
 // Helper: poll transaction status until it resolves or times out
 async function pollTransactionStatus(transactionId, maxAttempts = 10, delayMs = 2000) {
   for (let i = 0; i < maxAttempts; i++) {
@@ -211,15 +249,29 @@ async function pollTransactionStatus(transactionId, maxAttempts = 10, delayMs = 
   return null // still pending after all attempts
 }
 
-// POST /api/wompi/pay — tokenize card + create transaction (with auth)
+// POST /api/wompi/pay — create transaction: CARD (tokenize+pay), PSE (redirect), NEQUI (push)
 router.post('/pay', auth, async (req, res) => {
   try {
-    const { period, card } = req.body
+    const { period, method = 'CARD', card, pse, nequi } = req.body
     if (!period || !PLANS[period]) {
       return res.status(400).json({ error: 'Período inválido' })
     }
-    if (!card?.number || !card?.cvc || !card?.exp_month || !card?.exp_year || !card?.card_holder) {
-      return res.status(400).json({ error: 'Datos de tarjeta incompletos' })
+
+    // Validate per method
+    if (method === 'CARD') {
+      if (!card?.number || !card?.cvc || !card?.exp_month || !card?.exp_year || !card?.card_holder) {
+        return res.status(400).json({ error: 'Datos de tarjeta incompletos' })
+      }
+    } else if (method === 'PSE') {
+      if (!pse?.financial_institution_code || ![0, 1].includes(Number(pse?.user_type)) || !pse?.user_legal_id_type || !pse?.user_legal_id) {
+        return res.status(400).json({ error: 'Datos de PSE incompletos' })
+      }
+    } else if (method === 'NEQUI') {
+      if (!nequi?.phone_number || !/^\d{10}$/.test(nequi.phone_number)) {
+        return res.status(400).json({ error: 'Número de Nequi inválido (10 dígitos)' })
+      }
+    } else {
+      return res.status(400).json({ error: 'Método de pago inválido' })
     }
 
     const negocioId = req.user?.negocio_id
@@ -229,43 +281,70 @@ router.post('/pay', auth, async (req, res) => {
     const reference = `MONACO_${negocioId}_${period}_${Date.now()}`
     const currency = 'COP'
 
-    // 1. Tokenize card with Wompi (public key)
-    const tokenRes = await fetch(`${WOMPI_API}/tokens/cards`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.wompiPublicKey}`,
-      },
-      body: JSON.stringify({
-        number: card.number,
-        cvc: card.cvc,
-        exp_month: card.exp_month,
-        exp_year: card.exp_year,
-        card_holder: card.card_holder,
-      }),
-    })
-    if (!tokenRes.ok) {
-      return res.json({ success: false, error: 'Error al comunicarse con el procesador de pagos (tokenización)' })
-    }
-    const tokenData = await tokenRes.json()
-
-    if (!tokenData.data?.id) {
-      return res.json({ success: false, error: 'Error al tokenizar la tarjeta. Verifica los datos.' })
-    }
-
-    // 2. Get acceptance token
+    // 1. Get acceptance token
     const merchantRes = await fetch(`${WOMPI_API}/merchants/${env.wompiPublicKey}`)
     if (!merchantRes.ok) {
       return res.json({ success: false, error: 'Error al obtener configuración del comercio' })
     }
     const merchantData = await merchantRes.json()
     const acceptanceToken = merchantData.data?.presigned_acceptance?.acceptance_token
+    if (!acceptanceToken) {
+      return res.json({ success: false, error: 'No se pudo obtener el token de aceptación del comercio' })
+    }
 
-    // 3. Compute integrity hash
+    // 2. Compute integrity hash
     const integrityString = `${reference}${plan.amount}${currency}${env.wompiIntegritySecret}`
     const integrityHash = crypto.createHash('sha256').update(integrityString).digest('hex')
 
-    // 4. Create transaction with Wompi (private key)
+    // 3. Build payment_method per type
+    let paymentMethod
+    const txBodyExtra = {}
+
+    if (method === 'CARD') {
+      // Tokenize card
+      const tokenRes = await fetch(`${WOMPI_API}/tokens/cards`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.wompiPublicKey}`,
+        },
+        body: JSON.stringify({
+          number: card.number,
+          cvc: card.cvc,
+          exp_month: card.exp_month,
+          exp_year: card.exp_year,
+          card_holder: card.card_holder,
+        }),
+      })
+      if (!tokenRes.ok) {
+        return res.json({ success: false, error: 'Error al comunicarse con el procesador de pagos (tokenización)' })
+      }
+      const tokenData = await tokenRes.json()
+      if (!tokenData.data?.id) {
+        return res.json({ success: false, error: 'Error al tokenizar la tarjeta. Verifica los datos.' })
+      }
+      paymentMethod = { type: 'CARD', token: tokenData.data.id, installments: 1 }
+
+    } else if (method === 'PSE') {
+      paymentMethod = {
+        type: 'PSE',
+        user_type: pse.user_type, // 0 = natural, 1 = jurídica
+        user_legal_id_type: pse.user_legal_id_type,
+        user_legal_id: pse.user_legal_id,
+        financial_institution_code: pse.financial_institution_code,
+        payment_description: `Monaco PRO ${period}`,
+      }
+      // PSE requires redirect_url — use configured frontend URL (never trust headers)
+      txBodyExtra.redirect_url = `${env.frontendUrl}/cuenta?tab=plan&pse_return=1`
+
+    } else if (method === 'NEQUI') {
+      paymentMethod = {
+        type: 'NEQUI',
+        phone_number: nequi.phone_number,
+      }
+    }
+
+    // 4. Create transaction with Wompi
     const txRes = await fetch(`${WOMPI_API}/transactions`, {
       method: 'POST',
       headers: {
@@ -279,11 +358,8 @@ router.post('/pay', auth, async (req, res) => {
         reference,
         signature: integrityHash,
         acceptance_token: acceptanceToken,
-        payment_method: {
-          type: 'CARD',
-          token: tokenData.data.id,
-          installments: 1,
-        },
+        payment_method: paymentMethod,
+        ...txBodyExtra,
       }),
     })
     if (!txRes.ok) {
@@ -294,7 +370,26 @@ router.post('/pay', auth, async (req, res) => {
     const transactionId = txData.data?.id
     let finalStatus = txData.data?.status
 
-    // 5. If PENDING, poll until resolved (Wompi processes async)
+    // 5. For PSE and NEQUI: do NOT poll — return PENDING immediately
+    if (method === 'PSE' || method === 'NEQUI') {
+      if (transactionId) {
+        await pool.query(
+          `INSERT INTO pagos_suscripcion (negocio_id, wompi_transaction_id, wompi_reference, monto, moneda, estado, periodo, datos_wompi)
+           VALUES ($1, $2, $3, $4, $5, 'PENDING', $6, $7)
+           ON CONFLICT (wompi_transaction_id) DO NOTHING`,
+          [negocioId, transactionId, reference, plan.amount, currency, period, JSON.stringify(txData.data)]
+        )
+      }
+
+      const result = { success: true, status: 'PENDING', method, transactionId }
+      if (method === 'PSE') {
+        // Wompi returns the bank redirect URL in the payment_method
+        result.redirectUrl = txData.data?.payment_method?.extra?.async_payment_url
+      }
+      return res.json(result)
+    }
+
+    // 6. CARD flow: poll if PENDING
     if (finalStatus === 'PENDING' && transactionId) {
       const polledData = await pollTransactionStatus(transactionId)
       if (polledData?.data?.status) {
@@ -303,8 +398,17 @@ router.post('/pay', auth, async (req, res) => {
     }
 
     if (finalStatus === 'APPROVED') {
-      // Payment approved — activate subscription
-      const expiresAt = new Date()
+      // Extend from MAX(subscription_expires_at, now()) so user doesn't lose remaining days
+      const { rows: negRows } = await pool.query(
+        'SELECT subscription_expires_at FROM negocios WHERE id = $1',
+        [negocioId]
+      )
+      const now = new Date()
+      const currentExpiry = negRows[0]?.subscription_expires_at
+      const baseDate = currentExpiry && new Date(currentExpiry) > now
+        ? new Date(currentExpiry)
+        : now
+      const expiresAt = new Date(baseDate)
       expiresAt.setDate(expiresAt.getDate() + plan.days)
 
       await pool.query(
@@ -402,6 +506,9 @@ router.post('/public-pay', async (req, res) => {
     }
     const merchantData = await merchantRes.json()
     const acceptanceToken = merchantData.data?.presigned_acceptance?.acceptance_token
+    if (!acceptanceToken) {
+      return res.json({ success: false, error: 'No se pudo obtener el token de aceptación del comercio' })
+    }
 
     // 4. Compute integrity hash
     const integrityString = `${reference}${plan.amount}${currency}${env.wompiIntegritySecret}`
@@ -639,7 +746,17 @@ router.post('/webhook', async (req, res) => {
         const alreadyActivated = existingPayment[0]?.estado === 'APPROVED' && existingPayment[0]?.periodo_desde
 
         if (!alreadyActivated) {
-          const expiresAt = new Date()
+          // Extend from MAX(subscription_expires_at, now()) so user doesn't lose remaining days
+          const { rows: negRows } = await client.query(
+            'SELECT subscription_expires_at FROM negocios WHERE id = $1 FOR UPDATE',
+            [negocioId]
+          )
+          const now = new Date()
+          const currentExpiry = negRows[0]?.subscription_expires_at
+          const baseDate = currentExpiry && new Date(currentExpiry) > now
+            ? new Date(currentExpiry)
+            : now
+          const expiresAt = new Date(baseDate)
           expiresAt.setDate(expiresAt.getDate() + plan.days)
 
           await client.query(

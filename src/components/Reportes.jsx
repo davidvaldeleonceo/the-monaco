@@ -142,7 +142,7 @@ export default function Reportes() {
 
     // ALL queries in parallel: 7 total
     const [lavadasRes, transRes, lavAntRes, transAntRes, lavHistRes, transHistRes, clientesRes] = await Promise.all([
-      supabase.from('lavadas').select('*, tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre)').gte('fecha', desdeStr).lt('fecha', hastaStr),
+      supabase.from('lavadas').select('*, tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre), tipo_membresia:tipos_membresia(nombre)').gte('fecha', desdeStr).lt('fecha', hastaStr),
       supabase.from('transacciones').select('*').gte('fecha', desdeStr).lt('fecha', hastaStr),
       supabase.from('lavadas').select('valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
       supabase.from('transacciones').select('tipo, valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
@@ -155,8 +155,15 @@ export default function Reportes() {
     const trans = transRes.data || []
 
     // --- Tab 1: Ventas ---
-    const lavMem = lavadas.filter(l => l.tipo_lavado?.nombre === 'MEMBRESIA')
-    const lavInd = lavadas.filter(l => l.tipo_lavado?.nombre !== 'MEMBRESIA')
+    const esMembresia = (l) => {
+      if (l.tipo_membresia_id) {
+        const nombre = (l.tipo_membresia?.nombre || '').toLowerCase().trim()
+        return nombre !== 'cliente' && nombre !== 'cliente frecuente' && nombre !== 'sin membresia' && nombre !== 'sin membresía'
+      }
+      return l.tipo_lavado?.nombre === 'MEMBRESIA'
+    }
+    const lavMem = lavadas.filter(esMembresia)
+    const lavInd = lavadas.filter(l => !esMembresia(l))
     const totalInd = lavInd.reduce((s,l) => s + Number(l.valor||0), 0)
     const totalAdicMem = lavMem.reduce((s,l) => s + Number(l.valor||0), 0)
     const ingresosTrans = trans.filter(t => t.tipo === 'INGRESO').reduce((s,t) => s + Number(t.valor||0), 0)
@@ -318,10 +325,7 @@ export default function Reportes() {
     const kpiEgresos = trans.filter(t => t.tipo === 'EGRESO').reduce((s, t) => s + Number(t.valor), 0)
     const kpiBalance = kpiIngresos - kpiEgresos
 
-    const kpiSinMem = lavadas.filter(l => {
-      const nombre = l.tipo_lavado?.nombre?.toUpperCase() || ''
-      return nombre !== 'MEMBRESIA' && nombre !== 'MEMBRESÍA' && Number(l.valor) > 0
-    })
+    const kpiSinMem = lavadas.filter(l => !esMembresia(l) && Number(l.valor) > 0)
     const kpiTicketProm = kpiSinMem.length > 0 ? kpiSinMem.reduce((s, l) => s + Number(l.valor), 0) / kpiSinMem.length : 0
     const kpiTicketMin = kpiSinMem.length > 0 ? Math.min(...kpiSinMem.map(l => Number(l.valor))) : 0
     const kpiTicketMax = kpiSinMem.length > 0 ? Math.max(...kpiSinMem.map(l => Number(l.valor))) : 0
@@ -1026,26 +1030,32 @@ export default function Reportes() {
 
   return (
     <div className="reportes-page">
-      <div className="page-header">
-        <h1 className="page-title">Análisis</h1>
-      </div>
-
-      <div className="analisis-filters">
-        <div className="home-period-pills">
-          {filtroIdx >= 0 && <div className="home-period-bubble" style={{ width: `${100 / pillKeys.length}%`, transform: `translateX(${filtroIdx * 100}%)` }} />}
-          {pillKeys.map(p => (
-            <button
-              key={p}
-              className={`home-period-pill ${filtroRapido === p ? 'active' : ''}`}
-              onClick={() => p === 'fechas' ? setFiltroRapido('fechas') : aplicarFiltroRapido(p)}
-            >
-              {FILTRO_LABELS[p]}
-            </button>
-          ))}
+      <div className="clientes-title-row">
+        <div className="analisis-title-group">
+          <h1 className="page-title">Análisis</h1>
+          {fechaDesde && fechaHasta && (
+            <span className="analisis-range-inline">
+              {fechaDesde.toLocaleDateString('es-CO')} → {fechaHasta.toLocaleDateString('es-CO')}
+            </span>
+          )}
         </div>
-        <div className="reportes-actions">
-          <button className="btn-export btn-pdf" onClick={descargarPDF} disabled={!data}><FileText size={18} /><span>PDF</span></button>
-          <button className="btn-export btn-excel" onClick={descargarExcel} disabled={!data}><FileSpreadsheet size={18} /><span>Excel</span></button>
+        <div className="analisis-filters">
+          <div className="home-period-pills">
+            {filtroIdx >= 0 && <div className="home-period-bubble" style={{ width: `${100 / pillKeys.length}%`, transform: `translateX(${filtroIdx * 100}%)` }} />}
+            {pillKeys.map(p => (
+              <button
+                key={p}
+                className={`home-period-pill ${filtroRapido === p ? 'active' : ''}`}
+                onClick={() => p === 'fechas' ? setFiltroRapido('fechas') : aplicarFiltroRapido(p)}
+              >
+                {FILTRO_LABELS[p]}
+              </button>
+            ))}
+          </div>
+          <div className="reportes-actions">
+            <button className="btn-export btn-pdf" onClick={descargarPDF} disabled={!data}><FileText size={18} /><span>PDF</span></button>
+            <button className="btn-export btn-excel" onClick={descargarExcel} disabled={!data}><FileSpreadsheet size={18} /><span>Excel</span></button>
+          </div>
         </div>
       </div>
       {filtroRapido === 'fechas' && (
@@ -1061,11 +1071,6 @@ export default function Reportes() {
             inline
             locale="es"
           />
-        </div>
-      )}
-      {fechaDesde && fechaHasta && (
-        <div className="analisis-range-resumen">
-          {fechaDesde.toLocaleDateString('es-CO')} → {fechaHasta.toLocaleDateString('es-CO')}
         </div>
       )}
 

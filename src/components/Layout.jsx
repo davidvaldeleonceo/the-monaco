@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { supabase } from '../supabaseClient'
 import { useTenant } from './TenantContext'
 import { useTheme } from './ThemeContext'
 import { canAccess } from './RoleGuard'
@@ -8,16 +7,10 @@ import UpgradeModal from './UpgradeModal'
 import {
   Home,
   LayoutDashboard,
-  Droplets,
   Users,
-  DollarSign,
-
-  CheckSquare,
   Wallet,
-  CreditCard,
   User,
-  LogOut,
-  Menu,
+  Settings,
   X,
   ChevronLeft,
   ChevronRight,
@@ -25,7 +18,7 @@ import {
   Moon,
 } from 'lucide-react'
 
-const PRO_ROUTES = ['/pagos', '/membresias']
+const PRO_ROUTES = ['/pagos']
 
 const truncName = (name) => {
   if (!name) return 'monaco'
@@ -42,27 +35,21 @@ export default function Layout({ user }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    navigate('/')
-  }
-
   const rol = userProfile?.rol || 'admin'
   const isAdmin = rol === 'admin'
 
-  const allMenuItems = [
+  const topMenuItems = [
     { to: '/home', icon: Home, label: 'Home' },
-    { to: '/dashboard', icon: LayoutDashboard, label: 'Análisis' },
-    { to: '/clientes', icon: Users, label: 'Clientes' },
-    { to: '/balance', icon: DollarSign, label: 'Balance' },
-
-    { to: '/tareas', icon: CheckSquare, label: 'Control Tareas' },
-    { to: '/membresias', icon: CreditCard, label: 'Membresías' },
-    { to: '/pagos', icon: Wallet, label: 'Pago Trabajadores' },
-    { to: '/cuenta', icon: User, label: 'Mi Cuenta' },
   ]
 
-  const menuItems = allMenuItems.filter(item => canAccess(rol, item.to))
+  const mainMenuItems = [
+    { to: '/dashboard', icon: LayoutDashboard, label: 'Análisis' },
+    { to: '/clientes', icon: Users, label: 'Clientes' },
+    { to: '/pagos', icon: Wallet, label: 'Trabajadores' },
+  ]
+
+  const filteredTop = topMenuItems.filter(item => canAccess(rol, item.to))
+  const filteredMain = mainMenuItems.filter(item => canAccess(rol, item.to))
 
   const handleNavClick = () => {
     setMenuOpen(false)
@@ -103,7 +90,7 @@ export default function Layout({ user }) {
         </div>
 
         <nav className="sidebar-nav">
-          {menuItems.map((item) => (
+          {filteredTop.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -111,7 +98,20 @@ export default function Layout({ user }) {
               onClick={handleNavClick}
               title={item.label}
             >
-              <item.icon size={20} />
+              <span className="nav-icon-wrap"><item.icon size={20} /></span>
+              {!sidebarCollapsed && <span>{item.label}</span>}
+            </NavLink>
+          ))}
+          <div className="sidebar-separator" />
+          {filteredMain.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              onClick={handleNavClick}
+              title={item.label}
+            >
+              <span className="nav-icon-wrap"><item.icon size={20} /></span>
               {!sidebarCollapsed && <span>{item.label}</span>}
               {!isPro && PRO_ROUTES.includes(item.to) && (
                 <span className="pro-badge-nav">PRO</span>
@@ -120,36 +120,47 @@ export default function Layout({ user }) {
           ))}
         </nav>
 
+        <div className="sidebar-theme-area">
+          <span className="sidebar-theme-label">Apariencia</span>
+          <button onClick={toggleTheme} className="sidebar-theme-switch" title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
+            <Sun size={14} className={`sidebar-theme-icon ${theme === 'light' ? 'active' : ''}`} />
+            <div className="sidebar-theme-thumb" />
+            <Moon size={14} className={`sidebar-theme-icon ${theme === 'dark' ? 'active' : ''}`} />
+          </button>
+        </div>
+
         <div className="sidebar-footer">
-          {sidebarCollapsed ? (
-            <>
-              <button onClick={toggleTheme} className="theme-toggle-btn" title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
-                {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-              </button>
-              <button onClick={handleLogout} className="logout-button" title="Cerrar sesión">
-                <LogOut size={20} />
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="user-info">
-                <div className="user-avatar">
-                  {user?.email?.charAt(0).toUpperCase()}
-                </div>
-                <div className="user-details">
-                  <span className="user-name">{user?.email?.split('@')[0]}</span>
-                  <span className="user-role">{userProfile?.rol || 'Administrador'}</span>
-                </div>
-              </div>
-              <button onClick={toggleTheme} className="theme-toggle-btn" title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
-                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-                <span>{theme === 'dark' ? 'Claro' : 'Oscuro'}</span>
-              </button>
-              <button onClick={handleLogout} className="logout-button" title="Cerrar sesión">
-                <LogOut size={20} />
-              </button>
-            </>
-          )}
+          <div className="sidebar-footer-row">
+            {sidebarCollapsed ? (
+              <>
+                <NavLink to="/cuenta" className={({ isActive }) => `sidebar-footer-icon ${isActive ? 'active' : ''}`} onClick={handleNavClick} title="Mi Cuenta">
+                  <User size={20} />
+                </NavLink>
+                {isAdmin && (
+                  <NavLink to="/cuenta?tab=config" className="sidebar-footer-icon" onClick={handleNavClick} title="Configuración">
+                    <Settings size={20} />
+                  </NavLink>
+                )}
+              </>
+            ) : (
+              <>
+                <NavLink to="/cuenta" className={({ isActive }) => `sidebar-footer-account ${isActive ? 'active' : ''}`} onClick={handleNavClick}>
+                  <div className="user-avatar">
+                    {user?.email?.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="user-details">
+                    <span className="user-name">{user?.email?.split('@')[0]}</span>
+                    <span className="user-role">{userProfile?.rol || 'Administrador'}</span>
+                  </div>
+                </NavLink>
+                {isAdmin && (
+                  <NavLink to="/cuenta?tab=config" className="sidebar-footer-icon" onClick={handleNavClick} title="Configuración">
+                    <Settings size={20} />
+                  </NavLink>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </aside>
 

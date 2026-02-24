@@ -4,9 +4,10 @@ import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useTenant } from './TenantContext'
 import { useToast } from './Toast'
-import { Plus, X, Edit, Trash2, Settings, ChevronDown, Crown, Shield, MessageCircle, Mail, User, Check, LogOut } from 'lucide-react'
+import { Plus, X, Edit, Trash2, Settings, ChevronDown, Crown, Shield, MessageCircle, Mail, User, Check, LogOut, HelpCircle, Loader } from 'lucide-react'
 import { formatMoney } from '../utils/money'
 import { API_URL, TOKEN_KEY, SESSION_KEY } from '../config/constants'
+import { useTour } from './AppTour'
 import UpgradeModal from './UpgradeModal'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 import PasswordInput from './common/PasswordInput'
@@ -14,8 +15,9 @@ import PasswordInput from './common/PasswordInput'
 export default function Configuracion() {
   const navigate = useNavigate()
   const { refreshConfig, serviciosAdicionales, productos, negocioId, tiposLavado } = useData()
-  const { userProfile, isPro, planStatus, planCancelled, daysLeftInTrial, refresh, userEmail, negocioNombre } = useTenant()
+  const { userProfile, isPro, planStatus, planCancelled, daysLeftInTrial, refresh, userEmail, negocioNombre, subscriptionPeriod } = useTenant()
   const toast = useToast()
+  const { startTour } = useTour()
   const isAdmin = userProfile?.rol === 'admin'
   const [activeTab, setActiveTab] = useState('datos')
   const [configSubTab, setConfigSubTab] = useState('membresias')
@@ -41,6 +43,8 @@ export default function Configuracion() {
   const [pendingDeleteId, setPendingDeleteId] = useState(null)
   const [pendingAdicionalDeleteId, setPendingAdicionalDeleteId] = useState(null)
   const [pendingCancelSub, setPendingCancelSub] = useState(false)
+  const [showPlanFeatures, setShowPlanFeatures] = useState(false)
+  const [pseStatus, setPseStatus] = useState(null) // 'polling' | 'approved' | 'failed' | 'timeout' | null
   const [bulkForm, setBulkForm] = useState({
     tipo_pago: null,
     pago_porcentaje: '',
@@ -69,7 +73,7 @@ export default function Configuracion() {
   ]
 
   // Handle ?tab=plan from URL
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   useEffect(() => {
     const tab = searchParams.get('tab')
     if (tab && tabs.some(t => t.id === tab)) setActiveTab(tab)
@@ -79,6 +83,61 @@ export default function Configuracion() {
       setConfigSubTab(subtab)
     }
   }, [searchParams])
+
+  // PSE return: detect ?pse_return=1, poll transaction, show banner in Plan tab
+  useEffect(() => {
+    if (searchParams.get('pse_return') !== '1') return
+    const txId = localStorage.getItem('monaco_pse_tx_id')
+    if (!txId) {
+      setSearchParams(prev => { prev.delete('pse_return'); return prev })
+      return
+    }
+
+    setActiveTab('plan')
+    setPseStatus('polling')
+
+    let cancelled = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 30 // 30 * 4s = 2 min
+    const token = localStorage.getItem(TOKEN_KEY)
+
+    const poll = setInterval(async () => {
+      if (cancelled) return
+      attempts++
+      try {
+        const res = await fetch(`${API_URL}/api/wompi/check-transaction/${txId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+
+        if (data.status === 'APPROVED') {
+          clearInterval(poll)
+          localStorage.removeItem('monaco_pse_tx_id')
+          setPseStatus('approved')
+          refresh()
+          setSearchParams({ tab: 'plan' })
+          setTimeout(() => setPseStatus(null), 3000)
+        } else if (data.status === 'DECLINED' || data.status === 'ERROR' || data.status === 'VOIDED') {
+          clearInterval(poll)
+          localStorage.removeItem('monaco_pse_tx_id')
+          setPseStatus('failed')
+          setSearchParams({ tab: 'plan' })
+        } else if (attempts >= MAX_ATTEMPTS) {
+          clearInterval(poll)
+          localStorage.removeItem('monaco_pse_tx_id')
+          setPseStatus('timeout')
+          setSearchParams({ tab: 'plan' })
+        }
+      } catch {
+        // network error — keep polling
+      }
+    }, 4000)
+
+    return () => {
+      cancelled = true
+      clearInterval(poll)
+    }
+  }, [])
 
 
   useEffect(() => {
@@ -1108,8 +1167,8 @@ export default function Configuracion() {
               <input type="number" step="0.01" value={numVal(formData.descuento)} onChange={numChange('descuento')} />
             </div>
             <div className="form-group">
-              <label>Duración (meses)</label>
-              <input type="number" min="1" value={numVal(formData.duracion_dias)} onChange={numChange('duracion_dias')} required />
+              <label>Duración (meses, 0 = sin vencimiento)</label>
+              <input type="number" min="0" value={numVal(formData.duracion_dias)} onChange={numChange('duracion_dias')} />
             </div>
             <div className="form-group checkbox-group">
               <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
@@ -1439,7 +1498,7 @@ export default function Configuracion() {
         <p>¿Necesitas ayuda? Contáctanos:</p>
         <div className="cuenta-actions">
           <a
-            href="https://wa.me/573001234567?text=Hola%2C%20necesito%20ayuda%20con%20Monaco"
+            href="https://wa.me/573144016349?text=Hola%2C%20necesito%20ayuda%20con%20Monaco"
             target="_blank"
             rel="noopener noreferrer"
             className="btn-secondary"
@@ -1452,6 +1511,12 @@ export default function Configuracion() {
           >
             <Mail size={18} /> Email
           </a>
+          <button
+            className="btn-secondary"
+            onClick={() => { localStorage.removeItem('monaco_tour_completed'); startTour() }}
+          >
+            <HelpCircle size={18} /> Repetir tutorial
+          </button>
         </div>
         <p className="cuenta-version">Monaco v1.0.0</p>
       </div>
@@ -1481,7 +1546,7 @@ export default function Configuracion() {
 
   const renderPlanTab = () => {
     const statusLabel = planCancelled && isPro ? 'CANCELADO'
-      : planStatus === 'active' ? 'PRO ACTIVO'
+      : planStatus === 'active' ? (subscriptionPeriod === 'yearly' ? 'PRO ANUAL' : 'PRO MENSUAL')
       : planStatus === 'trial' ? 'PRO TRIAL'
       : 'GRATUITO'
     const statusClass = planStatus === 'free' ? 'plan-status--free'
@@ -1491,6 +1556,34 @@ export default function Configuracion() {
     const expiresAt = userProfile?.negocio?.subscription_expires_at || userProfile?.negocio?.trial_ends_at
     const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleDateString('es-CO') : null
 
+    const freeFeatures = [
+      { label: 'Hasta 50 lavadas por mes', included: true },
+      { label: 'Hasta 30 clientes', included: true },
+      { label: 'Registro de servicios', included: true },
+      { label: 'Métodos de pago', included: true },
+      { label: 'Lavadas ilimitadas', included: false },
+      { label: 'Clientes ilimitados', included: false },
+      { label: 'Pago de trabajadores', included: false },
+      { label: 'Membresías y cashback', included: false },
+      { label: 'Análisis y reportes', included: false },
+      { label: 'Mensajes por WhatsApp', included: false },
+    ]
+
+    const proFeatures = [
+      { label: 'Lavadas ilimitadas', included: true },
+      { label: 'Clientes ilimitados', included: true },
+      { label: 'Registro de servicios', included: true },
+      { label: 'Métodos de pago', included: true },
+      { label: 'Pago de trabajadores', included: true },
+      { label: 'Membresías y cashback', included: true },
+      { label: 'Análisis y reportes', included: true },
+      { label: 'Mensajes por WhatsApp', included: true },
+      { label: 'Productos e inventario', included: true },
+      { label: 'Soporte prioritario', included: true },
+    ]
+
+    const features = isPro || planStatus === 'trial' ? proFeatures : freeFeatures
+
     return (
       <div className="plan-panel">
         <div className="plan-panel-header">
@@ -1499,17 +1592,54 @@ export default function Configuracion() {
             <h2>Tu Plan</h2>
             <span className={`plan-status-badge ${statusClass}`}>{statusLabel}</span>
           </div>
-          {isPro && !planCancelled && (
-            <button className="btn-cancel-sub" onClick={requestCancelSubscription}>
-              Cancelar suscripción
-            </button>
-          )}
         </div>
 
-        {planCancelled && isPro && (
-          <div className="plan-panel-info">
-            <p>Tu suscripción fue cancelada. Seguirás con acceso PRO hasta el <strong>{expiresLabel}</strong>.</p>
+        {pseStatus === 'polling' && (
+          <div className="pse-banner pse-banner--polling">
+            <Loader size={20} className="spin" />
+            <span>Verificando tu pago PSE...</span>
           </div>
+        )}
+        {pseStatus === 'approved' && (
+          <div className="pse-banner pse-banner--approved">
+            <Check size={20} />
+            <span>¡Pago PSE exitoso! Tu plan PRO está activo.</span>
+          </div>
+        )}
+        {pseStatus === 'failed' && (
+          <div className="pse-banner pse-banner--failed">
+            <X size={20} />
+            <div>
+              <span>El pago PSE fue rechazado.</span>
+              <button className="btn-link" onClick={() => { setPseStatus(null); setShowUpgradeModal(true) }}>Intentar de nuevo</button>
+            </div>
+          </div>
+        )}
+        {pseStatus === 'timeout' && (
+          <div className="pse-banner pse-banner--timeout">
+            <HelpCircle size={20} />
+            <span>El pago está siendo procesado. Tu plan se activará automáticamente cuando se confirme.</span>
+          </div>
+        )}
+
+        {planCancelled && isPro && (
+          <>
+            <div className="plan-panel-info">
+              <p>Tu suscripción fue cancelada. Seguirás con acceso PRO hasta el <strong>{expiresLabel}</strong>.</p>
+            </div>
+            <div className="plan-upgrade-cta">
+              <div className="plan-upgrade-cta-text">
+                <Crown size={20} />
+                <div>
+                  <strong>Reactiva tu suscripción</strong>
+                  <p>No pierdas acceso a todas las funciones PRO</p>
+                </div>
+              </div>
+              <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+                Reactivar Plan
+              </button>
+            </div>
+          </>
         )}
 
         {planStatus === 'trial' && !planCancelled && (
@@ -1520,35 +1650,108 @@ export default function Configuracion() {
 
         {planStatus === 'active' && !planCancelled && (
           <div className="plan-panel-info">
-            <p>Tu suscripción está activa — expira el {expiresLabel || 'N/A'}</p>
+            <p>Tu suscripción está activa — {subscriptionPeriod === 'yearly' ? 'plan anual' : 'plan mensual'}, expira el {expiresLabel || 'N/A'}</p>
           </div>
         )}
 
         {planStatus === 'free' && (
           <div className="plan-panel-info">
-            <p>Estás en el plan gratuito con límites:</p>
-            <ul className="plan-panel-limits">
-              <li>50 lavadas por mes</li>
-              <li>30 clientes máximo</li>
-              <li>Pago de trabajadores: <strong>Bloqueado</strong></li>
-              <li>Membresías: <strong>Bloqueado</strong></li>
-            </ul>
+            <p>Estás en el plan gratuito con funciones limitadas.</p>
           </div>
         )}
 
-        {(planStatus === 'free' || planStatus === 'trial') && !planCancelled && (
-          <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
-            <Crown size={18} /> {planStatus === 'free' ? 'Actualizar a PRO' : 'Suscribirse ahora'}
-          </button>
+        {/* Smart CTA first — visible immediately */}
+        {planStatus === 'free' && !planCancelled && (
+          <div className="plan-upgrade-cta">
+            <div className="plan-upgrade-cta-text">
+              <Crown size={20} />
+              <div>
+                <strong>Pasa a PRO Mensual</strong>
+                <p>Desbloquea todas las funciones por $49.900/mes</p>
+              </div>
+            </div>
+            <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+              Actualizar a PRO
+            </button>
+          </div>
+        )}
+
+        {planStatus === 'trial' && !planCancelled && (
+          <div className="plan-upgrade-cta">
+            <div className="plan-upgrade-cta-text">
+              <Crown size={20} />
+              <div>
+                <strong>No pierdas tu acceso PRO</strong>
+                <p>Suscríbete antes de que termine tu prueba</p>
+              </div>
+            </div>
+            <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+              Suscribirse ahora
+            </button>
+          </div>
+        )}
+
+        {planStatus === 'active' && !planCancelled && subscriptionPeriod === 'monthly' && (
+          <div className="plan-upgrade-cta plan-upgrade-cta--savings">
+            <div className="plan-upgrade-cta-text">
+              <Crown size={20} />
+              <div>
+                <strong>Ahorra con el Plan Anual</strong>
+                <p>Paga $490.000/año en vez de $598.800 — ahorra 18%</p>
+              </div>
+            </div>
+            <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+              Cambiar a Anual
+            </button>
+          </div>
         )}
 
         {planCancelled && !isPro && (
-          <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
-            <Crown size={18} /> Reactivar suscripción
-          </button>
+          <div className="plan-upgrade-cta">
+            <div className="plan-upgrade-cta-text">
+              <Crown size={20} />
+              <div>
+                <strong>Reactiva tu suscripción</strong>
+                <p>Recupera acceso a todas las funciones PRO</p>
+              </div>
+            </div>
+            <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+              Reactivar suscripción
+            </button>
+          </div>
         )}
 
-        {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
+        {/* Features toggle card */}
+        <div className={`plan-features-card ${showPlanFeatures ? 'expanded' : ''}`}>
+          <div className="plan-features-card-header" onClick={() => setShowPlanFeatures(!showPlanFeatures)}>
+            <span>Tu plan incluye</span>
+            <ChevronDown size={18} className={showPlanFeatures ? 'rotated' : ''} />
+          </div>
+          {showPlanFeatures && (
+            <div className="plan-features-body">
+              <ul className="plan-features">
+                {features.map((f, i) => (
+                  <li key={i} className={f.included ? 'plan-feature-included' : 'plan-feature-locked'}>
+                    {f.included ? <Check size={16} /> : <X size={16} />}
+                    <span>{f.label}</span>
+                  </li>
+                ))}
+              </ul>
+              {isPro && !planCancelled && (
+                <button className="btn-cancel-sub" onClick={requestCancelSubscription}>
+                  Cancelar suscripción
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {showUpgradeModal && (
+          <UpgradeModal
+            onClose={() => setShowUpgradeModal(false)}
+            initialPeriod={planStatus === 'active' && subscriptionPeriod === 'monthly' ? 'yearly' : undefined}
+          />
+        )}
       </div>
     )
   }
@@ -1564,7 +1767,7 @@ export default function Configuracion() {
         {tabs.map(t => (
           <button
             key={t.id}
-            className={`config-pill ${activeTab === t.id ? 'active' : ''}`}
+            className={`config-pill cuenta-tab-${t.id} ${activeTab === t.id ? 'active' : ''}`}
             onClick={() => setActiveTab(t.id)}
           >
             {t.label}
@@ -1577,7 +1780,7 @@ export default function Configuracion() {
         {tabs.map(tab => (
           <button
             key={tab.id}
-            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+            className={`tab cuenta-tab-${tab.id} ${activeTab === tab.id ? 'active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.label}

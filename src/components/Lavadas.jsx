@@ -214,7 +214,7 @@ export default function Lavadas() {
     const headers = 'placa,tipo_lavado,cera_y_restaurador,kit_completo,valor,fecha,metodo_pago'
     const tipos = tiposLavado.map(t => t.nombre)
     const metodos = metodosPago.map(m => m.nombre)
-    const ejemplo = `ABC123,${tipos[0] || 'SIN MEMBRESIA'},TRUE,FALSE,25000,15-01-2026,${metodos[0] || 'EFECTIVO'}`
+    const ejemplo = `ABC123,${tipos[0] || 'BASICO'},TRUE,FALSE,25000,15-01-2026,${metodos[0] || 'EFECTIVO'}`
     const separador = '\n\n# INSTRUCCIONES (borra estas líneas antes de importar)'
     const instrucciones = [
       '# Columnas obligatorias: placa - tipo_lavado - fecha',
@@ -296,7 +296,7 @@ export default function Lavadas() {
         if (!cliente) {
           errors.push({
             fila,
-            problema: `Placa "${placa}" no tiene cliente registrado → se creará como "nn" con SIN MEMBRESIA`,
+            problema: `Placa "${placa}" no tiene cliente registrado → se creará como "nn" con CLIENTE`,
             solucion: 'Puedes editar el cliente después para agregar nombre y datos',
             tipo: 'warning'
           })
@@ -431,7 +431,8 @@ export default function Lavadas() {
     const total = importNuevos.length
     let procesados = 0
 
-    const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
+    const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().trim() === 'cliente')
+      || tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
     const hoy = new Date()
     const fechaHoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
     // Cache de clientes creados durante la importación (placa → id)

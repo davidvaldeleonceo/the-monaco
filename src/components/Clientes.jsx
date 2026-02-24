@@ -109,8 +109,10 @@ export default function Clientes() {
   const handleMembresiaChange = (membresiaId) => {
     const membresia = tiposMembresia.find(m => m.id === membresiaId)
     const hoy = new Date()
+    const nombreMem1 = (membresia?.nombre || '').toLowerCase().trim()
+    const esDefault1 = !membresiaId || nombreMem1 === 'cliente' || nombreMem1 === 'cliente frecuente' || nombreMem1.includes('sin ')
 
-    if (!membresiaId || membresia?.nombre?.toLowerCase().includes('sin ')) {
+    if (esDefault1) {
       setFormData(prev => ({
         ...prev,
         membresia_id: membresiaId,
@@ -135,7 +137,8 @@ export default function Clientes() {
 
     let formToSend = { ...formData }
     if (!formToSend.membresia_id) {
-      const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
+      const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().trim() === 'cliente')
+        || tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
       if (sinMembresia) {
         const hoy = new Date()
         formToSend.membresia_id = sinMembresia.id
@@ -335,7 +338,7 @@ export default function Clientes() {
       ['Teléfono: solo números sin espacios ni guiones (ej: 3001234567)'],
       ['Placa: se convierte a mayúsculas automáticamente'],
       [`Tipos de membresía válidos: ${tipos.join(' | ') || '(ninguno configurado)'}`],
-      ['Si tipo_membresia queda vacío o no coincide se asignará SIN MEMBRESIA'],
+      ['Si tipo_membresia queda vacío o no coincide se asignará CLIENTE'],
       ['Fechas: formato AAAA-MM-DD (ej: 2026-02-10)'],
       ['- Si pones ambas fechas se usan tal cual'],
       ['- Si solo pones fecha_inicio se calcula fecha_vencimiento sumando la duración de la membresía'],
@@ -443,8 +446,9 @@ export default function Clientes() {
           }
         }
         if (!membresiaId) {
-          const sinMem = tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
-          membresiaId = sinMem ? sinMem.id : null
+          const defaultMem = tiposMembresia.find(m => m.nombre.toLowerCase().trim() === 'cliente')
+            || tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
+          membresiaId = defaultMem ? defaultMem.id : null
           if (!membresiaWarning && !tipoNombre) {
             membresiaWarning = 'No se indicó tipo de membresía'
           }
@@ -453,7 +457,7 @@ export default function Clientes() {
         if (membresiaWarning) {
           errors.push({
             fila,
-            problema: `${membresiaWarning} → se asignará "SIN MEMBRESIA"`,
+            problema: `${membresiaWarning} → se asignará "CLIENTE"`,
             solucion: `Usa uno de los nombres válidos: ${nombresMembresia}`,
             tipo: 'warning'
           })
@@ -498,7 +502,7 @@ export default function Clientes() {
           correo: (row.correo || '').toString().trim() || null,
           moto: (row.moto || '').toString().trim() || null,
           membresia_id: membresiaId,
-          tipo_membresia_nombre: tipoNombre || 'SIN MEMBRESIA',
+          tipo_membresia_nombre: tipoNombre || 'CLIENTE',
           fecha_inicio: fechaInicio,
           fecha_vencimiento: fechaVencimiento,
           lavada_valor: lavadaValor,
@@ -535,8 +539,10 @@ export default function Clientes() {
   const calcularFechasMembresia = (membresiaId, fechaInicioStr, fechaVencimientoStr) => {
     const membresia = tiposMembresia.find(m => m.id === membresiaId)
     const meses = membresia?.duracion_dias || 1
+    const nombreMem2 = (membresia?.nombre || '').toLowerCase().trim()
+    const esDefault2 = !membresiaId || nombreMem2 === 'cliente' || nombreMem2 === 'cliente frecuente' || nombreMem2.includes('sin ')
 
-    if (!membresiaId || membresia?.nombre?.toLowerCase().includes('sin ')) {
+    if (esDefault2) {
       const inicio = fechaInicioStr ? new Date(fechaInicioStr + 'T00:00:00') : new Date()
       return { fecha_inicio_membresia: fechaLocalStr(inicio), fecha_fin_membresia: fechaLocalStr(inicio) }
     }
@@ -581,7 +587,8 @@ export default function Clientes() {
     // Helper: detect tipo_lavado_id based on membership
     const getTipoLavadoId = (membresiaId) => {
       const membresia = tiposMembresia.find(m => m.id === membresiaId)
-      const esSinMembresia = !membresiaId || membresia?.nombre?.toLowerCase().includes('sin ')
+      const nomMem = (membresia?.nombre || '').toLowerCase().trim()
+      const esSinMembresia = !membresiaId || nomMem === 'cliente' || nomMem === 'cliente frecuente' || nomMem.includes('sin ')
       const tipoNombre = esSinMembresia ? 'sin membresía' : 'membresía'
       const tipo = tiposLavado.find(t => t.nombre.toLowerCase().includes(tipoNombre))
       return tipo?.id || tiposLavado[0]?.id || null
@@ -742,11 +749,11 @@ export default function Clientes() {
   }
 
   const getTipoClienteLabel = (cliente) => {
-    const nombre = cliente.membresia?.nombre || ''
-    if (!nombre || nombre.toLowerCase().includes('sin ')) {
-      return { tiene: false, label: 'Sin membresía' }
+    const nombre = (cliente.membresia?.nombre || '').toLowerCase().trim()
+    if (!nombre || nombre === 'cliente' || nombre === 'cliente frecuente' || nombre.includes('sin ')) {
+      return { tiene: false, label: cliente.membresia?.nombre || 'Cliente' }
     }
-    return { tiene: true, label: nombre }
+    return { tiene: true, label: cliente.membresia?.nombre }
   }
 
   const toggleWhatsappMenu = (clienteId, e) => {
@@ -1213,8 +1220,8 @@ export default function Clientes() {
                     <span className="cliente-card-value">{cliente.telefono || '—'}</span>
                   </div>
                   <div className="cliente-card-row">
-                    <span className="cliente-card-label">Tipo</span>
-                    <span className="cliente-card-value">{cliente.membresia?.nombre || 'Sin tipo'}</span>
+                    <span className="cliente-card-label">Categoría</span>
+                    <span className="cliente-card-value">{cliente.membresia?.nombre || 'Cliente'}</span>
                   </div>
                   <div className="cliente-card-row">
                     <span className="cliente-card-label">Vencimiento</span>
@@ -1355,7 +1362,7 @@ export default function Clientes() {
                     const todos = [...importNuevos, ...(dupAction === 'update' ? importDuplicados : [])]
                     const conteo = {}
                     todos.forEach(r => {
-                      const nombre = r.tipo_membresia_nombre || 'SIN MEMBRESIA'
+                      const nombre = r.tipo_membresia_nombre || 'CLIENTE'
                       conteo[nombre] = (conteo[nombre] || 0) + 1
                     })
                     const entries = Object.entries(conteo).sort((a, b) => b[1] - a[1])

@@ -9,7 +9,6 @@ export default function Register() {
   const planPro = searchParams.get('plan') === 'pro'
   const period = searchParams.get('period')
   const [nombreNegocio, setNombreNegocio] = useState('')
-  const [nombreAdmin, setNombreAdmin] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -48,7 +47,7 @@ export default function Register() {
       // Email requires confirmation — save negocio data for after confirmation
       localStorage.setItem('pending_negocio', JSON.stringify({
         nombre_negocio: nombreNegocio,
-        nombre_usuario: nombreAdmin || null,
+        nombre_usuario: null,
       }))
       setSuccess(true)
       setLoading(false)
@@ -58,7 +57,7 @@ export default function Register() {
     // If auto-confirm is enabled, session exists immediately
     const { error: rpcError } = await supabase.rpc('register_negocio', {
       p_nombre_negocio: nombreNegocio,
-      p_nombre_usuario: nombreAdmin || null,
+      p_nombre_usuario: null,
       p_email: email,
       p_user_id: signUpData.user?.id,
     })
@@ -122,17 +121,7 @@ export default function Register() {
           </div>
 
           <div className="input-group">
-            <label>Nombre del administrador (opcional)</label>
-            <input
-              type="text"
-              value={nombreAdmin}
-              onChange={(e) => setNombreAdmin(e.target.value)}
-              placeholder="Tu nombre"
-            />
-          </div>
-
-          <div className="input-group">
-            <label>Correo electrónico</label>
+            <label>Correo electrónico de tu negocio</label>
             <input
               type="email"
               value={email}

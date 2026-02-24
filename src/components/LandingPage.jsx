@@ -7,22 +7,22 @@ const features = [
   {
     icon: Timer,
     title: 'Turnos en tiempo real',
-    desc: 'Controla el estado de cada moto: en espera, lavando, terminada y entregada.',
+    desc: 'Ve desde cualquier lugar qué motos están en espera, lavándose o listas para entregar.',
   },
   {
     icon: Users,
-    title: 'Clientes y membresías',
-    desc: 'Registra clientes por placa, asigna membresías con descuentos y cashback.',
+    title: 'Clientes que vuelven solos',
+    desc: 'Membresías, descuentos y cashback para que tus clientes regresen sin que tengas que llamarlos.',
   },
   {
     icon: DollarSign,
-    title: 'Pagos a trabajadores',
-    desc: 'Calcula pagos automáticos por porcentaje, por lavada o sueldo fijo.',
+    title: 'Pagos sin discusiones',
+    desc: 'Cada lavada queda registrada. A fin de mes, las cuentas salen solas.',
   },
   {
     icon: BarChart3,
-    title: 'Reportes y balance',
-    desc: 'Visualiza ingresos, gastos y rendimiento diario al instante.',
+    title: 'Números claros sin estar ahí',
+    desc: 'Revisa cuánto entró, cuánto se gastó y cuánto queda — desde tu celular, donde estés.',
   },
 ]
 
@@ -38,17 +38,17 @@ const planFeatures = [
 
 const testimonials = [
   {
-    quote: 'Antes llevaba todo en un cuaderno y se me perdían clientes. Con Monaco controlo todo desde el celular.',
+    quote: 'Antes si no iba al lavadero un día, nadie sabía qué cobrar ni a quién. Ahora todo queda registrado solo.',
     name: 'Carlos M.',
     city: 'Medellín',
   },
   {
-    quote: 'Lo mejor es el control de pagos a los lavadores. Ya no hay discusiones a fin de mes.',
+    quote: 'Ya no peleo con los muchachos por la plata. Cada lavada queda ahí y las cuentas salen claras.',
     name: 'Andrea R.',
     city: 'Bogotá',
   },
   {
-    quote: 'Mis clientes con membresía vuelven más seguido. El cashback funciona muy bien.',
+    quote: 'Pude abrir un segundo punto porque ya no necesito estar encima del primero. Monaco lo controla.',
     name: 'Luis P.',
     city: 'Cali',
   },
@@ -73,8 +73,8 @@ export default function LandingPage() {
 
       {/* Hero */}
       <section className="landing-hero">
-        <h1>Gestiona tu lavadero de motos desde el celular</h1>
-        <p>Control de turnos, clientes, pagos a trabajadores y reportes en tiempo real. Todo en una sola app.</p>
+        <h1>Tu lavadero funcionando bien, estés o no estés</h1>
+        <p>Controla turnos, pagos y clientes desde el celular. Deja de ser el único que sabe cómo funciona tu negocio.</p>
         <div className="landing-hero-buttons">
           <Link to="/registro" className="landing-cta-primary">Prueba gratis 14 días</Link>
           <a href="#pricing" className="landing-cta-secondary" onClick={(e) => { e.preventDefault(); document.getElementById('pricing').scrollIntoView({ behavior: 'smooth' }) }}>Comprar ahora</a>
@@ -84,7 +84,7 @@ export default function LandingPage() {
 
       {/* Features */}
       <section className="landing-features">
-        <h2>Todo lo que necesitas para tu lavadero</h2>
+        <h2>Tu negocio organizado sin depender de ti</h2>
         <div className="landing-features-grid">
           {features.map((f) => (
             <div key={f.title} className="landing-feature-card">

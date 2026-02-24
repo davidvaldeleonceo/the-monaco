@@ -236,17 +236,21 @@ export default function Membresias() {
   }
 
   const handleEliminarPago = (pagoId) => {
-    setEliminarId(pagoId)
+    const pago = pagos.find(p => p.id === pagoId)
+    const clienteNombre = pago?.placa_o_persona?.split(' - ')[0]?.trim() || 'este cliente'
+    setEliminarId({ id: pagoId, clienteNombre })
   }
 
   const executeEliminarPago = async () => {
-    const pago = pagos.find(p => p.id === eliminarId)
+    const pagoId = eliminarId?.id
+    const pago = pagos.find(p => p.id === pagoId)
     if (pago) {
       const placa = pago.placa_o_persona?.split(' - ')[1]?.trim()
       const clienteAfectado = clientes.find(c => c.placa?.toLowerCase() === placa?.toLowerCase())
 
       if (clienteAfectado) {
-        const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
+        const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().trim() === 'cliente')
+          || tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
         const hoy = fechaLocalStr(new Date())
 
         const { data: revertido } = await supabase
@@ -265,7 +269,7 @@ export default function Membresias() {
         }
       }
 
-      await supabase.from('transacciones').delete().eq('id', eliminarId)
+      await supabase.from('transacciones').delete().eq('id', pagoId)
       fetchPagos()
     }
 
@@ -633,7 +637,10 @@ export default function Membresias() {
                     required
                   >
                     <option value="">Seleccionar membresía</option>
-                    {tiposMembresia.filter(m => !m.nombre.toLowerCase().includes('sin ')).map(m => (
+                    {tiposMembresia.filter(m => {
+                      const n = m.nombre.toLowerCase().trim()
+                      return n !== 'cliente' && n !== 'cliente frecuente' && !n.includes('sin ')
+                    }).map(m => (
                       <option key={m.id} value={m.id}>{m.nombre} - {formatMoney(m.precio)}</option>
                     ))}
                   </select>
@@ -708,7 +715,7 @@ export default function Membresias() {
         isOpen={!!eliminarId}
         onClose={() => setEliminarId(null)}
         onConfirm={executeEliminarPago}
-        message="Se eliminará el pago y se revertirá la membresía del cliente. Ingresa tu contraseña para confirmar."
+        message={`Se eliminará el pago de ${eliminarId?.clienteNombre || 'este cliente'} y se le revertirá la membresía a 'Cliente'. Ingresa tu contraseña para confirmar.`}
       />
     </div>
   )

@@ -30,17 +30,7 @@ async function _seedQueries(client, negocioId) {
   await client.query(`
     INSERT INTO tipos_membresia (nombre, precio, duracion_dias, activo, negocio_id)
     VALUES
-      ('SIN MEMBRESIA', 0, 0, true, $1),
-      ('MENSUAL', 50000, 1, true, $1),
-      ('TRIMESTRAL', 120000, 3, true, $1)
-    ON CONFLICT DO NOTHING
-  `, [negocioId])
-
-  await client.query(`
-    INSERT INTO tipos_lavado (nombre, precio, activo, negocio_id)
-    VALUES
-      ('SIN MEMBRESIA', 15000, true, $1),
-      ('MEMBRESIA', 0, true, $1)
+      ('MENSUAL', 50000, 1, true, $1)
     ON CONFLICT DO NOTHING
   `, [negocioId])
 

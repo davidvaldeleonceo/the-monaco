@@ -7,10 +7,6 @@ const ROLE_ACCESS = {
   '/dashboard':     ['admin', 'trabajador', 'viewer'],
   '/lavadas':       ['admin', 'trabajador'],
   '/clientes':      ['admin', 'trabajador'],
-  '/balance':       ['admin'],
-
-  '/tareas':        ['admin', 'trabajador'],
-  '/membresias':    ['admin'],
   '/pagos':         ['admin'],
   '/cuenta':        ['admin', 'trabajador', 'viewer'],
 }

@@ -8,7 +8,7 @@ import UpgradeModal from './UpgradeModal'
 import { useToast } from './Toast'
 
 export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
-  const { clientes, tiposMembresia, negocioId, addLavadaLocal, addClienteLocal, serviciosAdicionales: _sa } = useData()
+  const { clientes, tiposMembresia, negocioId, addLavadaLocal, addClienteLocal, updateClienteLocal, serviciosAdicionales: _sa } = useData()
   const { tiposLavado, serviciosAdicionales, lavadores, calcularValor, autoAddIncluidos } = useServiceHandlers()
   const toast = useToast()
 
@@ -33,6 +33,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
   const [creandoCliente, setCreandoCliente] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [membresiaOverride, setMembresiaOverride] = useState(false)
 
   // Bottom sheet drag-to-dismiss
   const sheetRef = useRef(null)
@@ -59,43 +60,28 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
 
   const clienteTieneMembresia = (cliente) => {
     if (!cliente.membresia_id) return false
-    const nombreMembresia = cliente.membresia?.nombre?.toLowerCase() || ''
-    return !nombreMembresia.includes('sin ')
-  }
-
-  const detectarTipoLavado = (cliente) => {
-    if (clienteTieneMembresia(cliente)) {
-      return tiposLavado.find(t => {
-        const n = t.nombre.toLowerCase()
-        return (n.includes('membresia') || n.includes('membresía')) && !n.includes('sin ')
-      })
-    }
-    return tiposLavado.find(t => {
-      const n = t.nombre.toLowerCase()
-      return n.includes('sin membresia') || n.includes('sin membresía')
-    })
+    const nombre = (cliente.membresia?.nombre || '').toLowerCase().trim()
+    return nombre !== 'cliente' && nombre !== 'cliente frecuente' && nombre !== 'sin membresia' && nombre !== 'sin membresía'
   }
 
   const handleClienteChange = (clienteId) => {
     const cliente = clientes.find(c => c.id == clienteId)
     if (cliente) {
-      const tipo = detectarTipoLavado(cliente)
-      const tipoId = tipo?.id || ''
-      const adicionales = autoAddIncluidos(tipo, formData.adicionales)
-      const valor = calcularValor(tipoId, adicionales)
-
+      const esMembresia = clienteTieneMembresia(cliente)
       setClienteSearch(`${cliente.nombre} - ${cliente.placa}`)
       setShowClienteDropdown(false)
+      setMembresiaOverride(false)
       setFormData(prev => ({
         ...prev,
         cliente_id: clienteId,
         placa: cliente.placa || '',
-        tipo_lavado_id: tipoId,
-        adicionales,
-        valor
+        tipo_lavado_id: '',
+        adicionales: [],
+        valor: esMembresia ? 0 : prev.valor
       }))
     } else {
       setClienteSearch('')
+      setMembresiaOverride(false)
       setFormData(prev => ({ ...prev, cliente_id: clienteId, placa: '', tipo_lavado_id: '', valor: 0 }))
     }
   }
@@ -112,7 +98,9 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
     const hoy = new Date()
     const hoyStr = fechaLocalStr(hoy)
 
-    if (!membresiaId || membresia?.nombre?.toLowerCase().includes('sin ')) {
+    const nombreMem = (membresia?.nombre || '').toLowerCase().trim()
+    const esDefault = !membresiaId || nombreMem === 'cliente' || nombreMem === 'cliente frecuente' || nombreMem.includes('sin ')
+    if (esDefault) {
       setNuevoClienteData(prev => ({
         ...prev,
         membresia_id: membresiaId,
@@ -145,8 +133,9 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
     let fechaInicio = nuevoClienteData.fecha_inicio_membresia || hoyStr
     let fechaFin = nuevoClienteData.fecha_fin_membresia || hoyStr
     if (!membresiaId) {
-      const sinMembresia = tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
-      membresiaId = sinMembresia?.id || null
+      const defaultMem = tiposMembresia.find(m => m.nombre.toLowerCase().trim() === 'cliente')
+        || tiposMembresia.find(m => m.nombre.toLowerCase().includes('sin '))
+      membresiaId = defaultMem?.id || null
       fechaInicio = hoyStr
       fechaFin = hoyStr
     }
@@ -192,17 +181,13 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       setNuevoClienteData(emptyNuevoCliente)
       setClienteSearch(`${data.nombre} - ${data.placa}`)
       setShowClienteDropdown(false)
-      // Auto-detect lavado type based on the created client's membership
-      const createdHasMembresia = data.membresia_id && !data.membresia?.nombre?.toLowerCase().includes('sin ')
-      const tipoLavado = createdHasMembresia
-        ? tiposLavado.find(t => { const n = t.nombre.toLowerCase(); return (n.includes('membresia') || n.includes('membresía')) && !n.includes('sin ') })
-        : tiposLavado.find(t => t.nombre?.toLowerCase().includes('sin memb'))
+      const esMembresia = clienteTieneMembresia(data)
       setFormData(prev => ({
         ...prev,
         cliente_id: data.id,
         placa: data.placa || '',
-        tipo_lavado_id: tipoLavado?.id || '',
-        valor: tipoLavado?.precio || 0
+        tipo_lavado_id: '',
+        valor: esMembresia ? 0 : 0
       }))
     }
   }
@@ -210,7 +195,10 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
   const handleTipoLavadoChange = (tipoId) => {
     const tipo = tiposLavado.find(t => t.id == tipoId)
     const adicionales = autoAddIncluidos(tipo, formData.adicionales)
-    const valor = calcularValor(tipoId, adicionales)
+    let valor = calcularValor(tipoId, adicionales)
+    const cliente = clientes.find(c => c.id == formData.cliente_id)
+    if (cliente && clienteTieneMembresia(cliente)) valor = 0
+    setMembresiaOverride(false)
     setFormData(prev => ({
       ...prev,
       tipo_lavado_id: tipoId,
@@ -227,7 +215,9 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       } else {
         nuevosAdicionales = prev.adicionales.filter(a => a.id !== servicio.id)
       }
-      const valor = calcularValor(prev.tipo_lavado_id, nuevosAdicionales)
+      let valor = calcularValor(prev.tipo_lavado_id, nuevosAdicionales)
+      const cliente = clientes.find(c => c.id == prev.cliente_id)
+      if (cliente && clienteTieneMembresia(cliente) && !membresiaOverride) valor = 0
       return { ...prev, adicionales: nuevosAdicionales, valor }
     })
   }
@@ -250,6 +240,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       estado: 'EN ESPERA',
       notas: ''
     })
+    setMembresiaOverride(false)
     setDragY(0)
     dragStartY.current = null
   }
@@ -273,11 +264,13 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
     )
 
     const ahora = new Date().toISOString()
+    const cliente = clientes.find(c => c.id == formData.cliente_id)
     const dataToSend = {
       ...cleanData,
       adicionales: adicionales,
       pagos: [],
       metodo_pago_id: null,
+      tipo_membresia_id: cliente?.membresia_id || null,
       fecha: ahora,
       tiempo_espera_inicio: ahora,
       negocio_id: negocioId
@@ -296,6 +289,34 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
     }
     if (!error && data) {
       addLavadaLocal(data)
+      // Auto-promote to "Cliente Frecuente" if >1 service this month
+      if (formData.cliente_id) {
+        const now = new Date()
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+        const { count } = await supabase
+          .from('lavadas')
+          .select('id', { count: 'exact', head: true })
+          .eq('cliente_id', formData.cliente_id)
+          .gte('fecha', monthStart)
+
+        if (count > 1) {
+          const nombreMem = (cliente?.membresia?.nombre || '').toLowerCase().trim()
+          if (nombreMem === 'cliente' || nombreMem === 'sin membresia' || nombreMem === 'sin membresía') {
+            const { data: tiposMem } = await supabase
+              .from('tipos_membresia')
+              .select('id')
+              .ilike('nombre', 'CLIENTE FRECUENTE')
+              .limit(1)
+            if (tiposMem?.[0]) {
+              await supabase
+                .from('clientes')
+                .update({ membresia_id: tiposMem[0].id })
+                .eq('id', formData.cliente_id)
+              updateClienteLocal(formData.cliente_id, { membresia_id: tiposMem[0].id, membresia: { nombre: 'CLIENTE FRECUENTE' } })
+            }
+          }
+        }
+      }
       resetState()
       onSuccess?.()
     }
@@ -576,9 +597,24 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
                 value={formData.valor === 0 ? '' : formData.valor}
                 onChange={(e) => {
                   const val = e.target.value.replace(/\D/g, '')
+                  const cliente = clientes.find(c => c.id == formData.cliente_id)
+                  if (cliente && clienteTieneMembresia(cliente)) {
+                    setMembresiaOverride(true)
+                  }
                   setFormData({ ...formData, valor: val === '' ? 0 : Number(val) })
                 }}
               />
+              {(() => {
+                const cliente = clientes.find(c => c.id == formData.cliente_id)
+                if (cliente && clienteTieneMembresia(cliente)) {
+                  return (
+                    <span className="membresia-badge-info">
+                      Incluido en membresía {!membresiaOverride && '— Precio $0'}
+                    </span>
+                  )
+                }
+                return null
+              })()}
             </div>
 
             {serviciosAdicionales.map(s => (
