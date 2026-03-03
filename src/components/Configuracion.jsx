@@ -14,7 +14,7 @@ import PasswordInput from './common/PasswordInput'
 
 export default function Configuracion() {
   const navigate = useNavigate()
-  const { refreshConfig, serviciosAdicionales, productos, negocioId, tiposLavado } = useData()
+  const { refreshConfig, serviciosAdicionales, productos, negocioId, tiposLavado, categoriasTransaccion } = useData()
   const { userProfile, isPro, planStatus, planCancelled, daysLeftInTrial, refresh, userEmail, negocioNombre, subscriptionPeriod } = useTenant()
   const toast = useToast()
   const { startTour } = useTour()
@@ -43,6 +43,10 @@ export default function Configuracion() {
   const [pendingDeleteId, setPendingDeleteId] = useState(null)
   const [pendingAdicionalDeleteId, setPendingAdicionalDeleteId] = useState(null)
   const [pendingCancelSub, setPendingCancelSub] = useState(false)
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false)
+  const [showDeleteZone, setShowDeleteZone] = useState(false)
+  const [showTypeConfirm, setShowTypeConfirm] = useState(false)
+  const [typeConfirmText, setTypeConfirmText] = useState('')
   const [showPlanFeatures, setShowPlanFeatures] = useState(false)
   const [pseStatus, setPseStatus] = useState(null) // 'polling' | 'approved' | 'failed' | 'timeout' | null
   const [bulkForm, setBulkForm] = useState({
@@ -70,6 +74,8 @@ export default function Configuracion() {
     { id: 'lavadores', label: 'Lavadores', table: 'lavadores' },
     { id: 'productos', label: 'Productos', table: 'productos' },
     { id: 'mensajes', label: 'Mensajes', table: 'plantillas_mensaje' },
+    { id: 'cat_ingresos', label: 'Cat. Ingresos', table: 'categorias_transaccion' },
+    { id: 'cat_egresos', label: 'Cat. Egresos', table: 'categorias_transaccion' },
   ]
 
   // Handle ?tab=plan from URL
@@ -148,17 +154,17 @@ export default function Configuracion() {
   const getTable = () => configSubTabs.find(t => t.id === configSubTab)?.table
 
   const fetchData = async () => {
-    const { data: result } = await supabase
-      .from(getTable())
-      .select('*')
-      .order('nombre')
+    let query = supabase.from(getTable()).select('*')
+    if (configSubTab === 'cat_ingresos') query = query.eq('tipo', 'INGRESO')
+    if (configSubTab === 'cat_egresos') query = query.eq('tipo', 'EGRESO')
+    const { data: result } = await query.order('nombre')
     setData(result || [])
   }
 
   const getInitialForm = () => {
     switch (configSubTab) {
       case 'membresias':
-        return { nombre: '', precio: '', descuento: '', cashback: '', duracion_dias: 1, activo: true }
+        return { nombre: '', precio: '', descuento: '', duracion_dias: 1, activo: true }
       case 'lavados':
         return { nombre: '', precio: '', descripcion: '', adicionales_incluidos: [], activo: true, es_base: false }
       case 'metodos':
@@ -169,6 +175,10 @@ export default function Configuracion() {
         return { nombre: '', precio: '', cantidad: '', activo: true }
       case 'mensajes':
         return { nombre: '', texto: '', activo: true }
+      case 'cat_ingresos':
+        return { nombre: '', tipo: 'INGRESO', activo: true }
+      case 'cat_egresos':
+        return { nombre: '', tipo: 'EGRESO', activo: true }
       default:
         return {}
     }
@@ -177,7 +187,7 @@ export default function Configuracion() {
   const getEditableFields = () => {
     switch (configSubTab) {
       case 'membresias':
-        return ['nombre', 'precio', 'descuento', 'cashback', 'duracion_dias', 'activo']
+        return ['nombre', 'precio', 'descuento', 'duracion_dias', 'activo']
       case 'lavados':
         return ['nombre', 'precio', 'descripcion', 'adicionales_incluidos', 'activo', 'es_base']
       case 'metodos':
@@ -188,12 +198,16 @@ export default function Configuracion() {
         return ['nombre', 'precio', 'cantidad', 'activo']
       case 'mensajes':
         return ['nombre', 'texto', 'activo']
+      case 'cat_ingresos':
+        return ['nombre', 'activo']
+      case 'cat_egresos':
+        return ['nombre', 'activo']
       default:
         return []
     }
   }
 
-  const stringFields = ['nombre', 'telefono', 'descripcion', 'tipo_pago', 'activo', 'pago_adicionales_detalle', 'adicionales_incluidos', 'es_base', 'texto']
+  const stringFields = ['nombre', 'telefono', 'descripcion', 'tipo_pago', 'activo', 'pago_adicionales_detalle', 'adicionales_incluidos', 'es_base', 'texto', 'tipo']
 
   const numVal = (v) => v === '' || v === null || v === undefined ? '' : v
   const numChange = (field) => (e) => {
@@ -332,6 +346,10 @@ export default function Configuracion() {
     if (configSubTab === 'lavados' && cleaned.es_base) {
       await supabase.from('tipos_lavado').update({ es_base: false }).eq('negocio_id', negocioId)
     }
+
+    // For categorias, inject the tipo field
+    if (configSubTab === 'cat_ingresos') cleaned.tipo = 'INGRESO'
+    if (configSubTab === 'cat_egresos') cleaned.tipo = 'EGRESO'
 
     let error
     if (editando) {
@@ -778,6 +796,40 @@ export default function Configuracion() {
             </table>
           </div>
         )
+      case 'cat_ingresos':
+      case 'cat_egresos':
+        return (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       default:
         return null
     }
@@ -1013,6 +1065,25 @@ export default function Configuracion() {
             </div>
           )
         })
+      case 'cat_ingresos':
+      case 'cat_egresos':
+        return data.map(item => (
+          <div key={item.id} className="config-card">
+            <div className="config-card-header">
+              <div className="config-card-left">
+                <span className="config-card-nombre">{item.nombre}</span>
+              </div>
+              <div className="config-card-right">
+                <label className="switch" onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                  <span className="slider"></span>
+                </label>
+                <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={16} /></button>
+                <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /></button>
+              </div>
+            </div>
+          </div>
+        ))
       default:
         return null
     }
@@ -1293,6 +1364,19 @@ export default function Configuracion() {
             </div>
           </>
         )
+      case 'cat_ingresos':
+      case 'cat_egresos':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre de la categoría</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+            </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
+            </div>
+          </>
+        )
       default:
         return null
     }
@@ -1300,6 +1384,25 @@ export default function Configuracion() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
+    navigate('/')
+  }
+
+  const handleDeleteAccount = async () => {
+    setShowDeleteAccount(false)
+    setShowTypeConfirm(true)
+    setTypeConfirmText('')
+  }
+
+  const executeDeleteAccount = async () => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    const res = await fetch(`${API_URL}/api/auth/account`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    })
+    const data = await res.json()
+    if (!data.success) throw new Error(data.error || 'Error al eliminar la cuenta')
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(SESSION_KEY)
     navigate('/')
   }
 
@@ -1483,6 +1586,29 @@ export default function Configuracion() {
           <span className="cuenta-datos-label">Cerrar sesión</span>
         </div>
       </div>
+
+      {/* Eliminar cuenta (solo admin) */}
+      {isAdmin && (
+        <div className="cuenta-delete-zone">
+          <div className="cuenta-datos-row cuenta-datos-delete-toggle" onClick={() => setShowDeleteZone(!showDeleteZone)}>
+            <div className="cuenta-datos-left">
+              <Trash2 size={18} />
+              <span className="cuenta-datos-label">Eliminar mi cuenta</span>
+            </div>
+            <ChevronDown size={18} className={`chevron-icon ${showDeleteZone ? 'rotated' : ''}`} />
+          </div>
+          {showDeleteZone && (
+            <div className="cuenta-delete-content">
+              <p className="cuenta-delete-warning">
+                Esta acción eliminará permanentemente tu negocio, todos los datos y tu cuenta de usuario.
+              </p>
+              <button className="btn-delete-account" onClick={() => setShowDeleteAccount(true)}>
+                Eliminar mi cuenta
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 
@@ -1564,7 +1690,7 @@ export default function Configuracion() {
       { label: 'Lavadas ilimitadas', included: false },
       { label: 'Clientes ilimitados', included: false },
       { label: 'Pago de trabajadores', included: false },
-      { label: 'Membresías y cashback', included: false },
+      { label: 'Membresías', included: false },
       { label: 'Análisis y reportes', included: false },
       { label: 'Mensajes por WhatsApp', included: false },
     ]
@@ -1575,7 +1701,7 @@ export default function Configuracion() {
       { label: 'Registro de servicios', included: true },
       { label: 'Métodos de pago', included: true },
       { label: 'Pago de trabajadores', included: true },
-      { label: 'Membresías y cashback', included: true },
+      { label: 'Membresías', included: true },
       { label: 'Análisis y reportes', included: true },
       { label: 'Mensajes por WhatsApp', included: true },
       { label: 'Productos e inventario', included: true },
@@ -1957,6 +2083,52 @@ export default function Configuracion() {
         onConfirm={executeCancelSubscription}
         message="¿Estás seguro de cancelar tu suscripción? Seguirás con acceso PRO hasta que expire. Ingresa tu contraseña para confirmar."
       />
+
+      <ConfirmDeleteModal
+        isOpen={showDeleteAccount}
+        onClose={() => setShowDeleteAccount(false)}
+        onConfirm={handleDeleteAccount}
+        message="Se eliminarán TODOS los datos de tu negocio: clientes, lavadas, pagos, trabajadores, configuración y tu cuenta de usuario. Esta acción es permanente y no se puede deshacer."
+      />
+
+      {showTypeConfirm && (
+        <div className="modal-overlay confirm-delete-overlay">
+          <div className="modal confirm-delete-modal">
+            <div className="modal-header">
+              <h2>Confirmación final</h2>
+              <button className="btn-close" onClick={() => setShowTypeConfirm(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            <div style={{ padding: '1.5rem' }}>
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                ¿Estás seguro? Escribe <strong>eliminar</strong> para confirmar.
+              </p>
+              <div className="form-group">
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder='Escribe "eliminar"'
+                  value={typeConfirmText}
+                  onChange={(e) => setTypeConfirmText(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowTypeConfirm(false)}>Cancelar</button>
+              <button
+                className="btn-primary"
+                style={{ background: 'var(--accent-red)' }}
+                disabled={typeConfirmText.toLowerCase() !== 'eliminar'}
+                onClick={executeDeleteAccount}
+              >
+                Eliminar definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

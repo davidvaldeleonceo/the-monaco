@@ -23,6 +23,7 @@ const ALLOWED_TABLES = new Set([
   'servicios_adicionales', 'transacciones', 'productos', 'tareas',
   'tareas_completadas', 'pago_trabajadores', 'reservas', 'audit_log',
   'pagos_suscripcion', 'plantillas_mensaje', 'mensajes_enviados',
+  'categorias_transaccion',
 ])
 
 export function isAllowedTable(table) {

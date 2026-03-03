@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { X, CreditCard, Lock, Loader, CheckCircle, ArrowLeft, LogIn, UserPlus } from 'lucide-react'
+import { X, CreditCard, Lock, Loader, CheckCircle, ArrowLeft, LogIn, UserPlus, Building2, Smartphone, Info, Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../supabaseClient'
 import { API_URL, TOKEN_KEY } from '../config/constants'
 
@@ -9,22 +9,51 @@ const PLANS = {
   yearly: { amount: '$490.000', label: 'anual' },
 }
 
-export default function CheckoutModal({ period, onClose }) {
+const DOC_TYPES = [
+  { value: 'CC', label: 'Cédula de Ciudadanía' },
+  { value: 'CE', label: 'Cédula de Extranjería' },
+  { value: 'NIT', label: 'NIT' },
+  { value: 'PP', label: 'Pasaporte' },
+]
+
+export default function CheckoutModal({ period, onClose, initialCheckoutId, claimMode }) {
   const navigate = useNavigate()
   const plan = PLANS[period]
 
-  // Step: payment | processing | paid | login | register | claiming | done
-  const [step, setStep] = useState('payment')
+  // Step: payment | processing | paid | login | register | claiming | done | waiting_nequi | nequi_timeout | checking_pse
+  const [step, setStep] = useState(
+    initialCheckoutId
+      ? (claimMode ? 'paid' : 'checking_pse')
+      : 'payment'
+  )
   const [processingMsg, setProcessingMsg] = useState('')
   const [error, setError] = useState(null)
-  const [checkoutId, setCheckoutId] = useState(null)
+  const [checkoutId, setCheckoutId] = useState(initialCheckoutId || null)
   const timersRef = useRef([])
+  const pollingRef = useRef(null)
+  const submittingRef = useRef(false)
+
+  // Payment method
+  const [method, setMethod] = useState('CARD')
 
   // Payment fields (email for Wompi receipt only)
   const [payEmail, setPayEmail] = useState('')
   const [card, setCard] = useState({
     number: '', exp_month: '', exp_year: '', cvc: '', card_holder: '',
   })
+
+  // PSE fields
+  const [banks, setBanks] = useState([])
+  const [banksLoading, setBanksLoading] = useState(false)
+  const [pseData, setPseData] = useState({
+    financial_institution_code: '',
+    user_type: '0',
+    user_legal_id_type: 'CC',
+    user_legal_id: '',
+  })
+
+  // Nequi fields
+  const [nequiData, setNequiData] = useState({ phone_number: '' })
 
   // Login fields
   const [loginEmail, setLoginEmail] = useState('')
@@ -35,9 +64,79 @@ export default function CheckoutModal({ period, onClose }) {
   const [regEmail, setRegEmail] = useState('')
   const [regPassword, setRegPassword] = useState('')
 
+  // Password visibility toggles
+  const [showLoginPw, setShowLoginPw] = useState(false)
+  const [showRegPw, setShowRegPw] = useState(false)
+
+  // Set checkoutId when in claimMode
   useEffect(() => {
-    return () => timersRef.current.forEach(clearTimeout)
+    if (claimMode && initialCheckoutId) {
+      setCheckoutId(initialCheckoutId)
+    }
+  }, [claimMode, initialCheckoutId])
+
+  // Fetch PSE banks on mount
+  useEffect(() => {
+    const fetchBanks = async () => {
+      setBanksLoading(true)
+      try {
+        const res = await fetch(`${API_URL}/api/wompi/pse-banks`)
+        if (res.ok) {
+          const data = await res.json()
+          setBanks(data)
+        }
+      } catch { /* ignore */ }
+      setBanksLoading(false)
+    }
+    fetchBanks()
   }, [])
+
+  // Start polling if initialCheckoutId (PSE return) — skip if claimMode
+  useEffect(() => {
+    if (initialCheckoutId && !claimMode) {
+      startPolling(initialCheckoutId)
+    }
+    return () => {
+      timersRef.current.forEach(clearTimeout)
+      if (pollingRef.current) clearInterval(pollingRef.current)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const startPolling = (cid) => {
+    if (pollingRef.current) clearInterval(pollingRef.current)
+    const maxTime = 3 * 60 * 1000 // 3 minutes
+    const started = Date.now()
+
+    pollingRef.current = setInterval(async () => {
+      if (Date.now() - started > maxTime) {
+        clearInterval(pollingRef.current)
+        pollingRef.current = null
+        setStep('nequi_timeout')
+        return
+      }
+      try {
+        const res = await fetch(`${API_URL}/api/wompi/public-check-transaction/${cid}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.status === 'APPROVED') {
+          clearInterval(pollingRef.current)
+          pollingRef.current = null
+          setCheckoutId(cid)
+          setStep('paid')
+          // Clean up localStorage
+          localStorage.removeItem('monaco_checkout_id')
+          localStorage.removeItem('monaco_checkout_period')
+        } else if (data.status === 'DECLINED' || data.status === 'ERROR' || data.status === 'VOIDED') {
+          clearInterval(pollingRef.current)
+          pollingRef.current = null
+          setError(data.status === 'DECLINED' ? 'El pago fue rechazado por el banco.' : 'Error en el pago.')
+          setStep('payment')
+          localStorage.removeItem('monaco_checkout_id')
+          localStorage.removeItem('monaco_checkout_period')
+        }
+      } catch { /* ignore, retry */ }
+    }, 4000)
+  }
 
   const formatCardNumber = (value) => {
     const digits = value.replace(/\D/g, '').slice(0, 16)
@@ -61,6 +160,8 @@ export default function CheckoutModal({ period, onClose }) {
   // ─── Step 1: Pay (no auth) ────────────────────────────────────────
   const handlePay = async (e) => {
     e.preventDefault()
+    if (submittingRef.current) return
+    submittingRef.current = true
     setError(null)
     setStep('processing')
     setProcessingMsg('Procesando pago...')
@@ -71,27 +172,53 @@ export default function CheckoutModal({ period, onClose }) {
     timersRef.current = [t1, t2]
 
     try {
+      const body = { email: payEmail, period, method }
+
+      if (method === 'CARD') {
+        body.card = {
+          number: card.number.replace(/\s/g, ''),
+          exp_month: card.exp_month,
+          exp_year: card.exp_year,
+          cvc: card.cvc,
+          card_holder: card.card_holder,
+        }
+      } else if (method === 'PSE') {
+        body.pse = { ...pseData, user_type: Number(pseData.user_type) }
+      } else if (method === 'NEQUI') {
+        body.nequi = nequiData
+      }
+
       const res = await fetch(`${API_URL}/api/wompi/public-pay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: payEmail,
-          period,
-          card: {
-            number: card.number.replace(/\s/g, ''),
-            exp_month: card.exp_month,
-            exp_year: card.exp_year,
-            cvc: card.cvc,
-            card_holder: card.card_holder,
-          },
-        }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       timersRef.current.forEach(clearTimeout)
 
       if (data.success) {
-        setCheckoutId(data.checkoutId)
-        setStep('paid')
+        if (method === 'CARD') {
+          // Card: immediate approval — save to localStorage for recovery
+          localStorage.setItem('monaco_checkout_id', data.checkoutId)
+          localStorage.setItem('monaco_checkout_period', period)
+          setCheckoutId(data.checkoutId)
+          setStep('paid')
+        } else if (method === 'PSE') {
+          // PSE: redirect to bank — save checkout info only if we have a redirect URL
+          if (data.redirectUrl) {
+            localStorage.setItem('monaco_checkout_id', data.checkoutId)
+            localStorage.setItem('monaco_checkout_period', period)
+            window.location.href = data.redirectUrl
+          } else {
+            setError('No se recibió la URL de redireccionamiento del banco.')
+            setStep('payment')
+          }
+        } else if (method === 'NEQUI') {
+          // Nequi: show waiting screen + start polling
+          setCheckoutId(data.checkoutId)
+          setStep('waiting_nequi')
+          startPolling(data.checkoutId)
+        }
       } else {
         setError(data.error || 'Error al procesar el pago')
         setStep('payment')
@@ -100,6 +227,8 @@ export default function CheckoutModal({ period, onClose }) {
       timersRef.current.forEach(clearTimeout)
       setError('Error de conexión. Intenta de nuevo.')
       setStep('payment')
+    } finally {
+      submittingRef.current = false
     }
   }
 
@@ -140,6 +269,8 @@ export default function CheckoutModal({ period, onClose }) {
 
       setProcessingMsg('Activando tu plan PRO...')
       await claimCheckout()
+      localStorage.removeItem('monaco_checkout_id')
+      localStorage.removeItem('monaco_checkout_period')
       setStep('done')
       setTimeout(() => navigate('/home'), 2000)
     } catch (err) {
@@ -182,6 +313,8 @@ export default function CheckoutModal({ period, onClose }) {
 
       setProcessingMsg('Activando tu plan PRO...')
       await claimCheckout()
+      localStorage.removeItem('monaco_checkout_id')
+      localStorage.removeItem('monaco_checkout_period')
       setStep('done')
       setTimeout(() => navigate('/home'), 2000)
     } catch (err) {
@@ -199,6 +332,75 @@ export default function CheckoutModal({ period, onClose }) {
             <Loader size={48} className="spin" />
             <h3>{processingMsg}</h3>
             <p>No cierres esta ventana</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Render: Waiting Nequi ─────────────────────────────────────────
+  if (step === 'waiting_nequi') {
+    return (
+      <div className="modal-overlay">
+        <div className="checkout-modal">
+          <div className="wompi-processing">
+            <Smartphone size={48} className="spin-slow" />
+            <h3>Aprueba el pago en tu app Nequi</h3>
+            <p>Abre la app Nequi en tu celular y acepta la solicitud de pago. Esperando confirmación...</p>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ marginTop: '1rem' }}
+              onClick={() => {
+                if (pollingRef.current) clearInterval(pollingRef.current)
+                pollingRef.current = null
+                setError('Pago cancelado. Si ya aprobaste en Nequi, tu plan se activará en unos minutos.')
+                setStep('payment')
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Render: Nequi Timeout ────────────────────────────────────────
+  if (step === 'nequi_timeout') {
+    return (
+      <div className="modal-overlay">
+        <div className="checkout-modal">
+          <div className="wompi-processing">
+            <Info size={48} />
+            <h3>No recibimos confirmación</h3>
+            <p>Si ya aprobaste el pago en Nequi, tu plan se activará en unos minutos automáticamente.</p>
+            <button
+              type="button"
+              className="btn-primary wompi-pay-btn"
+              style={{ marginTop: '1rem' }}
+              onClick={() => {
+                setError(null)
+                setStep('payment')
+              }}
+            >
+              Intentar de nuevo
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Render: Checking PSE ──────────────────────────────────────────
+  if (step === 'checking_pse') {
+    return (
+      <div className="modal-overlay">
+        <div className="checkout-modal">
+          <div className="wompi-processing">
+            <Loader size={48} className="spin" />
+            <h3>Verificando tu pago PSE...</h3>
+            <p>Estamos confirmando tu transacción con el banco. Esto puede tomar unos segundos.</p>
           </div>
         </div>
       </div>
@@ -274,14 +476,23 @@ export default function CheckoutModal({ period, onClose }) {
               </div>
               <div className="form-group">
                 <label>Contraseña</label>
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
-                  placeholder="Tu contraseña"
-                  required
-                />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showLoginPw ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={loginPassword}
+                    onChange={e => setLoginPassword(e.target.value)}
+                    placeholder="Tu contraseña"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPw(v => !v)}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 0, display: 'flex' }}
+                  >
+                    {showLoginPw ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -334,15 +545,24 @@ export default function CheckoutModal({ period, onClose }) {
               </div>
               <div className="form-group">
                 <label>Contraseña</label>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={regPassword}
-                  onChange={e => setRegPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                  required
-                  minLength={6}
-                />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showRegPw ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={regPassword}
+                    onChange={e => setRegPassword(e.target.value)}
+                    placeholder="Mínimo 6 caracteres"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPw(v => !v)}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 0, display: 'flex' }}
+                  >
+                    {showRegPw ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -356,6 +576,12 @@ export default function CheckoutModal({ period, onClose }) {
   }
 
   // ─── Render: Step 1 — Payment form (default) ─────────────────────
+  const payBtnLabel = method === 'CARD'
+    ? `Pagar ${plan.amount}`
+    : method === 'PSE'
+      ? `Pagar con PSE ${plan.amount}`
+      : `Pagar con Nequi ${plan.amount}`
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="checkout-modal" onClick={e => e.stopPropagation()}>
@@ -386,72 +612,180 @@ export default function CheckoutModal({ period, onClose }) {
           </div>
 
           <div className="checkout-section">
-            <span className="checkout-section-label"><Lock size={14} /> Datos de pago</span>
-            <div className="form-group">
-              <label>Nombre en la tarjeta</label>
-              <input
-                type="text"
-                autoComplete="cc-name"
-                value={card.card_holder}
-                onChange={e => handleCardChange('card_holder', e.target.value)}
-                placeholder="Como aparece en la tarjeta"
-                required
-              />
+            <span className="checkout-section-label"><Lock size={14} /> Método de pago</span>
+
+            {/* Payment method tabs */}
+            <div className="wompi-method-tabs">
+              <button
+                type="button"
+                className={`wompi-method-tab ${method === 'CARD' ? 'active' : ''}`}
+                onClick={() => setMethod('CARD')}
+              >
+                <CreditCard size={16} /> Tarjeta
+              </button>
+              <button
+                type="button"
+                className={`wompi-method-tab ${method === 'PSE' ? 'active' : ''}`}
+                onClick={() => setMethod('PSE')}
+              >
+                <Building2 size={16} /> PSE
+              </button>
+              <button
+                type="button"
+                className={`wompi-method-tab ${method === 'NEQUI' ? 'active' : ''}`}
+                onClick={() => setMethod('NEQUI')}
+              >
+                <Smartphone size={16} /> Nequi
+              </button>
             </div>
-            <div className="form-group">
-              <label>Número de tarjeta</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="cc-number"
-                value={card.number}
-                onChange={e => handleCardChange('number', e.target.value)}
-                placeholder="4242 4242 4242 4242"
-                required
-              />
-            </div>
-            <div className="wompi-form-row">
+
+            {/* CARD form */}
+            {method === 'CARD' && (
+              <>
+                <div className="form-group">
+                  <label>Nombre en la tarjeta</label>
+                  <input
+                    type="text"
+                    autoComplete="cc-name"
+                    value={card.card_holder}
+                    onChange={e => handleCardChange('card_holder', e.target.value)}
+                    placeholder="Como aparece en la tarjeta"
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Número de tarjeta</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="cc-number"
+                    value={card.number}
+                    onChange={e => handleCardChange('number', e.target.value)}
+                    placeholder="4242 4242 4242 4242"
+                    required
+                  />
+                </div>
+                <div className="wompi-form-row">
+                  <div className="form-group">
+                    <label>Mes</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="cc-exp-month"
+                      value={card.exp_month}
+                      onChange={e => handleCardChange('exp_month', e.target.value)}
+                      placeholder="MM"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Año</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="cc-exp-year"
+                      value={card.exp_year}
+                      onChange={e => handleCardChange('exp_year', e.target.value)}
+                      placeholder="YY"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>CVC</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="cc-csc"
+                      value={card.cvc}
+                      onChange={e => handleCardChange('cvc', e.target.value)}
+                      placeholder="123"
+                      required
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* PSE form */}
+            {method === 'PSE' && (
+              <>
+                <div className="form-group">
+                  <label>Banco</label>
+                  <select
+                    value={pseData.financial_institution_code}
+                    onChange={e => setPseData(prev => ({ ...prev, financial_institution_code: e.target.value }))}
+                    required
+                  >
+                    <option value="">{banksLoading ? 'Cargando bancos...' : 'Selecciona tu banco'}</option>
+                    {banks.map(b => (
+                      <option key={b.financial_institution_code} value={b.financial_institution_code}>
+                        {b.financial_institution_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Tipo de persona</label>
+                  <select
+                    value={pseData.user_type}
+                    onChange={e => setPseData(prev => ({ ...prev, user_type: e.target.value }))}
+                  >
+                    <option value="0">Persona Natural</option>
+                    <option value="1">Persona Jurídica</option>
+                  </select>
+                </div>
+
+                <div className="wompi-form-row">
+                  <div className="form-group">
+                    <label>Tipo documento</label>
+                    <select
+                      value={pseData.user_legal_id_type}
+                      onChange={e => setPseData(prev => ({ ...prev, user_legal_id_type: e.target.value }))}
+                    >
+                      {DOC_TYPES.map(d => (
+                        <option key={d.value} value={d.value}>{d.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Número de documento</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={pseData.user_legal_id}
+                      onChange={e => setPseData(prev => ({ ...prev, user_legal_id: e.target.value.replace(/\D/g, '') }))}
+                      placeholder="1234567890"
+                      required
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Nequi form */}
+            {method === 'NEQUI' && (
               <div className="form-group">
-                <label>Mes</label>
+                <label>Número de celular Nequi</label>
                 <input
                   type="text"
                   inputMode="numeric"
-                  autoComplete="cc-exp-month"
-                  value={card.exp_month}
-                  onChange={e => handleCardChange('exp_month', e.target.value)}
-                  placeholder="MM"
+                  value={nequiData.phone_number}
+                  onChange={e => setNequiData({ phone_number: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                  placeholder="3001234567"
                   required
+                  pattern="\d{10}"
+                  title="Ingresa 10 dígitos"
                 />
               </div>
-              <div className="form-group">
-                <label>Año</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="cc-exp-year"
-                  value={card.exp_year}
-                  onChange={e => handleCardChange('exp_year', e.target.value)}
-                  placeholder="YY"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>CVC</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="cc-csc"
-                  value={card.cvc}
-                  onChange={e => handleCardChange('cvc', e.target.value)}
-                  placeholder="123"
-                  required
-                />
-              </div>
-            </div>
+            )}
           </div>
 
           <button type="submit" className="btn-primary wompi-pay-btn">
-            <CreditCard size={18} /> Pagar {plan.amount}
+            {method === 'CARD' && <CreditCard size={18} />}
+            {method === 'PSE' && <Building2 size={18} />}
+            {method === 'NEQUI' && <Smartphone size={18} />}
+            {' '}{payBtnLabel}
           </button>
 
           <p className="wompi-note">

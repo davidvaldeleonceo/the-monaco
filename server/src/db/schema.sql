@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS transacciones (
   descripcion TEXT,
   valor NUMERIC DEFAULT 0,
   placa_o_persona TEXT,
-  fecha DATE DEFAULT CURRENT_DATE,
+  fecha DATE DEFAULT (now() AT TIME ZONE 'America/Bogota')::date,
   metodo_pago_id UUID REFERENCES metodos_pago(id) ON DELETE SET NULL,
   negocio_id UUID NOT NULL REFERENCES negocios(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT now()
@@ -213,6 +213,15 @@ CREATE TABLE IF NOT EXISTS reservas (
   estado TEXT DEFAULT 'pendiente',
   origen TEXT DEFAULT 'manual',
   notas TEXT,
+  negocio_id UUID NOT NULL REFERENCES negocios(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS categorias_transaccion (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre TEXT NOT NULL,
+  tipo TEXT NOT NULL, -- 'INGRESO' or 'EGRESO'
+  activo BOOLEAN DEFAULT true,
   negocio_id UUID NOT NULL REFERENCES negocios(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -314,6 +323,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_negocio ON audit_log(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_pagos_suscripcion_negocio ON pagos_suscripcion(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_pagos_suscripcion_referencia ON pagos_suscripcion(wompi_reference);
+CREATE INDEX IF NOT EXISTS idx_categorias_transaccion_negocio ON categorias_transaccion(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_plantillas_mensaje_negocio ON plantillas_mensaje(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_mensajes_enviados_negocio ON mensajes_enviados(negocio_id);
 CREATE INDEX IF NOT EXISTS idx_mensajes_enviados_cliente ON mensajes_enviados(cliente_id);
@@ -345,6 +355,7 @@ DO $$ BEGIN
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS subscription_period TEXT;
   ALTER TABLE tipos_lavado ADD COLUMN IF NOT EXISTS es_base BOOLEAN DEFAULT false;
   ALTER TABLE pago_trabajadores ADD COLUMN IF NOT EXISTS abonos_detalle JSONB DEFAULT '[]';
+  ALTER TABLE transacciones ALTER COLUMN fecha SET DEFAULT (now() AT TIME ZONE 'America/Bogota')::date;
 END $$;
 
 -- Ensure nombre/placa are NOT NULL (idempotent — safe to re-run)

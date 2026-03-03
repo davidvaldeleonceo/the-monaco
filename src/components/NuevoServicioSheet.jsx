@@ -3,12 +3,13 @@ import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
 import { useServiceHandlers } from '../hooks/useServiceHandlers'
 import { formatMoney } from '../utils/money'
+import { nowBogotaISO } from '../utils/date'
 import { Plus, X } from 'lucide-react'
 import UpgradeModal from './UpgradeModal'
 import { useToast } from './Toast'
 
 export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
-  const { clientes, tiposMembresia, negocioId, addLavadaLocal, addClienteLocal, updateClienteLocal, serviciosAdicionales: _sa } = useData()
+  const { clientes, tiposMembresia, negocioId, addLavadaLocal, addClienteLocal, updateClienteLocal, refreshClientes, serviciosAdicionales: _sa } = useData()
   const { tiposLavado, serviciosAdicionales, lavadores, calcularValor, autoAddIncluidos } = useServiceHandlers()
   const toast = useToast()
 
@@ -57,6 +58,12 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       document.removeEventListener('touchstart', handleClickOutside)
     }
   }, [showClienteDropdown])
+
+  const getClienteCategoria = (cliente) => {
+    const nombre = (cliente?.membresia?.nombre || '').trim()
+    if (!nombre || nombre.toLowerCase() === 'sin membresia' || nombre.toLowerCase() === 'sin membresía') return 'Cliente'
+    return nombre
+  }
 
   const clienteTieneMembresia = (cliente) => {
     if (!cliente.membresia_id) return false
@@ -176,6 +183,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
     }
     if (data) {
       addClienteLocal(data)
+      refreshClientes()
       setShowNuevoCliente(false)
       setShowCamposExtra(false)
       setNuevoClienteData(emptyNuevoCliente)
@@ -263,7 +271,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       Object.entries(rest).map(([key, value]) => [key, value === '' ? null : value])
     )
 
-    const ahora = new Date().toISOString()
+    const ahora = nowBogotaISO()
     const cliente = clientes.find(c => c.id == formData.cliente_id)
     const dataToSend = {
       ...cleanData,
@@ -291,8 +299,8 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       addLavadaLocal(data)
       // Auto-promote to "Cliente Frecuente" if >1 service this month
       if (formData.cliente_id) {
-        const now = new Date()
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+        const bogotaNow = new Date(nowBogotaISO())
+        const monthStart = new Date(bogotaNow.getFullYear(), bogotaNow.getMonth(), 1).toISOString().split('T')[0] + 'T00:00:00'
         const { count } = await supabase
           .from('lavadas')
           .select('id', { count: 'exact', head: true })
@@ -434,7 +442,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
                             >
                               <span className="cliente-search-nombre">{c.nombre}</span>
                               <span className="cliente-search-placa">{c.placa}</span>
-                              {!clienteTieneMembresia(c) && <span className="cliente-search-tag">Sin membresía</span>}
+                              <span className="cliente-search-tag">{getClienteCategoria(c)}</span>
                             </div>
                           ))}
                           {filtered.length === 0 && (
@@ -561,6 +569,24 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
                   </div>
                 )}
               </div>
+              {formData.cliente_id && (() => {
+                const cliente = clientes.find(c => c.id == formData.cliente_id)
+                if (!cliente) return null
+                const cat = getClienteCategoria(cliente)
+                if (!clienteTieneMembresia(cliente)) return <span className="cliente-categoria-info">{cat}</span>
+                const hoy = new Date()
+                hoy.setHours(0, 0, 0, 0)
+                const finRaw = cliente.fecha_fin_membresia ? new Date(cliente.fecha_fin_membresia) : null
+                const fin = finRaw && !isNaN(finRaw) ? finRaw : null
+                if (fin) fin.setHours(0, 0, 0, 0)
+                const activa = fin && fin >= hoy
+                const fechaStr = fin ? fin.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : null
+                return (
+                  <span className={`cliente-categoria-info ${activa ? 'mem-activa' : 'mem-vencida'}`}>
+                    {cat} · {activa ? 'Activa' : 'Vencida'}{fechaStr && ` · Vence: ${fechaStr}`}
+                  </span>
+                )
+              })()}
             </div>
 
             <div className="form-group">

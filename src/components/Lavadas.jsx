@@ -12,6 +12,7 @@ import Select from 'react-select'
 import * as XLSX from 'xlsx'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 import { useToast } from './Toast'
+import { fechaToBogotaDate, nowBogota } from '../utils/date'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -25,6 +26,12 @@ export default function Lavadas() {
   const navigate = useNavigate()
   const toast = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
+
+  const getClienteCategoria = (cliente) => {
+    const nombre = (cliente?.membresia?.nombre || '').trim()
+    if (!nombre || nombre.toLowerCase() === 'sin membresia' || nombre.toLowerCase() === 'sin membresía') return 'Cliente'
+    return nombre
+  }
 
   // Auto-open modal when navigating with ?new=1 or ?import=1 (e.g. from Home FAB)
   useEffect(() => {
@@ -132,7 +139,7 @@ export default function Lavadas() {
 
   const aplicarFiltroRapido = (tipo) => {
     setFiltroRapido(tipo)
-    const hoy = new Date()
+    const hoy = nowBogota()
     hoy.setHours(0, 0, 0, 0)
 
     if ((tipo === 'año' || tipo === 'todas') && !lavadasAllLoaded) {
@@ -527,7 +534,8 @@ export default function Lavadas() {
     const matchEstado = !filtroEstado || l.estado === filtroEstado
     const matchLavador = !filtroLavador || l.lavador_id == filtroLavador
 
-    const fechaLavada = new Date(l.fecha)
+    const dateOnly = fechaToBogotaDate(l.fecha)
+    const fechaLavada = dateOnly ? new Date(dateOnly + 'T00:00:00') : new Date(l.fecha)
     fechaLavada.setHours(0, 0, 0, 0)
 
     let matchFechaDesde = true
@@ -749,6 +757,7 @@ export default function Lavadas() {
             isSelected={selectedLavadas.has(lavada.id)}
             onToggleSelect={toggleSelectLavada}
             onValidationToast={(msg) => toast.error(msg)}
+            clienteCategoria={(() => { const c = clientes.find(c => c.id == lavada.cliente_id); return c ? getClienteCategoria(c) : null })()}
           />
         ))}
       </div>

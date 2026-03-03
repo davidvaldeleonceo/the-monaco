@@ -19,11 +19,12 @@ import 'react-datepicker/dist/react-datepicker.css'
 import es from 'date-fns/locale/es'
 registerLocale('es', es)
 import * as XLSX from 'xlsx'
+import { fechaToBogotaDate, nowBogota } from '../utils/date'
 
 export default function Home() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal } = useData()
+  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal, refreshClientes } = useData()
   const { negocioNombre, userEmail } = useTenant()
   const { showMoney, toggleMoney, displayMoney, displayMoneyShort } = useMoneyVisibility()
   const toast = useToast()
@@ -170,9 +171,9 @@ export default function Home() {
     }
   }, [])
 
-  // Calculate date range from period
+  // Calculate date range from period (using Bogotá timezone)
   const getDateRange = (p) => {
-    const hoy = new Date()
+    const hoy = nowBogota()
     hoy.setHours(0, 0, 0, 0)
 
     switch (p) {
@@ -202,7 +203,7 @@ export default function Home() {
   }
 
   const getPreviousPeriodRange = (p) => {
-    const hoy = new Date()
+    const hoy = nowBogota()
     hoy.setHours(0, 0, 0, 0)
     switch (p) {
       case 'd': {
@@ -236,7 +237,7 @@ export default function Home() {
   }
 
   const detectPeriod = (fechaStr) => {
-    const dateOnly = typeof fechaStr === 'string' ? fechaStr.split('T')[0] : null
+    const dateOnly = fechaToBogotaDate(fechaStr)
     if (!dateOnly) return 'a'
     const fecha = new Date(dateOnly + 'T00:00:00')
     for (const p of ['d', 's', 'm', 'a']) {
@@ -247,6 +248,12 @@ export default function Home() {
       }
     }
     return 'a'
+  }
+
+  function getClienteCategoria(cliente) {
+    const nombre = (cliente?.membresia?.nombre || '').trim()
+    if (!nombre || nombre.toLowerCase() === 'sin membresia' || nombre.toLowerCase() === 'sin membresía') return 'Cliente'
+    return nombre
   }
 
   function fechaLocalStr(date) {
@@ -368,7 +375,7 @@ export default function Home() {
     const pagos = l.pagos || []
     if (pagos.length === 0) return []
 
-    const dateOnlyL = typeof l.fecha === 'string' ? l.fecha.split('T')[0] : null
+    const dateOnlyL = fechaToBogotaDate(l.fecha)
     const fechaLavada = dateOnlyL ? new Date(dateOnlyL + 'T00:00:00') : new Date(l.fecha)
     if (isNaN(fechaLavada.getTime())) return []
 
@@ -401,7 +408,7 @@ export default function Home() {
 
   // Client-side date filter for transacciones (safety net, mirrors lavadasFiltradas pattern)
   const transaccionesFiltradas = transacciones.filter(t => {
-    const dateOnly = typeof t.fecha === 'string' ? t.fecha.split('T')[0] : null
+    const dateOnly = fechaToBogotaDate(t.fecha)
     if (!dateOnly) return true
     const fechaT = new Date(dateOnly + 'T00:00:00')
     if (isNaN(fechaT.getTime())) return true
@@ -688,9 +695,9 @@ export default function Home() {
     }
   }
 
-  // Filter lavadas by period for recent services
+  // Filter lavadas by period for recent services (Bogotá timezone)
   const lavadasFiltradas = lavadas.filter(l => {
-    const dateOnly = typeof l.fecha === 'string' ? l.fecha.split('T')[0] : null
+    const dateOnly = fechaToBogotaDate(l.fecha)
     if (!dateOnly) return true
     const fechaL = new Date(dateOnly + 'T00:00:00')
     if (isNaN(fechaL.getTime())) return true
@@ -733,7 +740,7 @@ export default function Home() {
 
     // Fecha personalizada (se aplica DESPUES del filtro de periodo)
     if (filtroFechaDesde || filtroFechaHasta) {
-      const dateOnly = typeof l.fecha === 'string' ? l.fecha.split('T')[0] : null
+      const dateOnly = fechaToBogotaDate(l.fecha)
       if (!dateOnly) return false
       const fechaL = new Date(dateOnly + 'T00:00:00')
       if (filtroFechaDesde && fechaL < filtroFechaDesde) return false
@@ -755,7 +762,7 @@ export default function Home() {
       if (filtroMetodoPago && t.metodo_pago_id != filtroMetodoPago) return false
       // Fecha personalizada
       if (filtroFechaDesde || filtroFechaHasta) {
-        const dateOnly = typeof t.fecha === 'string' ? t.fecha.split('T')[0] : null
+        const dateOnly = fechaToBogotaDate(t.fecha)
         if (!dateOnly) return false
         const fechaT = new Date(dateOnly + 'T00:00:00')
         if (filtroFechaDesde && fechaT < filtroFechaDesde) return false
@@ -778,7 +785,7 @@ export default function Home() {
       if (filtroCategoria && t.categoria !== filtroCategoria) return false
       // Fecha personalizada
       if (filtroFechaDesde || filtroFechaHasta) {
-        const dateOnly = typeof t.fecha === 'string' ? t.fecha.split('T')[0] : null
+        const dateOnly = fechaToBogotaDate(t.fecha)
         if (!dateOnly) return false
         const fechaT = new Date(dateOnly + 'T00:00:00')
         if (filtroFechaDesde && fechaT < filtroFechaDesde) return false
@@ -834,7 +841,7 @@ export default function Home() {
     const prevPagosLavadas = lavadas.flatMap(l => {
       const pagos = l.pagos || []
       if (pagos.length === 0) return []
-      const dateOnlyL = typeof l.fecha === 'string' ? l.fecha.split('T')[0] : null
+      const dateOnlyL = fechaToBogotaDate(l.fecha)
       const fechaLavada = dateOnlyL ? new Date(dateOnlyL + 'T00:00:00') : new Date(l.fecha)
       if (isNaN(fechaLavada.getTime())) return []
       const d = new Date(prevDesde); d.setHours(0, 0, 0, 0)
@@ -876,17 +883,21 @@ export default function Home() {
   }, [entradasParaBalance])
 
   const balanceChartData = useMemo(() => {
-    const hoy = new Date()
+    const hoy = nowBogota()
     hoy.setHours(0, 0, 0, 0)
+
+    const parseFechaBogota = (f) => {
+      const d = fechaToBogotaDate(f)
+      return d ? new Date(d + 'T00:00:00') : null
+    }
 
     if (periodo === 'd') {
       // Last 7 days from lavadas + transacciones
       const hace7 = new Date(hoy)
       hace7.setDate(hace7.getDate() - 6)
       const entries = lavadas.flatMap(l => {
-        const fecha = new Date(l.fecha)
-        fecha.setHours(0, 0, 0, 0)
-        if (fecha < hace7 || fecha > hoy) return []
+        const fecha = parseFechaBogota(l.fecha)
+        if (!fecha || fecha < hace7 || fecha > hoy) return []
         const pagos = l.pagos || []
         return pagos.map(p => ({ fecha: l.fecha, valor: p.valor || 0, tipo: 'INGRESO' }))
       })
@@ -900,8 +911,8 @@ export default function Home() {
         buckets.push({ date: d.getTime(), value: 0 })
       }
       entries.forEach(e => {
-        const fecha = new Date(e.fecha)
-        fecha.setHours(0, 0, 0, 0)
+        const fecha = parseFechaBogota(e.fecha)
+        if (!fecha) return
         const idx = buckets.findIndex(b => b.date === fecha.getTime())
         if (idx >= 0) buckets[idx].value += e.tipo === 'INGRESO' ? Number(e.valor) : -Number(e.valor)
       })
@@ -917,7 +928,9 @@ export default function Home() {
       const buckets = dias.map(() => 0)
       entries.forEach(e => {
         if (!e.fecha) return
-        let day = new Date(e.fecha).getDay()
+        const fecha = parseFechaBogota(e.fecha)
+        if (!fecha) return
+        let day = fecha.getDay()
         day = day === 0 ? 6 : day - 1
         buckets[day] += e.tipo === 'INGRESO' ? Number(e.valor) : -Number(e.valor)
       })
@@ -930,7 +943,9 @@ export default function Home() {
       const buckets = Array.from({ length: daysInMonth }, () => 0)
       entries.forEach(e => {
         if (!e.fecha) return
-        const day = new Date(e.fecha).getDate()
+        const fecha = parseFechaBogota(e.fecha)
+        if (!fecha) return
+        const day = fecha.getDate()
         buckets[day - 1] += e.tipo === 'INGRESO' ? Number(e.valor) : -Number(e.valor)
       })
       let acc = 0
@@ -942,7 +957,9 @@ export default function Home() {
       const buckets = Array.from({ length: 12 }, () => 0)
       entries.forEach(e => {
         if (!e.fecha) return
-        const month = new Date(e.fecha).getMonth()
+        const fecha = parseFechaBogota(e.fecha)
+        if (!fecha) return
+        const month = fecha.getMonth()
         buckets[month] += e.tipo === 'INGRESO' ? Number(e.valor) : -Number(e.valor)
       })
       let acc = 0
@@ -953,16 +970,20 @@ export default function Home() {
   }, [periodo, todasEntradas, lavadas, transacciones])
 
   const buildChartData = (tipoFilter) => {
-    const hoy = new Date()
+    const hoy = nowBogota()
     hoy.setHours(0, 0, 0, 0)
+
+    const parseFB = (f) => {
+      const d = fechaToBogotaDate(f)
+      return d ? new Date(d + 'T00:00:00') : null
+    }
 
     if (periodo === 'd') {
       const hace7 = new Date(hoy)
       hace7.setDate(hace7.getDate() - 6)
       const entries = lavadas.flatMap(l => {
-        const fecha = new Date(l.fecha)
-        fecha.setHours(0, 0, 0, 0)
-        if (fecha < hace7 || fecha > hoy) return []
+        const fecha = parseFB(l.fecha)
+        if (!fecha || fecha < hace7 || fecha > hoy) return []
         const pagos = l.pagos || []
         return pagos.map(p => ({ fecha: l.fecha, valor: p.valor || 0, tipo: 'INGRESO' }))
       }).filter(e => e.tipo === tipoFilter)
@@ -976,8 +997,8 @@ export default function Home() {
         buckets.push({ date: d.getTime(), value: 0 })
       }
       entries.forEach(e => {
-        const fecha = new Date(e.fecha)
-        fecha.setHours(0, 0, 0, 0)
+        const fecha = parseFB(e.fecha)
+        if (!fecha) return
         const idx = buckets.findIndex(b => b.date === fecha.getTime())
         if (idx >= 0) buckets[idx].value += Number(e.valor)
       })
@@ -992,7 +1013,9 @@ export default function Home() {
       const buckets = dias.map(() => 0)
       entries.forEach(e => {
         if (!e.fecha) return
-        let day = new Date(e.fecha).getDay()
+        const fecha = parseFB(e.fecha)
+        if (!fecha) return
+        let day = fecha.getDay()
         day = day === 0 ? 6 : day - 1
         buckets[day] += Number(e.valor)
       })
@@ -1004,7 +1027,9 @@ export default function Home() {
       const buckets = Array.from({ length: daysInMonth }, () => 0)
       entries.forEach(e => {
         if (!e.fecha) return
-        const day = new Date(e.fecha).getDate()
+        const fecha = parseFB(e.fecha)
+        if (!fecha) return
+        const day = fecha.getDate()
         buckets[day - 1] += Number(e.valor)
       })
       let acc = 0
@@ -1015,7 +1040,9 @@ export default function Home() {
       const buckets = Array.from({ length: 12 }, () => 0)
       entries.forEach(e => {
         if (!e.fecha) return
-        const month = new Date(e.fecha).getMonth()
+        const fecha = parseFB(e.fecha)
+        if (!fecha) return
+        const month = fecha.getMonth()
         buckets[month] += Number(e.valor)
       })
       let acc = 0
@@ -1197,7 +1224,7 @@ export default function Home() {
   const iniciarEdicionProducto = (t) => {
     setEditProductId(t.id)
     setEditProductData({
-      fecha: t.fecha?.split('T')[0] || fechaLocalStr(new Date()),
+      fecha: fechaToBogotaDate(t.fecha) || fechaLocalStr(nowBogota()),
       descripcion: t.descripcion || '',
       placa_o_persona: t.placa_o_persona || '',
       metodo_pago_id: t.metodo_pago_id || '',
@@ -1300,6 +1327,10 @@ export default function Home() {
       .single()
     setCreandoVentaCliente(false)
     if (error) {
+      if (error.message?.includes('PLAN_LIMIT_REACHED')) {
+        setShowUpgradeModal(true)
+        return
+      }
       const existente = clientes.find(c => c.placa?.toLowerCase() === ventaNuevoClienteData.placa.toLowerCase())
       if (existente) {
         setShowVentaNuevoCliente(false)
@@ -1312,6 +1343,7 @@ export default function Home() {
     }
     if (data) {
       addClienteLocal(data)
+      refreshClientes()
       setShowVentaNuevoCliente(false)
       setVentaNuevoClienteData({ nombre: '', placa: '', telefono: '' })
       setVentaClienteSearch(`${data.nombre} - ${data.placa}`)
@@ -1373,11 +1405,16 @@ export default function Home() {
       .single()
     setCreandoCliente(false)
     if (error) {
+      if (error.message?.includes('PLAN_LIMIT_REACHED')) {
+        setShowUpgradeModal(true)
+        return
+      }
       toast.error('Error al crear cliente: ' + (error.message || 'Error desconocido'))
       return
     }
     if (data) {
       addClienteLocal(data)
+      refreshClientes()
       setShowNuevoClienteModal(false)
       resetNuevoClienteData()
     }
@@ -2238,6 +2275,7 @@ export default function Home() {
                   onToggleSelect={toggleSelectItem}
                   isHighlighted={highlightId === item.id}
                   onValidationToast={(msg) => toast.error(msg)}
+                  clienteCategoria={(() => { const c = clientes.find(c => c.id == item.cliente_id); return c ? getClienteCategoria(c) : null })()}
                   onPlacaClick={(lavada) => {
                     const cliente = clientes.find(c => c.id == lavada.cliente_id)
                     if (cliente) setClienteInfoModal(cliente)
@@ -2607,8 +2645,56 @@ export default function Home() {
               {clienteInfoModal.placa && <><span className="cliente-info-label">Placa</span><span className="cliente-info-value">{clienteInfoModal.placa}</span></>}
               {clienteInfoModal.moto && <><span className="cliente-info-label">Vehículo</span><span className="cliente-info-value">{clienteInfoModal.moto}</span></>}
               {clienteInfoModal.membresia && <><span className="cliente-info-label">Categoría</span><span className="cliente-info-value">{typeof clienteInfoModal.membresia === 'object' ? clienteInfoModal.membresia.nombre : clienteInfoModal.membresia}</span></>}
-              <span className="cliente-info-label">Cashback</span><span className="cliente-info-value">{formatMoney(clienteInfoModal.cashback_acumulado || 0)}</span>
             </div>
+            {clienteInfoModal.telefono && (
+              <div className="cliente-info-whatsapp">
+                {plantillasMensaje.length > 0 ? (
+                  <div className="cliente-info-plantillas">
+                    <span className="cliente-info-plantillas-label">Enviar mensaje:</span>
+                    {plantillasMensaje.map(p => (
+                      <button
+                        key={p.id}
+                        className="btn-plantilla-chip"
+                        onClick={() => {
+                          const telefono = clienteInfoModal.telefono.replace(/\D/g, '')
+                          const variables = {
+                            nombre: clienteInfoModal.nombre || '',
+                            telefono: clienteInfoModal.telefono || '',
+                            negocio: negocioNombre || '',
+                            membresia: typeof clienteInfoModal.membresia === 'object' ? clienteInfoModal.membresia?.nombre || 'Sin membresía' : clienteInfoModal.membresia || 'Sin membresía',
+                            placa: clienteInfoModal.placa || '',
+                          }
+                          const texto = p.texto.replace(/\{(\w+)\}/g, (match, key) => variables[key] ?? match)
+                          window.open(`https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(texto)}`, '_blank')
+                          supabase.from('mensajes_enviados').insert([{
+                            cliente_id: clienteInfoModal.id,
+                            plantilla_id: p.id,
+                            plantilla_nombre: p.nombre,
+                            mensaje_texto: texto,
+                            enviado_por: userEmail || null,
+                            origen: 'info_cliente',
+                            negocio_id: negocioId,
+                          }]).then(() => {})
+                        }}
+                      >
+                        {p.nombre}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <button
+                    className="btn-primary"
+                    style={{ width: '100%' }}
+                    onClick={() => {
+                      const telefono = clienteInfoModal.telefono.replace(/\D/g, '')
+                      window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
+                    }}
+                  >
+                    Enviar WhatsApp
+                  </button>
+                )}
+              </div>
+            )}
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setClienteInfoModal(null)}>Cerrar</button>
             </div>
@@ -3166,6 +3252,7 @@ export default function Home() {
                           >
                             <span className="cliente-search-nombre">{c.nombre}</span>
                             <span className="cliente-search-placa">{c.placa}</span>
+                            <span className="cliente-search-tag">{getClienteCategoria(c)}</span>
                           </div>
                         ))}
                       {clientes.filter(c => {
@@ -3225,6 +3312,29 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+                {ventaForm.cliente_id && (() => {
+                  const cliente = clientes.find(c => c.id == ventaForm.cliente_id)
+                  if (!cliente) return null
+                  const cat = getClienteCategoria(cliente)
+                  const tieneMembresia = (() => {
+                    if (!cliente.membresia_id) return false
+                    const nombre = (cliente.membresia?.nombre || '').toLowerCase().trim()
+                    return nombre !== 'cliente' && nombre !== 'cliente frecuente' && nombre !== 'sin membresia' && nombre !== 'sin membresía'
+                  })()
+                  if (!tieneMembresia) return <span className="cliente-categoria-info">{cat}</span>
+                  const hoy = new Date()
+                  hoy.setHours(0, 0, 0, 0)
+                  const finRaw = cliente.fecha_fin_membresia ? new Date(cliente.fecha_fin_membresia) : null
+                  const fin = finRaw && !isNaN(finRaw) ? finRaw : null
+                  if (fin) fin.setHours(0, 0, 0, 0)
+                  const activa = fin && fin >= hoy
+                  const fechaStr = fin ? fin.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : null
+                  return (
+                    <span className={`cliente-categoria-info ${activa ? 'mem-activa' : 'mem-vencida'}`}>
+                      {cat} · {activa ? 'Activa' : 'Vencida'}{fechaStr && ` · Vence: ${fechaStr}`}
+                    </span>
+                  )
+                })()}
               </div>
 
               {/* 2. Tipo de venta (toggle segmentado) */}

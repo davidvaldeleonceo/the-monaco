@@ -157,4 +157,38 @@ router.get('/session', async (req, res) => {
   }
 })
 
+// DELETE /api/auth/account — delete account and all business data (admin only)
+router.delete('/account', auth, async (req, res, next) => {
+  try {
+    const userId = req.user.id
+    const negocioId = req.user.negocio_id
+
+    // Verify user is admin
+    const { rows: profileRows } = await pool.query(
+      'SELECT role FROM user_profiles WHERE id = $1',
+      [userId]
+    )
+    if (!profileRows.length || profileRows[0].role !== 'admin') {
+      return res.status(403).json({ error: 'Solo el administrador puede eliminar la cuenta' })
+    }
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('DELETE FROM negocios WHERE id = $1', [negocioId])
+      await client.query('DELETE FROM users WHERE id = $1', [userId])
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
 export default router

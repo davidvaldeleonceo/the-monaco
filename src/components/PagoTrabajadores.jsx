@@ -9,6 +9,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney } from '../utils/money'
+import { todayBogotaStr } from '../utils/date'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 
 registerLocale('es', es)
@@ -80,7 +81,7 @@ export default function PagoTrabajadores() {
 
   const [formData, setFormData] = useState({
     lavador_id: '',
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: todayBogotaStr(),
     fecha_desde: '',
     fecha_hasta: '',
     lavadas_cantidad: 0,
@@ -439,7 +440,7 @@ export default function PagoTrabajadores() {
   const resetForm = () => {
     setFormData({
       lavador_id: '',
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: todayBogotaStr(),
       fecha_desde: '',
       fecha_hasta: '',
       lavadas_cantidad: 0,
@@ -482,7 +483,7 @@ export default function PagoTrabajadores() {
 
     setFormData({
       lavador_id: pago.lavador_id || '',
-      fecha: pago.fecha?.split('T')[0] || new Date().toISOString().split('T')[0],
+      fecha: pago.fecha?.split('T')[0] || todayBogotaStr(),
       fecha_desde: pago.fecha_desde?.split('T')[0] || '',
       fecha_hasta: pago.fecha_hasta?.split('T')[0] || '',
       lavadas_cantidad: pago.lavadas_cantidad || 0,

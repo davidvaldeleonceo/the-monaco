@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Timer, Users, DollarSign, BarChart3, Check, MessageCircle, Crown, Star } from 'lucide-react'
 import CheckoutModal from './CheckoutModal'
+import { API_URL } from '../config/constants'
 
 const features = [
   {
@@ -12,7 +13,7 @@ const features = [
   {
     icon: Users,
     title: 'Clientes que vuelven solos',
-    desc: 'Membresías, descuentos y cashback para que tus clientes regresen sin que tengas que llamarlos.',
+    desc: 'Membresías y descuentos para que tus clientes regresen sin que tengas que llamarlos.',
   },
   {
     icon: DollarSign,
@@ -56,6 +57,68 @@ const testimonials = [
 
 export default function LandingPage() {
   const [checkoutPeriod, setCheckoutPeriod] = useState(null)
+  const [initialCheckoutId, setInitialCheckoutId] = useState(null)
+  const [claimMode, setClaimMode] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const [pseError, setPseError] = useState(null)
+
+  // Handle PSE return, claim link, and localStorage recovery
+  useEffect(() => {
+    // 1. PSE return: detect ?checkout_pse=1
+    if (searchParams.get('checkout_pse') === '1') {
+      const storedCheckoutId = localStorage.getItem('monaco_checkout_id')
+      const storedPeriod = localStorage.getItem('monaco_checkout_period')
+      if (storedCheckoutId && storedPeriod) {
+        setCheckoutPeriod(storedPeriod)
+        setInitialCheckoutId(storedCheckoutId)
+      } else {
+        setPseError('No pudimos recuperar los datos de tu pago. Si completaste el pago, tu plan se activará automáticamente. Si necesitas ayuda, contáctanos por WhatsApp.')
+      }
+      setSearchParams({}, { replace: true })
+      return
+    }
+
+    // 2. Claim link: detect ?claim=<checkoutId>
+    const claimId = searchParams.get('claim')
+    if (claimId) {
+      fetch(`${API_URL}/api/wompi/public-check-transaction/${claimId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'APPROVED' && !data.claimed) {
+            setCheckoutPeriod(data.period || 'monthly')
+            setInitialCheckoutId(claimId)
+            setClaimMode(true)
+          } else if (data.claimed) {
+            setPseError('Este pago ya fue utilizado para activar un plan.')
+          } else {
+            setPseError('Este pago no está aprobado. Si necesitas ayuda, contáctanos por WhatsApp.')
+          }
+        })
+        .catch(() => setPseError('Error al verificar el pago.'))
+      setSearchParams({}, { replace: true })
+      return
+    }
+
+    // 3. localStorage recovery: check for unclaimed CARD checkout
+    const storedId = localStorage.getItem('monaco_checkout_id')
+    const storedPeriod = localStorage.getItem('monaco_checkout_period')
+    if (storedId && storedPeriod) {
+      fetch(`${API_URL}/api/wompi/public-check-transaction/${storedId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'APPROVED' && !data.claimed) {
+            setCheckoutPeriod(storedPeriod)
+            setInitialCheckoutId(storedId)
+            setClaimMode(true)
+          } else {
+            localStorage.removeItem('monaco_checkout_id')
+            localStorage.removeItem('monaco_checkout_period')
+          }
+        })
+        .catch(() => {})
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="landing-page">
@@ -70,6 +133,16 @@ export default function LandingPage() {
           <Link to="/registro" className="landing-nav-btn">Empezar gratis</Link>
         </div>
       </nav>
+
+      {/* PSE Error Banner */}
+      {pseError && (
+        <div className="wompi-form-error" style={{ margin: '1rem auto', maxWidth: 600, textAlign: 'center' }}>
+          {pseError}{' '}
+          <a href="https://wa.me/573144016349" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
+            WhatsApp
+          </a>
+        </div>
+      )}
 
       {/* Hero */}
       <section className="landing-hero">
@@ -156,7 +229,14 @@ export default function LandingPage() {
       </footer>
 
       {/* Checkout Modal */}
-      {checkoutPeriod && <CheckoutModal period={checkoutPeriod} onClose={() => setCheckoutPeriod(null)} />}
+      {checkoutPeriod && (
+        <CheckoutModal
+          period={checkoutPeriod}
+          onClose={() => { setCheckoutPeriod(null); setInitialCheckoutId(null); setClaimMode(false) }}
+          initialCheckoutId={initialCheckoutId}
+          claimMode={claimMode}
+        />
+      )}
     </div>
   )
 }

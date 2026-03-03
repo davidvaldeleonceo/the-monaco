@@ -3944,6 +3944,38 @@ body {
   opacity: 0.7;
 }
 
+.cliente-categoria-badge {
+  font-size: 0.65rem;
+  color: var(--text-secondary, #888);
+  background: var(--bg-secondary);
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 6px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cliente-categoria-info {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.cliente-categoria-info.mem-activa {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.cliente-categoria-info.mem-vencida {
+  color: var(--accent-red);
+  background: rgba(239, 68, 68, 0.1);
+}
+
 /* Cliente Info Modal Grid */
 .cliente-info-grid {
   display: grid;
@@ -3962,6 +3994,40 @@ body {
   color: var(--text-primary);
   font-size: 0.9rem;
   word-break: break-word;
+}
+
+.cliente-info-whatsapp {
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.cliente-info-plantillas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cliente-info-plantillas-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.btn-plantilla-chip {
+  background: rgba(37, 211, 102, 0.12);
+  color: #25d366;
+  border: 1px solid rgba(37, 211, 102, 0.25);
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-plantilla-chip:active {
+  background: rgba(37, 211, 102, 0.25);
 }
 
 .lavada-card-summary {
@@ -5046,6 +5112,14 @@ body {
 .clientes-fab-overlay { position: fixed; inset: 0; z-index: var(--z-fab-overlay); background: rgba(0,0,0,0.3); }
 .clientes-fab-menu { position: fixed; bottom: 9.5rem; right: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: var(--z-fab); }
 .clientes-fab-menu button { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; font-size: 0.875rem; font-weight: 500; color: var(--text-primary); cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.15); white-space: nowrap; animation: fabMenuIn 0.2s ease-out; }
+
+/* Export dropdown */
+.export-dropdown-wrapper { position: relative; }
+.export-dropdown-overlay { position: fixed; inset: 0; z-index: 99; }
+.export-dropdown-menu { position: absolute; top: calc(100% + 0.5rem); right: 0; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 100; min-width: 200px; overflow: hidden; }
+.export-dropdown-menu button { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.75rem 1rem; background: none; border: none; font-size: 0.875rem; font-weight: 500; color: var(--text-primary); cursor: pointer; white-space: nowrap; }
+.export-dropdown-menu button:hover { background: var(--bg-hover); }
+.export-dropdown-menu button:not(:last-child) { border-bottom: 1px solid var(--border-color); }
 
 /* Config FAB */
 .config-fab { position: fixed; bottom: 5.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--accent-blue); color: #fff; border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.25); cursor: pointer; z-index: var(--z-fab); transition: transform 0.2s, background 0.2s; }
@@ -9595,6 +9669,61 @@ input:checked + .slider:before {
 
 .cuenta-datos-logout:hover {
   background: rgba(239, 68, 68, 0.08);
+}
+
+.cuenta-delete-zone {
+  margin-top: 0.5rem;
+}
+.cuenta-datos-delete-toggle {
+  color: var(--accent-red);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0.7rem;
+  border-radius: 12px;
+}
+.cuenta-datos-delete-toggle .cuenta-datos-label {
+  color: var(--accent-red);
+}
+.cuenta-datos-delete-toggle .cuenta-datos-left {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cuenta-datos-delete-toggle:hover {
+  background: rgba(239, 68, 68, 0.08);
+}
+.cuenta-datos-delete-toggle .chevron-icon {
+  transition: transform 0.2s;
+  color: var(--accent-red);
+}
+.cuenta-datos-delete-toggle .chevron-icon.rotated {
+  transform: rotate(180deg);
+}
+.cuenta-delete-content {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.cuenta-delete-warning {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+.btn-delete-account {
+  background: var(--accent-red);
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  align-self: flex-start;
+}
+.btn-delete-account:hover {
+  opacity: 0.9;
 }
 
 .cuenta-datos-left {

@@ -6,6 +6,7 @@ import { useTenant } from './TenantContext'
 import { useToast } from './Toast'
 import { formatMoney } from '../utils/money'
 import { LAVADAS_SELECT } from '../config/constants'
+import { todayBogotaStr } from '../utils/date'
 import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles, Droplets, DollarSign, MessageCircle } from 'lucide-react'
 import UpgradeModal from './UpgradeModal'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
@@ -40,6 +41,7 @@ export default function Clientes() {
   const [sortBy, setSortBy] = useState('')
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [showFabMenu, setShowFabMenu] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
   const [clienteHistorial, setClienteHistorial] = useState({})
   const [whatsappMenu, setWhatsappMenu] = useState(null)
   const [waMenuPos, setWaMenuPos] = useState({ top: 0, right: 0 })
@@ -321,6 +323,53 @@ export default function Clientes() {
 
     if (fallos > 0) {
       toast.error(`Se eliminaron ${eliminados} de ${ids.length} clientes. ${fallos} no se pudieron eliminar porque tienen servicios asociados.`)
+    }
+  }
+
+  const exportarCSV = () => {
+    try {
+      if (!clientesFiltrados.length) return
+      const data = clientesFiltrados.map(c => ({
+        Nombre: c.nombre || '',
+        Teléfono: c.telefono || '',
+        Correo: c.correo || '',
+        Cédula: c.cedula || '',
+        Placa: c.placa || '',
+        Moto: c.moto || '',
+        Membresía: c.membresia?.nombre || '',
+        Estado: getEstadoCliente(c)
+      }))
+      const ws = XLSX.utils.json_to_sheet(data)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Clientes')
+      const fecha = todayBogotaStr()
+      XLSX.writeFile(wb, `contactos_clientes_${fecha}.csv`, { bookType: 'csv' })
+      toast.success(`Se exportaron ${data.length} clientes`)
+    } catch (err) {
+      toast.error('Error al exportar clientes')
+    }
+  }
+
+  const exportarManyChat = () => {
+    try {
+      if (!clientesFiltrados.length) return
+      const data = clientesFiltrados.map(c => {
+        const tel = (c.telefono || '').trim()
+        return {
+          Nombre: c.nombre || '',
+          Placa: c.placa || '',
+          Teléfono: tel ? (tel.startsWith('57') ? tel : `57${tel}`) : '',
+          Estado: getEstadoCliente(c) === 'Activo' ? 'Activo' : 'Inactivo'
+        }
+      })
+      const ws = XLSX.utils.json_to_sheet(data)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Clientes')
+      const fecha = todayBogotaStr()
+      XLSX.writeFile(wb, `clientes_manychat_${fecha}.csv`, { bookType: 'csv' })
+      toast.success(`Se exportaron ${data.length} clientes para ManyChat`)
+    } catch (err) {
+      toast.error('Error al exportar clientes')
     }
   }
 
@@ -898,6 +947,26 @@ export default function Clientes() {
             <CheckSquare size={18} />
             <span className="btn-label">{modoSeleccion ? 'Cancelar' : 'Seleccionar'}</span>
           </button>
+          <div className="export-dropdown-wrapper">
+            <button className="btn-secondary" onClick={() => setShowExportMenu(!showExportMenu)} disabled={!clientesFiltrados.length}>
+              <Download size={18} />
+              <span className="btn-label">Exportar</span>
+              <ChevronDown size={14} />
+            </button>
+            {showExportMenu && (
+              <>
+                <div className="export-dropdown-overlay" onClick={() => setShowExportMenu(false)} />
+                <div className="export-dropdown-menu">
+                  <button onClick={() => { setShowExportMenu(false); exportarCSV() }}>
+                    <Download size={16} /> Exportar CSV
+                  </button>
+                  <button onClick={() => { setShowExportMenu(false); exportarManyChat() }}>
+                    <MessageCircle size={16} /> Exportar para ManyChat
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button className="btn-secondary" onClick={() => setShowImportModal(true)}>
             <Upload size={18} />
             <span className="btn-label">Importar</span>
@@ -1646,6 +1715,12 @@ export default function Clientes() {
           <div className="clientes-fab-menu">
             <button onClick={() => { setShowFabMenu(false); setShowModal(true) }}>
               <Plus size={18} /> Nuevo Cliente
+            </button>
+            <button onClick={() => { setShowFabMenu(false); exportarCSV() }} disabled={!clientesFiltrados.length}>
+              <Download size={18} /> Exportar CSV
+            </button>
+            <button onClick={() => { setShowFabMenu(false); exportarManyChat() }} disabled={!clientesFiltrados.length}>
+              <MessageCircle size={18} /> Exportar ManyChat
             </button>
             <button onClick={() => { setShowFabMenu(false); setShowImportModal(true) }}>
               <Upload size={18} /> Importar

@@ -9,6 +9,7 @@ import { saveAs } from 'file-saver'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { formatMoney, formatMoneyShort } from '../utils/money'
+import { fechaToBogotaDate } from '../utils/date'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import {
@@ -182,7 +183,7 @@ export default function Reportes() {
 
     // Charts Tab 1
     const ventasPorDia = {}
-    lavadas.forEach(l => { const d = new Date(l.fecha).getDate(); ventasPorDia[d] = (ventasPorDia[d]||0) + Number(l.valor||0) })
+    lavadas.forEach(l => { const bo = fechaToBogotaDate(l.fecha); const d = bo ? new Date(bo + 'T00:00:00').getDate() : new Date(l.fecha).getDate(); ventasPorDia[d] = (ventasPorDia[d]||0) + Number(l.valor||0) })
     const dias = Math.min(Math.ceil((fechaHasta - fechaDesde) / 864e5) + 1, 366)
     const ventasDiarias = []
     for (let i = 0; i < dias; i++) { const d = new Date(fechaDesde); d.setDate(d.getDate()+i); const dia = d.getDate(); ventasDiarias.push({ dia: String(dia), ventas: ventasPorDia[dia]||0 }) }
@@ -233,9 +234,9 @@ export default function Reportes() {
 
     // Chart: ingresos vs egresos diarios
     const ingDia = {}, egDia = {}
-    lavadas.forEach(l => { const d = new Date(l.fecha).getDate(); ingDia[d] = (ingDia[d]||0) + Number(l.valor||0) })
+    lavadas.forEach(l => { const bo = fechaToBogotaDate(l.fecha); const d = bo ? new Date(bo + 'T00:00:00').getDate() : new Date(l.fecha).getDate(); ingDia[d] = (ingDia[d]||0) + Number(l.valor||0) })
     trans.forEach(t => {
-      const d = new Date(t.fecha).getDate()
+      const bo = fechaToBogotaDate(t.fecha); const d = bo ? new Date(bo + 'T00:00:00').getDate() : new Date(t.fecha).getDate()
       if (t.tipo === 'INGRESO') ingDia[d] = (ingDia[d]||0) + Number(t.valor||0)
       else egDia[d] = (egDia[d]||0) + Number(t.valor||0)
     })
@@ -271,7 +272,7 @@ export default function Reportes() {
     // Top 5 días ventas
     const ventasDiaMap = {}
     lavadas.forEach(l => {
-      const fStr = l.fecha?.split('T')[0] || ''
+      const fStr = fechaToBogotaDate(l.fecha) || ''
       ventasDiaMap[fStr] = (ventasDiaMap[fStr]||0) + Number(l.valor||0)
     })
     const topDias = Object.entries(ventasDiaMap).map(([fecha, total]) => ({ fecha, total })).sort((a,b) => b.total - a.total).slice(0, 5)

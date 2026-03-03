@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback } f
 import { supabase } from '../supabaseClient'
 import { useTenant } from './TenantContext'
 import { LAVADAS_SELECT, CLIENTES_SELECT } from '../config/constants'
+import { fechaToBogotaDate, nowBogota } from '../utils/date'
 
 const DataContext = createContext()
 
@@ -27,11 +28,13 @@ export function DataProvider({ children }) {
   const [transacciones, setTransacciones] = useState([])
   const [productos, setProductos] = useState([])
   const [plantillasMensaje, setPlantillasMensaje] = useState([])
+  const [categoriasTransaccion, setCategoriasTransaccion] = useState([])
   const [loading, setLoading] = useState(true)
   const [lavadasAllLoaded, setLavadasAllLoaded] = useState(false)
 
   const fetchingRef = useRef(false)
   const debounceRef = useRef(null)
+  const clientesDebounceRef = useRef(null)
 
   const fetchAllData = async () => {
     if (fetchingRef.current) return
@@ -50,6 +53,7 @@ export function DataProvider({ children }) {
         serviciosAdicionalesRes,
         productosRes,
         plantillasRes,
+        categoriasTransaccionRes,
       ] = await Promise.all([
         supabase.from('clientes').select(CLIENTES_SELECT).order('nombre'),
         supabase.from('lavadas').select(LAVADAS_SELECT).gte('fecha', cutoff).order('fecha', { ascending: false }).limit(500),
@@ -60,6 +64,7 @@ export function DataProvider({ children }) {
         supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre'),
         supabase.from('productos').select('*').order('nombre'),
         supabase.from('plantillas_mensaje').select('*').eq('activo', true).order('nombre'),
+        supabase.from('categorias_transaccion').select('*').eq('activo', true).order('nombre'),
       ])
 
       if (clientesRes.error) console.error('Error clientes:', clientesRes.error)
@@ -71,6 +76,7 @@ export function DataProvider({ children }) {
       if (serviciosAdicionalesRes.error) console.error('Error servicios_adicionales:', serviciosAdicionalesRes.error)
       if (productosRes.error) console.error('Error productos:', productosRes.error)
       if (plantillasRes.error) console.error('Error plantillas_mensaje:', plantillasRes.error)
+      if (categoriasTransaccionRes.error) console.error('Error categorias_transaccion:', categoriasTransaccionRes.error)
 
       setClientes(clientesRes.data || [])
       setLavadas(lavadasRes.data || [])
@@ -82,6 +88,7 @@ export function DataProvider({ children }) {
       setServiciosAdicionales(serviciosAdicionalesRes.data || [])
       setProductos(productosRes.data || [])
       setPlantillasMensaje(plantillasRes.data || [])
+      setCategoriasTransaccion(categoriasTransaccionRes.data || [])
     } catch (error) {
       console.error('Error fetching data:', error)
     } finally {
@@ -118,7 +125,7 @@ export function DataProvider({ children }) {
   }
 
   const refreshConfig = async () => {
-    const [tiposLavadoRes, lavadoresRes, metodosPagoRes, tiposMembresiaRes, serviciosRes, productosRes, plantillasRes] = await Promise.all([
+    const [tiposLavadoRes, lavadoresRes, metodosPagoRes, tiposMembresiaRes, serviciosRes, productosRes, plantillasRes, categoriasRes] = await Promise.all([
       supabase.from('tipos_lavado').select('*').eq('activo', true),
       supabase.from('lavadores').select('*').eq('activo', true),
       supabase.from('metodos_pago').select('*').eq('activo', true),
@@ -126,6 +133,7 @@ export function DataProvider({ children }) {
       supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre'),
       supabase.from('productos').select('*').order('nombre'),
       supabase.from('plantillas_mensaje').select('*').eq('activo', true).order('nombre'),
+      supabase.from('categorias_transaccion').select('*').eq('activo', true).order('nombre'),
     ])
     setTiposLavado(tiposLavadoRes.data || [])
     setLavadores(lavadoresRes.data || [])
@@ -134,6 +142,7 @@ export function DataProvider({ children }) {
     setServiciosAdicionales(serviciosRes.data || [])
     setProductos(productosRes.data || [])
     setPlantillasMensaje(plantillasRes.data || [])
+    setCategoriasTransaccion(categoriasRes.data || [])
   }
 
   const updateLavadaLocal = (lavadaId, updates) => {
@@ -186,9 +195,31 @@ export function DataProvider({ children }) {
     }
   }, [negocioId, lavadasAllLoaded])
 
+  // Supabase Realtime subscription for clientes — debounced
+  useEffect(() => {
+    if (!negocioId) return
+
+    const channel = supabase
+      .channel('clientes-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clientes' }, () => {
+        if (clientesDebounceRef.current) clearTimeout(clientesDebounceRef.current)
+        clientesDebounceRef.current = setTimeout(() => {
+          refreshClientes()
+        }, 300)
+      })
+      .subscribe()
+
+    return () => {
+      if (clientesDebounceRef.current) clearTimeout(clientesDebounceRef.current)
+      supabase.removeChannel(channel)
+    }
+  }, [negocioId])
+
   const lavadaCountThisMonth = lavadas.filter(l => {
-    const d = new Date(l.fecha)
-    const now = new Date()
+    const dateOnly = fechaToBogotaDate(l.fecha)
+    if (!dateOnly) return false
+    const d = new Date(dateOnly + 'T00:00:00')
+    const now = nowBogota()
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
   }).length
 
@@ -205,6 +236,7 @@ export function DataProvider({ children }) {
     serviciosAdicionales,
     productos,
     plantillasMensaje,
+    categoriasTransaccion,
     loading,
     lavadasAllLoaded,
     fetchAllData,

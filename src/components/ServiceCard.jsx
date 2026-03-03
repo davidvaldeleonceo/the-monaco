@@ -42,6 +42,7 @@ export default function ServiceCard({
   // Highlight
   isHighlighted = false,
   // Cliente info
+  clienteCategoria,
   onPlacaClick,
   // Plantillas
   plantillasMensaje = [],
@@ -92,8 +93,11 @@ export default function ServiceCard({
         onClick={() => selectionMode && onToggleSelect ? onToggleSelect(lavada.id) : onToggleExpand()}
       >
         <div className="lavada-card-cliente">
-          <span className="lavada-card-nombre">{lavada.cliente?.nombre || 'No encontrado'} <span className="lavada-card-fecha">{new Date(lavada.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}</span></span>
-          <span className="lavada-card-placa" onClick={(e) => { e.stopPropagation(); onPlacaClick?.(lavada) }} style={{ cursor: 'pointer' }}>{lavada.placa}</span>
+          <span className="lavada-card-nombre">{lavada.cliente?.nombre || 'No encontrado'} <span className="lavada-card-fecha">{new Date(lavada.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', timeZone: 'America/Bogota' })}</span></span>
+          <span className="lavada-card-placa" onClick={(e) => { e.stopPropagation(); onPlacaClick?.(lavada) }} style={{ cursor: 'pointer' }}>
+            {lavada.placa}
+            {clienteCategoria && <span className="cliente-categoria-badge">{clienteCategoria}</span>}
+          </span>
         </div>
         <div className="lavada-card-summary">
           <span className={`pago-badge pago-badge-${pagoStatus}`}>{pagoLabel}</span>

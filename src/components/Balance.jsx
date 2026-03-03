@@ -9,11 +9,12 @@ import es from 'date-fns/locale/es'
 import { formatMoney } from '../utils/money'
 import { useMoneyVisibility } from './MoneyVisibilityContext'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
+import { fechaToBogotaDate, nowBogota } from '../utils/date'
 
 registerLocale('es', es)
 
 export default function Balance() {
-  const { metodosPago: metodosPagoConfig, lavadas, negocioId } = useData()
+  const { metodosPago: metodosPagoConfig, lavadas, negocioId, categoriasTransaccion } = useData()
   const { displayMoney } = useMoneyVisibility()
 
   const [transacciones, setTransacciones] = useState([])
@@ -70,9 +71,17 @@ export default function Balance() {
     fecha: fechaLocalStr(new Date())
   })
 
-  const categorias = {
+  const defaultCategorias = {
     INGRESO: ['MEMBRESIA', 'SERVICIO', 'ADICIONAL', 'OTRO'],
     EGRESO: ['INSUMOS', 'SERVICIOS', 'ABONO A SUELDO', 'ARRIENDO', 'PAGO TRABAJADOR', 'OTRO']
+  }
+
+  const catIngresos = categoriasTransaccion.filter(c => c.tipo === 'INGRESO').map(c => c.nombre)
+  const catEgresos = categoriasTransaccion.filter(c => c.tipo === 'EGRESO').map(c => c.nombre)
+
+  const categorias = {
+    INGRESO: catIngresos.length > 0 ? catIngresos : defaultCategorias.INGRESO,
+    EGRESO: catEgresos.length > 0 ? catEgresos : defaultCategorias.EGRESO,
   }
 
   const todasCategorias = [...new Set([...categorias.INGRESO, ...categorias.EGRESO])]
@@ -168,7 +177,7 @@ export default function Balance() {
     const pagos = l.pagos || []
     if (pagos.length === 0) return []
 
-    const dateOnly = typeof l.fecha === 'string' ? l.fecha.split('T')[0] : null
+    const dateOnly = fechaToBogotaDate(l.fecha)
     const fechaLavada = dateOnly ? new Date(dateOnly + 'T00:00:00') : new Date(l.fecha)
     if (isNaN(fechaLavada.getTime())) return []
 
@@ -272,7 +281,7 @@ export default function Balance() {
   const iniciarEdicion = (t) => {
     setEditandoId(t.id)
     setEditData({
-      fecha: t.fecha?.split('T')[0] || fechaLocalStr(new Date()),
+      fecha: fechaToBogotaDate(t.fecha) || fechaLocalStr(nowBogota()),
       tipo: t.tipo,
       categoria: t.categoria || '',
       placa_o_persona: t.placa_o_persona || '',
