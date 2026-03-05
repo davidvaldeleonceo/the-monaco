@@ -225,12 +225,15 @@ export default function Clientes() {
 
     const [lavRes, txRes, msgRes] = await Promise.all([
       supabase.from('lavadas').select(LAVADAS_SELECT)
+        .eq('negocio_id', negocioId)
         .eq('cliente_id', cliente.id)
         .order('fecha', { ascending: false }).limit(20),
       supabase.from('transacciones').select('*, metodo_pago:metodos_pago(nombre)')
+        .eq('negocio_id', negocioId)
         .ilike('placa_o_persona', `%${cliente.placa}%`)
         .order('fecha', { ascending: false }).limit(20),
       supabase.from('mensajes_enviados').select('*')
+        .eq('negocio_id', negocioId)
         .eq('cliente_id', cliente.id)
         .order('created_at', { ascending: false }).limit(20)
     ])

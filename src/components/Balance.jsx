@@ -7,6 +7,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney } from '../utils/money'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 import { useMoneyVisibility } from './MoneyVisibilityContext'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 import { fechaToBogotaDate, nowBogota } from '../utils/date'
@@ -53,6 +54,8 @@ export default function Balance() {
   const [filtroRapido, setFiltroRapido] = useState(filtrosIniciales.rapido)
   const [showFilters, setShowFilters] = useState(false)
   const [expandedCard, setExpandedCard] = useState(null)
+  const [balancePopover, setBalancePopover] = useState(false)
+  const [balancePill, setBalancePill] = useState('balance')
 
   // Eliminar
   const [eliminarId, setEliminarId] = useState(null)
@@ -113,6 +116,7 @@ export default function Balance() {
     let query = supabase
       .from('transacciones')
       .select('*, metodo_pago:metodos_pago(nombre)')
+      .eq('negocio_id', negocioId)
       .order('fecha', { ascending: false })
 
     if (fechaDesde) {
@@ -244,6 +248,23 @@ export default function Balance() {
     return sum
   }, 0)
 
+  // Data for balance popover charts
+  const ingresosPorMetodo = metodosPagoConfig.map(metodo => {
+    const total = transaccionesFiltradas.filter(t => t.tipo === 'INGRESO' && t.metodo_pago_id == metodo.id).reduce((sum, t) => sum + Number(t.valor), 0)
+    return { nombre: metodo.nombre, valor: total }
+  }).filter(m => m.valor > 0)
+
+  const egresosPorMetodo = metodosPagoConfig.map(metodo => {
+    const total = transaccionesFiltradas.filter(t => t.tipo === 'EGRESO' && t.metodo_pago_id == metodo.id).reduce((sum, t) => sum + Number(t.valor), 0)
+    return { nombre: metodo.nombre, valor: total }
+  }).filter(m => m.valor > 0)
+
+  const balancePorMetodo = metodosPagoConfig.map(metodo => {
+    const ing = transaccionesFiltradas.filter(t => t.tipo === 'INGRESO' && t.metodo_pago_id == metodo.id).reduce((sum, t) => sum + Number(t.valor), 0)
+    const egr = transaccionesFiltradas.filter(t => t.tipo === 'EGRESO' && t.metodo_pago_id == metodo.id).reduce((sum, t) => sum + Number(t.valor), 0)
+    return { nombre: metodo.nombre, valor: ing - egr }
+  }).filter(m => m.valor !== 0)
+
   const handleSubmit = async (e) => {
     e.preventDefault()
 
@@ -272,7 +293,7 @@ export default function Balance() {
   }
 
   const executeEliminar = async () => {
-    await supabase.from('transacciones').delete().eq('id', eliminarId)
+    await supabase.from('transacciones').delete().eq('id', eliminarId).eq('negocio_id', negocioId)
     setEliminarId(null)
     fetchData()
   }
@@ -323,7 +344,7 @@ export default function Balance() {
       valor: nuevoValor,
     }
 
-    await supabase.from('transacciones').update(updates).eq('id', id)
+    await supabase.from('transacciones').update(updates).eq('id', id).eq('negocio_id', negocioId)
     setEditandoId(null)
     setEditData(null)
     fetchData()
@@ -348,21 +369,21 @@ export default function Balance() {
       </div>
 
       <div className="balance-resumen">
-        <div className="resumen-card ingresos">
+        <div className="resumen-card ingresos" onClick={() => { setBalancePill('ingresos'); setBalancePopover(true) }}>
           <div className="left">
             <TrendingUp size={24} />
             <span className="label">Ingresos</span>
           </div>
           <span className="valor">{displayMoney(ingresosFiltrados)}</span>
         </div>
-        <div className="resumen-card egresos">
+        <div className="resumen-card egresos" onClick={() => { setBalancePill('egresos'); setBalancePopover(true) }}>
           <div className="left">
             <TrendingDown size={24} />
             <span className="label">Egresos</span>
           </div>
           <span className="valor">{displayMoney(egresosFiltrados)}</span>
         </div>
-        <div className={`resumen-card balance ${balanceFiltrado >= 0 ? 'positivo' : 'negativo'}`}>
+        <div className={`resumen-card balance ${balanceFiltrado >= 0 ? 'positivo' : 'negativo'}`} onClick={() => { setBalancePill('balance'); setBalancePopover(true) }}>
           <div className="left">
             <TrendingUp size={24} />
             <span className="label">Balance</span>
@@ -370,6 +391,75 @@ export default function Balance() {
           <span className="valor">{displayMoney(balanceFiltrado)}</span>
         </div>
       </div>
+
+      {balancePopover && (
+        <>
+          <div className="pago-popover-overlay" onClick={() => setBalancePopover(false)} />
+          <div className="balance-popover">
+            <div className="pago-popover-header">
+              <span className="pago-popover-title">Resumen</span>
+              <button className="pago-popover-close" onClick={() => setBalancePopover(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="balance-popover-totals">
+              <div className="balance-popover-total-row">
+                <span className="balance-popover-total-label">Ingresos</span>
+                <span className="balance-popover-total-value positivo">{formatMoney(ingresosFiltrados)}</span>
+              </div>
+              <div className="balance-popover-total-row">
+                <span className="balance-popover-total-label">Egresos</span>
+                <span className="balance-popover-total-value negativo">{formatMoney(egresosFiltrados)}</span>
+              </div>
+              <div className="balance-popover-total-row balance-popover-total-main">
+                <span className="balance-popover-total-label">Balance</span>
+                <span className={`balance-popover-total-value ${balanceFiltrado >= 0 ? 'positivo' : 'negativo'}`}>{formatMoney(balanceFiltrado)}</span>
+              </div>
+            </div>
+
+            <div className="balance-popover-pills">
+              {['balance', 'ingresos', 'egresos'].map(pill => (
+                <button
+                  key={pill}
+                  className={`balance-popover-pill ${balancePill === pill ? 'active' : ''}`}
+                  onClick={() => setBalancePill(pill)}
+                >
+                  {pill.charAt(0).toUpperCase() + pill.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            <div className="balance-popover-chart">
+              {(() => {
+                const data = balancePill === 'ingresos' ? ingresosPorMetodo
+                  : balancePill === 'egresos' ? egresosPorMetodo
+                  : balancePorMetodo
+                const color = balancePill === 'ingresos' ? 'var(--accent-green)'
+                  : balancePill === 'egresos' ? 'var(--accent-red)'
+                  : 'var(--accent-blue)'
+
+                if (data.length === 0) return <div className="chart-empty">Sin datos para mostrar</div>
+
+                return (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={data} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+                      <XAxis dataKey="nombre" tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} />
+                      <YAxis tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} tickFormatter={(v) => formatMoney(v)} width={80} />
+                      <Tooltip
+                        formatter={(value) => [formatMoney(value), balancePill === 'ingresos' ? 'Ingresos' : balancePill === 'egresos' ? 'Egresos' : 'Balance']}
+                        contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, fontSize: '0.85rem' }}
+                      />
+                      <Bar dataKey="valor" fill={color} radius={[6, 6, 0, 0]} barSize={50} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )
+              })()}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Resumen por método de pago */}
       <div className="resumen-metodos">

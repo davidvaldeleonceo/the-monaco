@@ -152,6 +152,7 @@ export default function PagoTrabajadores() {
         *,
         lavador:lavadores(nombre)
       `)
+      .eq('negocio_id', negocioId)
       .order('fecha', { ascending: false })
 
     if (filtroDesde) {
@@ -168,6 +169,7 @@ export default function PagoTrabajadores() {
     const { data: lavadoresData } = await supabase
       .from('lavadores')
       .select('*')
+      .eq('negocio_id', negocioId)
       .eq('activo', true)
 
     setPagos(pagosData || [])
@@ -278,6 +280,7 @@ export default function PagoTrabajadores() {
     const { data } = await supabase
       .from('lavadas')
       .select('*, tipo_lavado:tipos_lavado(nombre, precio)')
+      .eq('negocio_id', negocioId)
       .eq('lavador_id', lavadorId)
       .gte('fecha', desde)
       .lte('fecha', hasta + 'T23:59:59')
@@ -630,12 +633,14 @@ export default function PagoTrabajadores() {
       await supabase
         .from('transacciones')
         .delete()
+        .eq('negocio_id', negocioId)
         .eq('categoria', 'PAGO TRABAJADOR')
         .ilike('placa_o_persona', nombreAnterior)
         .ilike('descripcion', `%${descripcionAnterior}%`)
       await supabase
         .from('transacciones')
         .delete()
+        .eq('negocio_id', negocioId)
         .eq('categoria', 'PAGO TRABAJADOR')
         .ilike('placa_o_persona', nombreAnterior)
         .ilike('descripcion', `%${descripcionAbonoAnterior}%`)
@@ -699,6 +704,7 @@ export default function PagoTrabajadores() {
       .from('pago_trabajadores')
       .update({ anulado: true })
       .eq('id', pago.id)
+      .eq('negocio_id', negocioId)
 
     const periodo = pago.fecha_desde && pago.fecha_hasta
       ? `${pago.fecha_desde} a ${pago.fecha_hasta}`
@@ -711,6 +717,7 @@ export default function PagoTrabajadores() {
     await supabase
       .from('transacciones')
       .delete()
+      .eq('negocio_id', negocioId)
       .eq('categoria', 'PAGO TRABAJADOR')
       .ilike('placa_o_persona', nombreLavador)
       .ilike('descripcion', `%${descripcionBuscada}%`)
@@ -720,6 +727,7 @@ export default function PagoTrabajadores() {
     await supabase
       .from('transacciones')
       .delete()
+      .eq('negocio_id', negocioId)
       .eq('categoria', 'PAGO TRABAJADOR')
       .ilike('placa_o_persona', nombreLavador)
       .ilike('descripcion', `%${descripcionAbono}%`)

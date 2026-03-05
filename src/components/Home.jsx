@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
@@ -9,9 +9,9 @@ import NuevoServicioSheet from './NuevoServicioSheet'
 import { formatMoney, formatMoneyShort } from '../utils/money'
 import { useMoneyVisibility } from './MoneyVisibilityContext'
 import { useToast } from './Toast'
-import { AreaChart, Area, XAxis, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell, LabelList, ResponsiveContainer } from 'recharts'
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../config/constants'
-import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download, ChevronDown, Pencil, Check, Eye, EyeOff, TrendingUp, TrendingDown, UserPlus, Calendar, Flag, CreditCard, User, ArrowUpDown, Wallet, Tag } from 'lucide-react'
+import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download, ChevronDown, Pencil, Check, Eye, EyeOff, TrendingUp, TrendingDown, UserPlus, Calendar, Flag, CreditCard, User, ArrowUpDown, Wallet, Tag, ShoppingBag, ArrowLeftRight, ArrowLeft } from 'lucide-react'
 import ConfirmDeleteModal from './common/ConfirmDeleteModal'
 import UpgradeModal from './UpgradeModal'
 import DatePicker, { registerLocale } from 'react-datepicker'
@@ -36,6 +36,7 @@ export default function Home() {
     collapsingCards,
     updatingCards,
     smoothCollapse,
+    collapseAllExcept,
     getTimerProps,
     hasActiveTimer,
     getEstadoClass,
@@ -54,8 +55,11 @@ export default function Home() {
     metodosPago: _mp,
   } = useServiceHandlers()
 
+  const anyCardExpanded = Object.values(expandedCards).some(Boolean)
+  const [activePopoverId, setActivePopoverId] = useState(null)
+
   const [periodo, setPeriodo] = useState(() => {
-    return localStorage.getItem('home-periodo') || 'm'
+    return localStorage.getItem('home-periodo') || 'd'
   })
   const [tab, setTab] = useState('servicios')
   const [transacciones, setTransacciones] = useState([])
@@ -82,7 +86,7 @@ export default function Home() {
   const [creandoVentaCliente, setCreandoVentaCliente] = useState(false)
   const ventaClienteWrapperRef = useRef(null)
   const [submitting, setSubmitting] = useState(false)
-  const [visibleCount, setVisibleCount] = useState({ servicios: 10, productos: 10, movimientos: 10 })
+  const [visibleCount, setVisibleCount] = useState({ servicios: 20, productos: 20, movimientos: 20 })
   const [searchQuery, setSearchQuery] = useState('')
   const [showFilterCards, setShowFilterCards] = useState(false)
   const [expandedFilterCard, setExpandedFilterCard] = useState(null)
@@ -157,7 +161,18 @@ export default function Home() {
   const ventaDragStartY = useRef(null)
 
   // Auto-open UpgradeModal when coming from "Comprar ahora" flow
-  const [showCardDetails, setShowCardDetails] = useState(false)
+  const [showBalanceSheet, setShowBalanceSheet] = useState(false)
+  const [activeBalancePanel, setActiveBalancePanel] = useState(null)
+  const [showPeriodOptions, setShowPeriodOptions] = useState(false)
+  const [balanceSheetPill, setBalanceSheetPill] = useState('balance')
+  const [balanceSheetView, setBalanceSheetView] = useState('metodo')
+  const [balancePillDropdown, setBalancePillDropdown] = useState(false)
+  const [balanceViewDropdown, setBalanceViewDropdown] = useState(false)
+  const [showPeriodOptionsDesktop, setShowPeriodOptionsDesktop] = useState(false)
+  const [selectedBarIndex, setSelectedBarIndex] = useState(null)
+  const [chartAnimKey, setChartAnimKey] = useState(0)
+  const [showSearchBar, setShowSearchBar] = useState(false)
+  const periodWheelRef = useRef(null)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [upgradePeriod, setUpgradePeriod] = useState(null)
   useEffect(() => {
@@ -170,6 +185,15 @@ export default function Home() {
       setSearchParams(searchParams, { replace: true })
     }
   }, [])
+
+  // Escape key to close balance panel
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && activeBalancePanel) setActiveBalancePanel(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeBalancePanel])
 
   // Calculate date range from period (using Bogotá timezone)
   const getDateRange = (p) => {
@@ -278,6 +302,7 @@ export default function Home() {
     let query = supabase
       .from('transacciones')
       .select('*, metodo_pago:metodos_pago(nombre)')
+      .eq('negocio_id', negocioId)
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false })
 
@@ -303,6 +328,7 @@ export default function Home() {
       let query = supabase
         .from('transacciones')
         .select('id, tipo, valor, categoria, fecha')
+        .eq('negocio_id', negocioId)
         .gte('fecha', fechaLocalStr(d))
       const hasta = new Date(h)
       hasta.setDate(hasta.getDate() + 1)
@@ -482,9 +508,54 @@ export default function Home() {
     return null
   }
 
+  const periodWheelItems = [
+    { key: 'ayer', label: 'Ayer' },
+    { key: 'hoy', label: 'Hoy' },
+    { key: 'semana', label: 'Semana' },
+    { key: 'mes', label: 'Mes' },
+    { key: 'ano', label: 'Año' },
+  ]
+
+  const [wheelIndex, setWheelIndex] = useState(() => {
+    const active = getActiveQuickPill()
+    const idx = periodWheelItems.findIndex(i => i.key === active)
+    return idx >= 0 ? idx : 1
+  })
+
+  // Sync wheel when period changes externally (e.g. from filter cards)
+  useEffect(() => {
+    const active = getActiveQuickPill()
+    const idx = periodWheelItems.findIndex(i => i.key === active)
+    if (idx >= 0 && idx !== wheelIndex) setWheelIndex(idx)
+  }, [periodo, filtroFechaDesde, filtroFechaHasta])
+
+  const WHEEL_COUNT = periodWheelItems.length
+  const circularOffset = (center, i) => {
+    const raw = i - center
+    if (raw > WHEEL_COUNT / 2) return raw - WHEEL_COUNT
+    if (raw < -WHEEL_COUNT / 2) return raw + WHEEL_COUNT
+    return raw
+  }
+
+  const handleWheelNav = (dir) => {
+    const next = ((wheelIndex + dir) % WHEEL_COUNT + WHEEL_COUNT) % WHEEL_COUNT
+    setWheelIndex(next)
+    handleQuickDatePill(periodWheelItems[next].key)
+  }
+
+  const wheelSwipeRef = useRef(null)
+  const onWheelTouchStart = (e) => { wheelSwipeRef.current = e.touches[0].clientX }
+  const onWheelTouchEnd = (e) => {
+    if (wheelSwipeRef.current === null) return
+    const diff = wheelSwipeRef.current - e.changedTouches[0].clientX
+    wheelSwipeRef.current = null
+    if (Math.abs(diff) < 30) return
+    handleWheelNav(diff > 0 ? 1 : -1)
+  }
+
   const getCardActiveCount = (cardKey) => {
     switch (cardKey) {
-      case 'fechas': return (filtroFechaDesde || filtroFechaHasta || periodo !== 'm') ? 1 : 0
+      case 'fechas': return (filtroFechaDesde || filtroFechaHasta) ? 1 : 0
       case 'estado': return filtroEstado.length
       case 'estadoPago': return filtroPago ? 1 : 0
       case 'tipoLavado': return filtroTipoLavado.length
@@ -541,23 +612,6 @@ export default function Home() {
                 locale="es"
                 inline
               />
-            </div>
-            <div className="home-filter-fechas-quick">
-              {[
-                { key: 'hoy', label: 'Hoy' },
-                { key: 'ayer', label: 'Ayer' },
-                { key: 'semana', label: 'Esta semana' },
-                { key: 'mes', label: 'Este mes' },
-                { key: 'ano', label: 'Este año' },
-              ].map(p => (
-                <button
-                  key={p.key}
-                  className={`home-filter-quick-pill ${activeQuickPill === p.key ? 'active' : ''}`}
-                  onClick={() => handleQuickDatePill(p.key)}
-                >
-                  {p.label}
-                </button>
-              ))}
             </div>
           </div>
         )
@@ -818,6 +872,11 @@ export default function Home() {
     return () => { cancelAnimationFrame(raf); clearTimeout(timer) }
   }, [highlightId, tab, allServicios, allProductos, allMovimientos])
 
+  const totalServicios = allServicios.reduce((sum, l) => sum + Number(l.valor || 0), 0)
+  const totalProductos = allProductos.reduce((sum, t) => sum + (t.tipo === 'EGRESO' ? -1 : 1) * Number(t.valor || 0), 0)
+  const totalMovimientos = allMovimientos.reduce((sum, t) => sum + (t.tipo === 'EGRESO' ? -1 : 1) * Number(t.valor || 0), 0)
+  const totalTab = tab === 'servicios' ? totalServicios : tab === 'productos' ? totalProductos : totalMovimientos
+
   const pagosServicios = allServicios.flatMap(l => {
     const pagos = l.pagos || []
     return pagos.map(p => ({
@@ -879,6 +938,19 @@ export default function Home() {
     })
     return Object.entries(grouped)
       .map(([metodo, v]) => ({ metodo, ingresos: v.ingresos, egresos: v.egresos, balance: v.ingresos - v.egresos }))
+      .sort((a, b) => b.balance - a.balance)
+  }, [entradasParaBalance])
+
+  const balancePorCategoria = useMemo(() => {
+    const grouped = {}
+    entradasParaBalance.forEach(t => {
+      const cat = t.categoria || 'Sin categoría'
+      if (!grouped[cat]) grouped[cat] = { ingresos: 0, egresos: 0 }
+      if (t.tipo === 'INGRESO') grouped[cat].ingresos += Number(t.valor)
+      else grouped[cat].egresos += Number(t.valor)
+    })
+    return Object.entries(grouped)
+      .map(([categoria, v]) => ({ categoria, ingresos: v.ingresos, egresos: v.egresos, balance: v.ingresos - v.egresos }))
       .sort((a, b) => b.balance - a.balance)
   }, [entradasParaBalance])
 
@@ -1124,7 +1196,6 @@ export default function Home() {
     filtroPago, filtroTipoLavado.length > 0, filtroCategoria,
     filtroFechaDesde, filtroFechaHasta,
     filtroAdicionales.length > 0,
-    periodo !== 'm',
   ].filter(Boolean).length
 
   const limpiarFiltros = () => {
@@ -1147,11 +1218,11 @@ export default function Home() {
   const recentMovimientos = allMovimientos.slice(0, visibleCount.movimientos)
 
   const handleShowMore = (tab) => {
-    setVisibleCount(prev => ({ ...prev, [tab]: prev[tab] + 10 }))
+    setVisibleCount(prev => ({ ...prev, [tab]: prev[tab] + 20 }))
   }
 
   const handleShowLess = (tab) => {
-    setVisibleCount(prev => ({ ...prev, [tab]: 10 }))
+    setVisibleCount(prev => ({ ...prev, [tab]: 20 }))
   }
 
   const toggleSelectItem = (id) => {
@@ -1187,11 +1258,11 @@ export default function Home() {
     } else {
       for (const id of ids) {
         if (String(id).startsWith('lavada-')) continue
-        const { error } = await supabase.from('transacciones').delete().eq('id', id)
+        const { error } = await supabase.from('transacciones').delete().eq('id', id).eq('negocio_id', negocioId)
         if (!error) eliminados++
       }
       if (eliminados > 0) {
-        let query = supabase.from('transacciones').select('*, metodo_pago:metodos_pago(nombre)').order('fecha', { ascending: false }).order('created_at', { ascending: false })
+        let query = supabase.from('transacciones').select('*, metodo_pago:metodos_pago(nombre)').eq('negocio_id', negocioId).order('fecha', { ascending: false }).order('created_at', { ascending: false })
         if (fechaDesde) query = query.gte('fecha', fechaLocalStr(fechaDesde))
         if (fechaHasta) { const h = new Date(fechaHasta); h.setDate(h.getDate() + 1); query = query.lt('fecha', fechaLocalStr(h)) }
         const { data } = await query
@@ -1262,7 +1333,7 @@ export default function Home() {
       valor: nuevoValor,
     }
 
-    await supabase.from('transacciones').update(updates).eq('id', id)
+    await supabase.from('transacciones').update(updates).eq('id', id).eq('negocio_id', negocioId)
     setEditProductId(null)
     setEditProductData(null)
     fetchTransacciones()
@@ -1525,6 +1596,7 @@ export default function Home() {
     let query = supabase
       .from('transacciones')
       .select('*, metodo_pago:metodos_pago(nombre)')
+      .eq('negocio_id', negocioId)
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false })
     if (fechaDesde) query = query.gte('fecha', fechaLocalStr(fechaDesde))
@@ -1813,7 +1885,7 @@ export default function Home() {
     }
 
     // Refresh transacciones
-    let query = supabase.from('transacciones').select('*, metodo_pago:metodos_pago(nombre)').order('fecha', { ascending: false }).order('created_at', { ascending: false })
+    let query = supabase.from('transacciones').select('*, metodo_pago:metodos_pago(nombre)').eq('negocio_id', negocioId).order('fecha', { ascending: false }).order('created_at', { ascending: false })
     if (fechaDesde) query = query.gte('fecha', fechaLocalStr(fechaDesde))
     if (fechaHasta) {
       const hasta = new Date(fechaHasta)
@@ -1886,6 +1958,7 @@ export default function Home() {
     let query = supabase
       .from('transacciones')
       .select('*, metodo_pago:metodos_pago(nombre)')
+      .eq('negocio_id', negocioId)
       .order('fecha', { ascending: false })
       .order('created_at', { ascending: false })
     if (fechaDesde) query = query.gte('fecha', fechaLocalStr(fechaDesde))
@@ -1927,211 +2000,370 @@ export default function Home() {
   }
 
   return (
-    <div className="home-page">
-      {/* Balance Carousel */}
-      <div className="home-balance-carousel">
-        <div className="home-balance-card balance">
-          <button className="money-toggle-btn money-toggle-card" onClick={toggleMoney} title={showMoney ? 'Ocultar valores' : 'Mostrar valores'}>
-            {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
-          </button>
-          <span className="home-balance-label balance-title">Balance - {displayPeriodoLabel}</span>
-          <span className={`home-balance-amount ${balance >= 0 ? 'positivo' : 'negativo'}`}>
+    <div className={`home-page ${activeBalancePanel ? 'balance-panel-active' : ''}`}>
+      {/* Balance Inline (mobile) */}
+      <div className="home-balance-inline" onClick={() => setShowBalanceSheet(true)}>
+        <div>
+          <span className="home-balance-inline-label">Balance {displayPeriodoLabel.toLowerCase()}</span>
+          <span className={`home-balance-inline-amount ${balance >= 0 ? 'positivo' : 'negativo'}`}>
             {displayMoney(balance)}
           </span>
-          {comparisonLabel && (pctBalance !== 0 || (prevIngresos > 0 || prevEgresos > 0)) && (
-            <div className={`period-comparison ${pctBalance >= 0 ? 'positive' : 'negative'}`}>
-              {pctBalance >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              <span>{pctBalance >= 0 ? '+' : ''}{pctBalance.toFixed(1)}% {comparisonLabel}</span>
-            </div>
-          )}
-          <div className="balance-chart">
-            <ResponsiveContainer width="100%" height={80}>
-              <AreaChart data={balanceChartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-                <defs>
-                  <linearGradient id="balanceGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--accent-blue)" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="var(--accent-blue)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} interval="preserveStartEnd" />
-                <Area type="monotone" dataKey="value" stroke="var(--accent-blue)" strokeWidth={2} fill="url(#balanceGrad)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="balance-detail-toggle" onClick={() => setShowCardDetails(!showCardDetails)}>
-            <span>{showCardDetails ? 'Ver menos' : 'Ver más'}</span>
-            <ChevronDown size={16} className={showCardDetails ? 'rotated' : ''} />
-          </div>
-          {showCardDetails && (
-            <div className="balance-detail-body">
-              <div className="balance-detail-header">
-                <span>Método</span>
-                <span>Ingresos</span>
-                <span>Egresos</span>
-                <span>Balance</span>
-              </div>
-              {balancePorMetodo.map(m => (
-                <div key={m.metodo} className="balance-detail-row">
-                  <span className="balance-detail-metodo">{m.metodo}</span>
-                  <span className="positivo">{displayMoneyShort(m.ingresos)}</span>
-                  <span className="negativo">{displayMoneyShort(m.egresos)}</span>
-                  <span className={m.balance >= 0 ? 'positivo' : 'negativo'}>{displayMoneyShort(m.balance)}</span>
-                </div>
-              ))}
-              {balancePorMetodo.length === 0 && (
-                <div className="balance-detail-empty">Sin movimientos en este período</div>
-              )}
-            </div>
-          )}
         </div>
-        <div className="home-balance-card ingresos">
-          <span className="home-balance-label ingresos-title">Ingresos - {displayPeriodoLabel}</span>
-          <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
-          {comparisonLabel && (pctIngresos !== 0 || prevIngresos > 0) && (
-            <div className={`period-comparison ${pctIngresos >= 0 ? 'positive' : 'negative'}`}>
-              {pctIngresos >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              <span>{pctIngresos >= 0 ? '+' : ''}{pctIngresos.toFixed(1)}% {comparisonLabel}</span>
-            </div>
-          )}
-          <div className="balance-chart">
-            <ResponsiveContainer width="100%" height={80}>
-              <AreaChart data={ingresosChartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-                <defs>
-                  <linearGradient id="ingresosGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--accent-green)" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="var(--accent-green)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} interval="preserveStartEnd" />
-                <Area type="monotone" dataKey="value" stroke="var(--accent-green)" strokeWidth={2} fill="url(#ingresosGrad)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="balance-detail-toggle" onClick={() => setShowCardDetails(!showCardDetails)}>
-            <span>{showCardDetails ? 'Ver menos' : 'Ver más'}</span>
-            <ChevronDown size={16} className={showCardDetails ? 'rotated' : ''} />
-          </div>
-          {showCardDetails && donutData && (
-            <>
-              <div className="ingresos-header" style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.6rem' }}>
-                <div className="ingresos-chart-toggle">
-                  <button
-                    className={`ingresos-toggle-btn ${chartMode === 'categoria' ? 'active' : ''}`}
-                    onClick={() => setChartMode('categoria')}
-                  >
-                    Categoría
-                  </button>
-                  <button
-                    className={`ingresos-toggle-btn ${chartMode === 'metodo' ? 'active' : ''}`}
-                    onClick={() => setChartMode('metodo')}
-                  >
-                    Método
-                  </button>
-                </div>
-              </div>
-              <div className="ingresos-body">
-                <div className="ingresos-left">
-                  <div className="ingresos-legend">
-                    {donutData.segments.map(s => (
-                      <div key={s.label} className="ingresos-legend-item">
-                        <span className="ingresos-legend-dot" style={{ background: s.color }} />
-                        <span className="ingresos-legend-label">{s.label}</span>
-                        <span className="ingresos-legend-value">{displayMoneyShort(s.value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="ingresos-right">
-                  <div className="ingresos-donut" style={{ background: `conic-gradient(${donutData.gradient})` }}>
-                    <div className="ingresos-donut-hole" />
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-          {showCardDetails && !donutData && (
-            <div className="balance-detail-empty">Sin ingresos en este período</div>
-          )}
-        </div>
-        <div className="home-balance-card egresos">
-          <span className="home-balance-label egresos-title">Egresos - {displayPeriodoLabel}</span>
-          <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
-          {comparisonLabel && (pctEgresos !== 0 || prevEgresos > 0) && (
-            <div className={`period-comparison ${pctEgresos <= 0 ? 'positive' : 'negative'}`}>
-              {pctEgresos >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              <span>{pctEgresos >= 0 ? '+' : ''}{pctEgresos.toFixed(1)}% {comparisonLabel}</span>
-            </div>
-          )}
-          <div className="balance-chart">
-            <ResponsiveContainer width="100%" height={80}>
-              <AreaChart data={egresosChartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-                <defs>
-                  <linearGradient id="egresosGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--accent-red)" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="var(--accent-red)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} interval="preserveStartEnd" />
-                <Area type="monotone" dataKey="value" stroke="var(--accent-red)" strokeWidth={2} fill="url(#egresosGrad)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="balance-detail-toggle" onClick={() => setShowCardDetails(!showCardDetails)}>
-            <span>{showCardDetails ? 'Ver menos' : 'Ver más'}</span>
-            <ChevronDown size={16} className={showCardDetails ? 'rotated' : ''} />
-          </div>
-          {showCardDetails && donutDataEgresos && (
-            <>
-              <div className="egresos-header" style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.6rem' }}>
-                <div className="egresos-chart-toggle">
-                  <button
-                    className={`egresos-toggle-btn ${chartModeEgresos === 'categoria' ? 'active' : ''}`}
-                    onClick={() => setChartModeEgresos('categoria')}
-                  >
-                    Categoría
-                  </button>
-                  <button
-                    className={`egresos-toggle-btn ${chartModeEgresos === 'metodo' ? 'active' : ''}`}
-                    onClick={() => setChartModeEgresos('metodo')}
-                  >
-                    Método
-                  </button>
-                </div>
-              </div>
-              <div className="egresos-body">
-                <div className="egresos-left">
-                  <div className="egresos-legend">
-                    {donutDataEgresos.segments.map(s => (
-                      <div key={s.label} className="egresos-legend-item">
-                        <span className="egresos-legend-dot" style={{ background: s.color }} />
-                        <span className="egresos-legend-label">{s.label}</span>
-                        <span className="egresos-legend-value">{displayMoneyShort(s.value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="egresos-right">
-                  <div className="egresos-donut" style={{ background: `conic-gradient(${donutDataEgresos.gradient})` }}>
-                    <div className="egresos-donut-hole" />
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-          {showCardDetails && !donutDataEgresos && (
-            <div className="balance-detail-empty">Sin egresos en este período</div>
-          )}
-        </div>
+        <button className="money-toggle-btn" onClick={e => { e.stopPropagation(); toggleMoney() }}>
+          {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
+        </button>
       </div>
 
-      {/* Search + Period Row */}
+      {/* Balance Sheet (mobile) */}
+      {showBalanceSheet && (
+        <>
+          <div className="pago-popover-overlay" onClick={() => setShowBalanceSheet(false)} />
+          <div className="home-balance-sheet" onClick={e => e.stopPropagation()}>
+            <div className="home-balance-sheet-header">
+              <span className="home-balance-sheet-title">
+                Resumen de{' '}
+                <span className="home-balance-sheet-period-wrapper">
+                  <button className="home-balance-sheet-period-trigger" onClick={() => setShowPeriodOptions(p => !p)}>
+                    {displayPeriodoLabel.toLowerCase()}
+                  </button>
+                  {showPeriodOptions && (
+                    <>
+                      <div className="period-dropdown-overlay" onClick={() => setShowPeriodOptions(false)} />
+                      <div className="period-dropdown">
+                        {periodWheelItems.map(item => (
+                          <button
+                            key={item.key}
+                            className={`period-dropdown-item ${getActiveQuickPill() === item.key ? 'active' : ''}`}
+                            onClick={() => { handleQuickDatePill(item.key); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); setShowPeriodOptions(false) }}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </span>
+              </span>
+              <button className="home-balance-sheet-close" onClick={() => setShowBalanceSheet(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <span key={balanceSheetPill} className={`home-balance-sheet-big-value ${
+              balanceSheetPill === 'balance' ? (balance >= 0 ? 'positivo' : 'negativo')
+              : balanceSheetPill === 'ingresos' ? 'positivo' : 'negativo'
+            }`}>
+              {displayMoney(balanceSheetPill === 'balance' ? balance : balanceSheetPill === 'ingresos' ? ingresos : egresos)}
+            </span>
+
+            <div className="home-balance-sheet-pills">
+              {['balance', 'ingresos', 'egresos'].map(pill => (
+                <button
+                  key={pill}
+                  className={`home-balance-sheet-pill ${balanceSheetPill === pill ? 'active' : ''}`}
+                  onClick={() => { setBalanceSheetPill(pill); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}
+                >
+                  {pill.charAt(0).toUpperCase() + pill.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            {(() => {
+              const sourceData = balanceSheetView === 'metodo' ? balancePorMetodo : balancePorCategoria
+              const chartData = sourceData.map(m => {
+                const raw = balanceSheetPill === 'ingresos' ? m.ingresos
+                  : balanceSheetPill === 'egresos' ? m.egresos
+                  : m.balance
+                return { nombre: balanceSheetView === 'metodo' ? m.metodo : m.categoria, valor: Math.abs(raw), negativo: raw < 0 }
+              }).filter(m => m.valor !== 0)
+              const barColor = balanceSheetPill === 'ingresos' ? 'var(--accent-green)'
+                : balanceSheetPill === 'egresos' ? 'var(--accent-red)'
+                : 'var(--accent-blue)'
+
+              const CustomXTick = ({ x, y, payload }) => {
+                const words = payload.value.split(' ')
+                return (
+                  <text x={x} y={y + 12} textAnchor="middle" fontSize={11} fill="var(--text-secondary)">
+                    {words.length > 1 ? words.map((w, i) => (
+                      <tspan key={i} x={x} dy={i === 0 ? 0 : 14}>{w}</tspan>
+                    )) : <tspan>{payload.value}</tspan>}
+                  </text>
+                )
+              }
+
+              return chartData.length > 0 ? (
+                <div className="home-balance-sheet-chart animate" key={chartAnimKey}>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={chartData} margin={{ top: 30, right: 0, left: 0, bottom: 20 }}>
+                      <XAxis dataKey="nombre" tick={<CustomXTick />} axisLine={false} tickLine={false} interval={0} />
+                      <YAxis hide />
+                      <Bar dataKey="valor" radius={[16, 16, 16, 16]} barSize={80} isAnimationActive={false} onClick={(_, index) => setSelectedBarIndex(selectedBarIndex === index ? null : index)}>
+                        {chartData.map((entry, index) => {
+                          const isSelected = selectedBarIndex === index
+                          const baseColor = entry.negativo ? 'var(--accent-red)' : barColor
+                          return (
+                            <Cell
+                              key={index}
+                              fill={baseColor}
+                              style={{ cursor: 'pointer', opacity: selectedBarIndex !== null && !isSelected ? 0.4 : 1, filter: isSelected ? 'brightness(1.3)' : 'none', transition: 'opacity 0.3s ease, filter 0.3s ease' }}
+                            />
+                          )
+                        })}
+                        <LabelList
+                          position="top"
+                          offset={11}
+                          content={({ x, y, width, height, index: idx }) => {
+                            const total = chartData.reduce((s, d) => s + d.valor, 0)
+                            const val = chartData[idx]?.valor || 0
+                            const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0
+                            const isSelected = selectedBarIndex === idx
+                            return (
+                              <>
+                                <text x={x + width / 2} y={y - 11} textAnchor="middle" fontSize={12} fontWeight={600} fill="var(--text-primary)">
+                                  {formatMoney(val)}
+                                </text>
+                                {isSelected && (
+                                  <text x={x + width / 2} y={y + height / 2 + 6} textAnchor="middle" fontSize={16} fontWeight={700} fill="#fff">
+                                    {pct}%
+                                  </text>
+                                )}
+                              </>
+                            )
+                          }}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <div className="chart-empty">Sin datos para mostrar</div>
+            })()}
+
+            <div className="home-balance-sheet-view-switch">
+              <div className={`home-balance-sheet-view-item ${balanceSheetView === 'metodo' ? 'active' : ''}`} onClick={() => { setBalanceSheetView('metodo'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}>
+                <div className="home-balance-sheet-view-circle"><Wallet size={20} /></div>
+                <span>Métodos de pago</span>
+              </div>
+              <div className={`home-balance-sheet-view-item ${balanceSheetView === 'categoria' ? 'active' : ''}`} onClick={() => { setBalanceSheetView('categoria'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}>
+                <div className="home-balance-sheet-view-circle"><Tag size={20} /></div>
+                <span>Categorías</span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Balance Cards (desktop) — simplified */}
+      {!activeBalancePanel && (
+        <div className="home-balance-desktop">
+          <div className="home-balance-carousel">
+            <div className="home-balance-card balance home-balance-clickable" onClick={() => { setActiveBalancePanel('balance'); setBalanceSheetPill('balance'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); window.scrollTo(0, 0) }}>
+              <button className="money-toggle-btn money-toggle-card" onClick={e => { e.stopPropagation(); toggleMoney() }} title={showMoney ? 'Ocultar valores' : 'Mostrar valores'}>
+                {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
+              </button>
+              <span className="home-balance-label balance-title">Balance - {displayPeriodoLabel}</span>
+              <span className={`home-balance-amount ${balance >= 0 ? 'positivo' : 'negativo'}`}>
+                {displayMoney(balance)}
+              </span>
+            </div>
+            <div className="home-balance-card ingresos home-balance-clickable" onClick={() => { setActiveBalancePanel('ingresos'); setBalanceSheetPill('ingresos'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); window.scrollTo(0, 0) }}>
+              <span className="home-balance-label ingresos-title">Ingresos - {displayPeriodoLabel}</span>
+              <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
+            </div>
+            <div className="home-balance-card egresos home-balance-clickable" onClick={() => { setActiveBalancePanel('egresos'); setBalanceSheetPill('egresos'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); window.scrollTo(0, 0) }}>
+              <span className="home-balance-label egresos-title">Egresos - {displayPeriodoLabel}</span>
+              <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Balance Detail Panel (desktop fullscreen) */}
+      {activeBalancePanel && (
+        <div className="balance-detail-panel">
+          <div className="balance-detail-panel-header">
+            <button className="balance-detail-panel-back" onClick={() => setActiveBalancePanel(null)}>
+              <ArrowLeft size={20} />
+              <span>Volver</span>
+            </button>
+          </div>
+          <span className="balance-detail-panel-title">
+            Resumen de{' '}
+            <span className="desktop-period-wrapper">
+              <button className="desktop-period-trigger" onClick={() => setShowPeriodOptionsDesktop(p => !p)}>
+                {displayPeriodoLabel.toLowerCase()}
+              </button>
+              {showPeriodOptionsDesktop && (
+                <>
+                  <div className="period-dropdown-overlay" onClick={() => setShowPeriodOptionsDesktop(false)} />
+                  <div className="desktop-period-dropdown">
+                    {periodWheelItems.map(item => (
+                      <button
+                        key={item.key}
+                        className={`desktop-period-dropdown-item ${getActiveQuickPill() === item.key ? 'active' : ''}`}
+                        onClick={() => { handleQuickDatePill(item.key); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); setShowPeriodOptionsDesktop(false) }}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </span>
+          </span>
+
+          <span key={balanceSheetPill} className={`balance-detail-panel-amount ${balanceSheetPill === 'balance' ? (balance >= 0 ? 'positivo' : 'negativo') : balanceSheetPill === 'ingresos' ? 'positivo' : 'negativo'}`}>
+            {displayMoney(balanceSheetPill === 'balance' ? balance : balanceSheetPill === 'ingresos' ? ingresos : egresos)}
+          </span>
+
+          {/* Pill + View switch row */}
+          <div className="balance-panel-controls-row">
+            <button className="balance-pill-dropdown-trigger" onClick={() => { const pills = ['balance', 'ingresos', 'egresos']; const next = pills[(pills.indexOf(balanceSheetPill) + 1) % 3]; setBalanceSheetPill(next); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}>
+              {balanceSheetPill.charAt(0).toUpperCase() + balanceSheetPill.slice(1)}
+            </button>
+            <button className="balance-view-pill-trigger" onClick={() => { setBalanceSheetView(balanceSheetView === 'metodo' ? 'categoria' : 'metodo'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}>
+              {balanceSheetView === 'metodo' ? 'Métodos de pago' : 'Categorías'}
+            </button>
+          </div>
+
+          {/* BarChart */}
+          {(() => {
+            const sourceData = balanceSheetView === 'metodo' ? balancePorMetodo : balancePorCategoria
+            const chartData = sourceData.map(m => {
+              const raw = balanceSheetPill === 'ingresos' ? m.ingresos
+                : balanceSheetPill === 'egresos' ? m.egresos
+                : m.balance
+              return { nombre: balanceSheetView === 'metodo' ? m.metodo : m.categoria, valor: Math.abs(raw), negativo: raw < 0 }
+            }).filter(m => m.valor !== 0)
+            const barColor = balanceSheetPill === 'ingresos' ? 'var(--accent-green)'
+              : balanceSheetPill === 'egresos' ? 'var(--accent-red)'
+              : 'var(--accent-blue)'
+
+            const CustomXTick = ({ x, y, payload }) => {
+              const words = payload.value.split(' ')
+              return (
+                <text x={x} y={y + 12} textAnchor="middle" fontSize={11} fill="var(--text-secondary)">
+                  {words.length > 1 ? words.map((w, i) => (
+                    <tspan key={i} x={x} dy={i === 0 ? 0 : 14}>{w}</tspan>
+                  )) : <tspan>{payload.value}</tspan>}
+                </text>
+              )
+            }
+
+            return chartData.length > 0 ? (
+              <div className="home-balance-sheet-chart animate" key={chartAnimKey}>
+                <ResponsiveContainer width="100%" height={350}>
+                  <BarChart data={chartData} margin={{ top: 30, right: 0, left: 0, bottom: 20 }}>
+                    <XAxis dataKey="nombre" tick={<CustomXTick />} axisLine={false} tickLine={false} interval={0} />
+                    <YAxis hide />
+                    <Bar dataKey="valor" radius={[16, 16, 16, 16]} barSize={100} isAnimationActive={false} onClick={(_, index) => setSelectedBarIndex(selectedBarIndex === index ? null : index)}>
+                      {chartData.map((entry, index) => {
+                        const isSelected = selectedBarIndex === index
+                        const baseColor = entry.negativo ? 'var(--accent-red)' : barColor
+                        return (
+                          <Cell
+                            key={index}
+                            fill={baseColor}
+                            style={{ cursor: 'pointer', opacity: selectedBarIndex !== null && !isSelected ? 0.4 : 1, filter: isSelected ? 'brightness(1.3)' : 'none', transition: 'opacity 0.3s ease, filter 0.3s ease' }}
+                          />
+                        )
+                      })}
+                      <LabelList
+                        position="top"
+                        offset={11}
+                        content={({ x, y, width, height, index: idx }) => {
+                          const total = chartData.reduce((s, d) => s + d.valor, 0)
+                          const val = chartData[idx]?.valor || 0
+                          const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0
+                          const isSelected = selectedBarIndex === idx
+                          return (
+                            <>
+                              <text x={x + width / 2} y={y - 11} textAnchor="middle" fontSize={12} fontWeight={600} fill="var(--text-primary)">
+                                {formatMoney(val)}
+                              </text>
+                              {isSelected && (
+                                <text x={x + width / 2} y={y + height / 2 + 6} textAnchor="middle" fontSize={16} fontWeight={700} fill="#fff">
+                                  {pct}%
+                                </text>
+                              )}
+                            </>
+                          )
+                        }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : <div className="chart-empty">Sin datos para mostrar</div>
+          })()}
+
+        </div>
+      )}
+
+      {/* Search + Period Row (mobile: icon + wheel + filter icon) */}
       <div className="home-search-period-row">
-        <div className="home-inline-search">
+        <button
+          className={`home-search-icon-btn ${showSearchBar ? 'active' : ''}`}
+          onClick={() => { setShowSearchBar(v => !v); if (!showSearchBar) setTimeout(() => searchInputRef.current?.focus(), 100) }}
+        >
+          <Search size={18} />
+        </button>
+        <div className="home-period-wheel" ref={periodWheelRef} onTouchStart={onWheelTouchStart} onTouchEnd={onWheelTouchEnd}>
+          {periodWheelItems.map((item, i) => {
+            const offset = circularOffset(wheelIndex, i)
+            const absOffset = Math.abs(offset)
+            const opacity = absOffset === 0 ? 1 : absOffset === 1 ? 0.4 : 0.15
+            const scale = absOffset === 0 ? 1 : absOffset === 1 ? 0.85 : 0.7
+            return (
+              <button
+                key={item.key}
+                className={`home-period-wheel-item ${offset === 0 ? 'active' : ''}`}
+                style={{
+                  transform: `translateX(calc(${offset} * var(--period-wheel-gap, 64px))) scale(${scale})`,
+                  opacity,
+                }}
+                onClick={() => {
+                  if (offset === 0) return
+                  handleWheelNav(offset > 0 ? 1 : -1)
+                }}
+              >
+                {item.label}
+              </button>
+            )
+          })}
+        </div>
+        <button
+          className={`home-filtros-icon-btn ${showFilterCards ? 'active' : ''}`}
+          onClick={() => setShowFilterCards(prev => !prev)}
+          style={{ position: 'relative' }}
+        >
+          <SlidersHorizontal size={18} />
+          {activeFilterCount > 0 && <span className="home-filter-badge">{activeFilterCount}</span>}
+        </button>
+      </div>
+      {showSearchBar && (
+        <div className="home-search-bar-expanded">
           <Search size={16} />
           <input
             ref={searchInputRef}
             type="text"
-            placeholder=""
+            placeholder="Buscar..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')}><X size={14} /></button>
+          )}
+          <button onClick={() => { setShowSearchBar(false); setSearchQuery('') }}><X size={16} /></button>
+        </div>
+      )}
+
+      {/* Desktop search + filtros (hidden on mobile) */}
+      <div className="home-search-desktop-row">
+        <div className="home-inline-search">
+          <Search size={16} />
+          <input
+            type="text"
+            placeholder="Buscar..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -2201,19 +2433,22 @@ export default function Home() {
           className={`home-tab-pill ${tab === 'servicios' ? 'active' : ''}`}
           onClick={() => { setTab('servicios'); resetFiltrosTab() }}
         >
-          Servicios
+          <span className="home-tab-pill-icon"><Droplets size={22} /></span>
+          <span className="home-tab-pill-label">Servicios</span>
         </button>
         <button
           className={`home-tab-pill ${tab === 'productos' ? 'active' : ''}`}
           onClick={() => { setTab('productos'); resetFiltrosTab() }}
         >
-          Prod/Memb
+          <span className="home-tab-pill-icon"><ShoppingBag size={22} /></span>
+          <span className="home-tab-pill-label">Prod/Memb</span>
         </button>
         <button
           className={`home-tab-pill ${tab === 'movimientos' ? 'active' : ''}`}
           onClick={() => { setTab('movimientos'); resetFiltrosTab() }}
         >
-          Movimientos
+          <span className="home-tab-pill-icon"><ArrowLeftRight size={22} /></span>
+          <span className="home-tab-pill-label">Movimientos</span>
         </button>
       </div>
 
@@ -2222,12 +2457,14 @@ export default function Home() {
         <p className="home-section-title">
           Recientes — {{ servicios: 'Servicios', productos: 'Prod/Memb', movimientos: 'Movimientos' }[tab]}
         </p>
+        <span className={`home-tab-total${totalTab < 0 ? ' negative' : ''}`}>{showMoney ? formatMoney(totalTab) : '•••'}</span>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button
             className={`home-filter-btn ${modoSeleccion ? 'active' : ''}`}
             onClick={() => { setModoSeleccion(prev => !prev); setSelectedItems(new Set()) }}
           >
-            <CheckSquare size={16} />
+            <span className="home-filter-btn-icon"><CheckSquare size={16} /></span>
+            <span className="home-filter-btn-label">Seleccionar</span>
           </button>
           <button
             className="btn-primary home-desktop-add"
@@ -2242,52 +2479,78 @@ export default function Home() {
         {tab === 'servicios' && (
           recentServicios.length > 0 ? (
             <div className="lavadas-cards">
-              {recentServicios.map(item => (
-                <ServiceCard
-                  key={item.id}
-                  lavada={item}
-                  onEstadoChange={handleEstadoChange}
-                  onTipoLavadoChange={handleTipoLavadoChangeInline}
-                  onAdicionalChange={handleAdicionalChange}
-                  onLavadorChange={handleLavadorChange}
-                  onPagosChange={handlePagosChange}
-                  onEliminar={requestEliminarLavada}
-                  onWhatsApp={handleWhatsApp}
-                  plantillasMensaje={plantillasMensaje}
-                  isExpanded={expandedCards[item.id]}
-                  isCollapsing={collapsingCards[item.id]}
-                  isUpdating={updatingCards.has(item.id)}
-                  editingPago={editingPago}
-                  validationErrors={validationErrors[item.id]}
-                  onToggleExpand={() => setExpandedCards(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                  onSetEditingPago={setEditingPago}
-                  onSetValidationErrors={(errs) => errs ? setValidationErrors(prev => ({ ...prev, [item.id]: errs })) : setValidationErrors(prev => { const n = { ...prev }; delete n[item.id]; return n })}
-                  onSmoothCollapse={smoothCollapse}
-                  tiposLavado={tiposLavado}
-                  serviciosAdicionales={serviciosAdicionales}
-                  lavadores={lavadores}
-                  metodosPago={metodosPago}
-                  getTimerProps={getTimerProps}
-                  hasActiveTimer={hasActiveTimer}
-                  getEstadoClass={getEstadoClass}
-                  selectionMode={modoSeleccion}
-                  isSelected={selectedItems.has(item.id)}
-                  onToggleSelect={toggleSelectItem}
-                  isHighlighted={highlightId === item.id}
-                  onValidationToast={(msg) => toast.error(msg)}
-                  clienteCategoria={(() => { const c = clientes.find(c => c.id == item.cliente_id); return c ? getClienteCategoria(c) : null })()}
-                  onPlacaClick={(lavada) => {
-                    const cliente = clientes.find(c => c.id == lavada.cliente_id)
-                    if (cliente) setClienteInfoModal(cliente)
-                  }}
-                />
-              ))}
+              {(() => {
+                const hasMultipleDates = new Set(recentServicios.map(s => s.fecha?.split('T')[0])).size > 1
+                return recentServicios.map((item, idx) => {
+                  const fechaKey = item.fecha?.split('T')[0]
+                  const prevFechaKey = idx > 0 ? recentServicios[idx - 1].fecha?.split('T')[0] : null
+                  const showSep = hasMultipleDates && (idx === 0 || fechaKey !== prevFechaKey)
+                  const fechaLabel = new Date(item.fecha).toLocaleDateString('es-CO', {
+                    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Bogota'
+                  })
+                  return (
+                    <Fragment key={item.id}>
+                      {showSep && (
+                        <div className="date-separator">
+                          <span className="date-separator-text">{fechaLabel}</span>
+                        </div>
+                      )}
+                      <ServiceCard
+                        lavada={item}
+                        onEstadoChange={handleEstadoChange}
+                        onTipoLavadoChange={handleTipoLavadoChangeInline}
+                        onAdicionalChange={handleAdicionalChange}
+                        onLavadorChange={handleLavadorChange}
+                        onPagosChange={handlePagosChange}
+                        onEliminar={requestEliminarLavada}
+                        onWhatsApp={handleWhatsApp}
+                        plantillasMensaje={plantillasMensaje}
+                        isExpanded={expandedCards[item.id]}
+                        isCollapsing={collapsingCards[item.id]}
+                        isUpdating={updatingCards.has(item.id)}
+                        editingPago={editingPago}
+                        validationErrors={validationErrors[item.id]}
+                        onToggleExpand={() => {
+                          if (expandedCards[item.id]) {
+                            smoothCollapse(item.id)
+                          } else {
+                            setShowFabMenu(false)
+                            collapseAllExcept(item.id)
+                          }
+                        }}
+                        onSetEditingPago={setEditingPago}
+                        onSetValidationErrors={(errs) => errs ? setValidationErrors(prev => ({ ...prev, [item.id]: errs })) : setValidationErrors(prev => { const n = { ...prev }; delete n[item.id]; return n })}
+                        onSmoothCollapse={smoothCollapse}
+                        tiposLavado={tiposLavado}
+                        serviciosAdicionales={serviciosAdicionales}
+                        lavadores={lavadores}
+                        metodosPago={metodosPago}
+                        getTimerProps={getTimerProps}
+                        hasActiveTimer={hasActiveTimer}
+                        getEstadoClass={getEstadoClass}
+                        selectionMode={modoSeleccion}
+                        isSelected={selectedItems.has(item.id)}
+                        onToggleSelect={toggleSelectItem}
+                        isHighlighted={highlightId === item.id}
+                        onValidationToast={(msg) => toast.error(msg)}
+                        activePopoverId={activePopoverId}
+                        onPopoverOpen={setActivePopoverId}
+                        clienteCategoria={(() => { const c = clientes.find(c => c.id == item.cliente_id); return c ? getClienteCategoria(c) : null })()}
+                        onPlacaClick={(lavada) => {
+                          const cliente = clientes.find(c => c.id == lavada.cliente_id)
+                          if (cliente) setClienteInfoModal(cliente)
+                        }}
+                      />
+                    </Fragment>
+                  )
+                })
+              })()}
             </div>
           ) : (
             <p className="home-recent-empty">No hay servicios en este periodo</p>
           )
         )}
-        {tab === 'servicios' && visibleCount.servicios > 10 && (
+        {tab === 'servicios' && visibleCount.servicios > 20 && (
           <div className="home-show-more-group">
             <button className="home-show-more home-show-less" onClick={() => handleShowLess('servicios')}>
               Mostrar menos
@@ -2299,7 +2562,7 @@ export default function Home() {
             )}
           </div>
         )}
-        {tab === 'servicios' && visibleCount.servicios <= 10 && allServicios.length > recentServicios.length && (
+        {tab === 'servicios' && visibleCount.servicios <= 20 && allServicios.length > recentServicios.length && (
           <button className="home-show-more" onClick={() => handleShowMore('servicios')}>
             Mostrar más
           </button>
@@ -2431,7 +2694,7 @@ export default function Home() {
             <p className="home-recent-empty">No hay productos en este periodo</p>
           )
         )}
-        {tab === 'productos' && visibleCount.productos > 10 && (
+        {tab === 'productos' && visibleCount.productos > 20 && (
           <div className="home-show-more-group">
             <button className="home-show-more home-show-less" onClick={() => handleShowLess('productos')}>
               Mostrar menos
@@ -2443,7 +2706,7 @@ export default function Home() {
             )}
           </div>
         )}
-        {tab === 'productos' && visibleCount.productos <= 10 && allProductos.length > recentProductos.length && (
+        {tab === 'productos' && visibleCount.productos <= 20 && allProductos.length > recentProductos.length && (
           <button className="home-show-more" onClick={() => handleShowMore('productos')}>
             Mostrar más
           </button>
@@ -2575,7 +2838,7 @@ export default function Home() {
             <p className="home-recent-empty">No hay movimientos en este periodo</p>
           )
         )}
-        {tab === 'movimientos' && visibleCount.movimientos > 10 && (
+        {tab === 'movimientos' && visibleCount.movimientos > 20 && (
           <div className="home-show-more-group">
             <button className="home-show-more home-show-less" onClick={() => handleShowLess('movimientos')}>
               Mostrar menos
@@ -2587,7 +2850,7 @@ export default function Home() {
             )}
           </div>
         )}
-        {tab === 'movimientos' && visibleCount.movimientos <= 10 && allMovimientos.length > recentMovimientos.length && (
+        {tab === 'movimientos' && visibleCount.movimientos <= 20 && allMovimientos.length > recentMovimientos.length && (
           <button className="home-show-more" onClick={() => handleShowMore('movimientos')}>
             Mostrar más
           </button>
@@ -2629,12 +2892,13 @@ export default function Home() {
 
       {/* Cliente Info Modal */}
       {clienteInfoModal && (
-        <div className="modal-overlay confirm-delete-overlay" onClick={() => setClienteInfoModal(null)}>
-          <div className="modal confirm-delete-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Información del cliente</h2>
-              <button className="btn-close" onClick={() => setClienteInfoModal(null)}>
-                <X size={24} />
+        <>
+          <div className="pago-popover-overlay" onClick={() => setClienteInfoModal(null)} />
+          <div className="pago-popover" onClick={(e) => e.stopPropagation()}>
+            <div className="pago-popover-header">
+              <span className="pago-popover-title">Cliente</span>
+              <button className="pago-popover-close" onClick={() => setClienteInfoModal(null)}>
+                <X size={18} />
               </button>
             </div>
             <div className="cliente-info-grid">
@@ -2648,58 +2912,57 @@ export default function Home() {
             </div>
             {clienteInfoModal.telefono && (
               <div className="cliente-info-whatsapp">
-                {plantillasMensaje.length > 0 ? (
-                  <div className="cliente-info-plantillas">
-                    <span className="cliente-info-plantillas-label">Enviar mensaje:</span>
-                    {plantillasMensaje.map(p => (
-                      <button
-                        key={p.id}
-                        className="btn-plantilla-chip"
-                        onClick={() => {
-                          const telefono = clienteInfoModal.telefono.replace(/\D/g, '')
-                          const variables = {
-                            nombre: clienteInfoModal.nombre || '',
-                            telefono: clienteInfoModal.telefono || '',
-                            negocio: negocioNombre || '',
-                            membresia: typeof clienteInfoModal.membresia === 'object' ? clienteInfoModal.membresia?.nombre || 'Sin membresía' : clienteInfoModal.membresia || 'Sin membresía',
-                            placa: clienteInfoModal.placa || '',
-                          }
-                          const texto = p.texto.replace(/\{(\w+)\}/g, (match, key) => variables[key] ?? match)
-                          window.open(`https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(texto)}`, '_blank')
-                          supabase.from('mensajes_enviados').insert([{
-                            cliente_id: clienteInfoModal.id,
-                            plantilla_id: p.id,
-                            plantilla_nombre: p.nombre,
-                            mensaje_texto: texto,
-                            enviado_por: userEmail || null,
-                            origen: 'info_cliente',
-                            negocio_id: negocioId,
-                          }]).then(() => {})
-                        }}
-                      >
-                        {p.nombre}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
+                <span className="cliente-info-plantillas-label" style={{ margin: '1rem 1rem 1.5rem 1rem' }}>Enviar mensaje</span>
+                <div className="cliente-info-plantillas" style={{ margin: '1rem 0' }}>
                   <button
-                    className="btn-primary"
-                    style={{ width: '100%' }}
+                    className="btn-plantilla-chip"
                     onClick={() => {
                       const telefono = clienteInfoModal.telefono.replace(/\D/g, '')
                       window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
                     }}
                   >
-                    Enviar WhatsApp
+                    Mensaje nuevo
                   </button>
-                )}
+                  {plantillasMensaje.map(p => (
+                    <button
+                      key={p.id}
+                      className="btn-plantilla-chip"
+                      onClick={() => {
+                        const telefono = clienteInfoModal.telefono.replace(/\D/g, '')
+                        const variables = {
+                          nombre: clienteInfoModal.nombre || '',
+                          telefono: clienteInfoModal.telefono || '',
+                          negocio: negocioNombre || '',
+                          membresia: typeof clienteInfoModal.membresia === 'object' ? clienteInfoModal.membresia?.nombre || 'Sin membresía' : clienteInfoModal.membresia || 'Sin membresía',
+                          placa: clienteInfoModal.placa || '',
+                        }
+                        const texto = p.texto.replace(/\{(\w+)\}/g, (match, key) => variables[key] ?? match)
+                        window.open(`https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(texto)}`, '_blank')
+                        supabase.from('mensajes_enviados').insert([{
+                          cliente_id: clienteInfoModal.id,
+                          plantilla_id: p.id,
+                          plantilla_nombre: p.nombre,
+                          mensaje_texto: texto,
+                          enviado_por: userEmail || null,
+                          origen: 'info_cliente',
+                          negocio_id: negocioId,
+                        }]).then(() => {})
+                      }}
+                    >
+                      {p.nombre}
+                    </button>
+                  ))}
+                  <button
+                    className="btn-plantilla-add"
+                    onClick={() => { setClienteInfoModal(null); navigate('/cuenta?tab=config&subtab=mensajes') }}
+                  >
+                    + Agregar plantilla
+                  </button>
+                </div>
               </div>
             )}
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setClienteInfoModal(null)}>Cerrar</button>
-            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Modal Nuevo Cliente */}
@@ -2994,7 +3257,7 @@ export default function Home() {
       )}
 
       {/* FAB */}
-      {!modoSeleccion && (
+      {!modoSeleccion && !anyCardExpanded && (
         <button
           className={`home-fab ${showFabMenu ? 'open' : ''}`}
           onClick={() => setShowFabMenu(!showFabMenu)}
@@ -3002,7 +3265,7 @@ export default function Home() {
           <Plus size={24} />
         </button>
       )}
-      {showFabMenu && (
+      {showFabMenu && !anyCardExpanded && (
         <>
           <div className="home-fab-overlay" onClick={() => setShowFabMenu(false)} />
           <div className="home-fab-menu">

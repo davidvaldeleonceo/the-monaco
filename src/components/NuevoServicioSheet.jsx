@@ -205,7 +205,10 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
     const adicionales = autoAddIncluidos(tipo, formData.adicionales)
     let valor = calcularValor(tipoId, adicionales)
     const cliente = clientes.find(c => c.id == formData.cliente_id)
-    if (cliente && clienteTieneMembresia(cliente)) valor = 0
+    if (cliente && clienteTieneMembresia(cliente)) {
+      valor = valor - Number(tipo?.precio || 0)
+      if (valor < 0) valor = 0
+    }
     setMembresiaOverride(false)
     setFormData(prev => ({
       ...prev,
@@ -225,7 +228,11 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       }
       let valor = calcularValor(prev.tipo_lavado_id, nuevosAdicionales)
       const cliente = clientes.find(c => c.id == prev.cliente_id)
-      if (cliente && clienteTieneMembresia(cliente) && !membresiaOverride) valor = 0
+      if (cliente && clienteTieneMembresia(cliente) && !membresiaOverride) {
+        const tipo = tiposLavado.find(t => t.id == prev.tipo_lavado_id)
+        valor = valor - Number(tipo?.precio || 0)
+        if (valor < 0) valor = 0
+      }
       return { ...prev, adicionales: nuevosAdicionales, valor }
     })
   }
@@ -304,6 +311,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
         const { count } = await supabase
           .from('lavadas')
           .select('id', { count: 'exact', head: true })
+          .eq('negocio_id', negocioId)
           .eq('cliente_id', formData.cliente_id)
           .gte('fecha', monthStart)
 
@@ -313,6 +321,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
             const { data: tiposMem } = await supabase
               .from('tipos_membresia')
               .select('id')
+              .eq('negocio_id', negocioId)
               .ilike('nombre', 'CLIENTE FRECUENTE')
               .limit(1)
             if (tiposMem?.[0]) {

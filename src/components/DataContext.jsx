@@ -37,6 +37,7 @@ export function DataProvider({ children }) {
   const clientesDebounceRef = useRef(null)
 
   const fetchAllData = async () => {
+    if (!negocioId) return
     if (fetchingRef.current) return
     fetchingRef.current = true
     setLoading(true)
@@ -55,16 +56,16 @@ export function DataProvider({ children }) {
         plantillasRes,
         categoriasTransaccionRes,
       ] = await Promise.all([
-        supabase.from('clientes').select(CLIENTES_SELECT).order('nombre'),
-        supabase.from('lavadas').select(LAVADAS_SELECT).gte('fecha', cutoff).order('fecha', { ascending: false }).limit(500),
-        supabase.from('tipos_lavado').select('*').eq('activo', true),
-        supabase.from('lavadores').select('*').eq('activo', true),
-        supabase.from('metodos_pago').select('*').eq('activo', true),
-        supabase.from('tipos_membresia').select('*').eq('activo', true),
-        supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre'),
-        supabase.from('productos').select('*').order('nombre'),
-        supabase.from('plantillas_mensaje').select('*').eq('activo', true).order('nombre'),
-        supabase.from('categorias_transaccion').select('*').eq('activo', true).order('nombre'),
+        supabase.from('clientes').select(CLIENTES_SELECT).eq('negocio_id', negocioId).order('nombre'),
+        supabase.from('lavadas').select(LAVADAS_SELECT).eq('negocio_id', negocioId).gte('fecha', cutoff).order('fecha', { ascending: false }).limit(500),
+        supabase.from('tipos_lavado').select('*').eq('negocio_id', negocioId).eq('activo', true),
+        supabase.from('lavadores').select('*').eq('negocio_id', negocioId).eq('activo', true),
+        supabase.from('metodos_pago').select('*').eq('negocio_id', negocioId).eq('activo', true),
+        supabase.from('tipos_membresia').select('*').eq('negocio_id', negocioId).eq('activo', true),
+        supabase.from('servicios_adicionales').select('*').eq('negocio_id', negocioId).eq('activo', true).order('nombre'),
+        supabase.from('productos').select('*').eq('negocio_id', negocioId).order('nombre'),
+        supabase.from('plantillas_mensaje').select('*').eq('negocio_id', negocioId).eq('activo', true).order('nombre'),
+        supabase.from('categorias_transaccion').select('*').eq('negocio_id', negocioId).eq('activo', true).order('nombre'),
       ])
 
       if (clientesRes.error) console.error('Error clientes:', clientesRes.error)
@@ -100,8 +101,8 @@ export function DataProvider({ children }) {
   const refreshLavadas = async () => {
     const cutoff = getCutoff60Days()
     const query = lavadasAllLoaded
-      ? supabase.from('lavadas').select(LAVADAS_SELECT).order('fecha', { ascending: false })
-      : supabase.from('lavadas').select(LAVADAS_SELECT).gte('fecha', cutoff).order('fecha', { ascending: false }).limit(500)
+      ? supabase.from('lavadas').select(LAVADAS_SELECT).eq('negocio_id', negocioId).order('fecha', { ascending: false })
+      : supabase.from('lavadas').select(LAVADAS_SELECT).eq('negocio_id', negocioId).gte('fecha', cutoff).order('fecha', { ascending: false }).limit(500)
     const { data } = await query
     setLavadas(data || [])
   }
@@ -111,29 +112,31 @@ export function DataProvider({ children }) {
     const { data } = await supabase
       .from('lavadas')
       .select(LAVADAS_SELECT)
+      .eq('negocio_id', negocioId)
       .order('fecha', { ascending: false })
     setLavadas(data || [])
     setLavadasAllLoaded(true)
-  }, [lavadasAllLoaded])
+  }, [lavadasAllLoaded, negocioId])
 
   const refreshClientes = async () => {
     const { data } = await supabase
       .from('clientes')
       .select('*, membresia:tipos_membresia(nombre)')
+      .eq('negocio_id', negocioId)
       .order('nombre')
     setClientes(data || [])
   }
 
   const refreshConfig = async () => {
     const [tiposLavadoRes, lavadoresRes, metodosPagoRes, tiposMembresiaRes, serviciosRes, productosRes, plantillasRes, categoriasRes] = await Promise.all([
-      supabase.from('tipos_lavado').select('*').eq('activo', true),
-      supabase.from('lavadores').select('*').eq('activo', true),
-      supabase.from('metodos_pago').select('*').eq('activo', true),
-      supabase.from('tipos_membresia').select('*').eq('activo', true),
-      supabase.from('servicios_adicionales').select('*').eq('activo', true).order('nombre'),
-      supabase.from('productos').select('*').order('nombre'),
-      supabase.from('plantillas_mensaje').select('*').eq('activo', true).order('nombre'),
-      supabase.from('categorias_transaccion').select('*').eq('activo', true).order('nombre'),
+      supabase.from('tipos_lavado').select('*').eq('negocio_id', negocioId).eq('activo', true),
+      supabase.from('lavadores').select('*').eq('negocio_id', negocioId).eq('activo', true),
+      supabase.from('metodos_pago').select('*').eq('negocio_id', negocioId).eq('activo', true),
+      supabase.from('tipos_membresia').select('*').eq('negocio_id', negocioId).eq('activo', true),
+      supabase.from('servicios_adicionales').select('*').eq('negocio_id', negocioId).eq('activo', true).order('nombre'),
+      supabase.from('productos').select('*').eq('negocio_id', negocioId).order('nombre'),
+      supabase.from('plantillas_mensaje').select('*').eq('negocio_id', negocioId).eq('activo', true).order('nombre'),
+      supabase.from('categorias_transaccion').select('*').eq('negocio_id', negocioId).eq('activo', true).order('nombre'),
     ])
     setTiposLavado(tiposLavadoRes.data || [])
     setLavadores(lavadoresRes.data || [])

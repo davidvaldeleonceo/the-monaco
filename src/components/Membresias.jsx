@@ -72,6 +72,7 @@ export default function Membresias() {
     const { data } = await supabase
       .from('transacciones')
       .select('*, metodo_pago:metodos_pago(nombre)')
+      .eq('negocio_id', negocioId)
       .eq('categoria', 'MEMBRESIA')
       .order('fecha', { ascending: false })
     setPagos(data || [])
@@ -269,7 +270,7 @@ export default function Membresias() {
         }
       }
 
-      await supabase.from('transacciones').delete().eq('id', pagoId)
+      await supabase.from('transacciones').delete().eq('id', pagoId).eq('negocio_id', negocioId)
       fetchPagos()
     }
 

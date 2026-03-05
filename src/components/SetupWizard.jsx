@@ -78,7 +78,7 @@ function StepHeader({ step, title, subtitle }) {
 }
 
 export default function SetupWizard() {
-  const { negocioNombre, markSetupDone } = useTenant()
+  const { negocioNombre, negocioId, markSetupDone } = useTenant()
   const [step, setStep] = useState(0)
   const [direction, setDirection] = useState('forward')
   const [saving, setSaving] = useState(false)
@@ -114,10 +114,10 @@ export default function SetupWizard() {
   useEffect(() => {
     async function fetchData() {
       const [lavados, metodos, adicionales, membresias] = await Promise.all([
-        supabase.from('tipos_lavado').select('*').eq('activo', true),
-        supabase.from('metodos_pago').select('*').eq('activo', true),
-        supabase.from('servicios_adicionales').select('*').eq('activo', true),
-        supabase.from('tipos_membresia').select('*').eq('activo', true),
+        supabase.from('tipos_lavado').select('*').eq('negocio_id', negocioId).eq('activo', true),
+        supabase.from('metodos_pago').select('*').eq('negocio_id', negocioId).eq('activo', true),
+        supabase.from('servicios_adicionales').select('*').eq('negocio_id', negocioId).eq('activo', true),
+        supabase.from('tipos_membresia').select('*').eq('negocio_id', negocioId).eq('activo', true),
       ])
       const lav = lavados.data || []
       const met = metodos.data || []

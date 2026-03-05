@@ -1,9 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Timer from './common/Timer'
 import { formatMoney } from '../utils/money'
-import { ESTADO_LABELS } from '../config/constants'
-import { MessageCircle, Trash2, ChevronDown, CheckCircle2, Plus, X } from 'lucide-react'
+import { ESTADO_LABELS, ESTADO_CLASSES } from '../config/constants'
+import { MessageCircle, Trash2, CheckCircle2, Plus, X, Clock, Droplets, CircleCheck, HandCoins, Sparkles } from 'lucide-react'
 
 export default function ServiceCard({
   lavada,
@@ -48,28 +48,82 @@ export default function ServiceCard({
   plantillasMensaje = [],
   // Validation toast callback
   onValidationToast,
+  // Popover coordination
+  activePopoverId,
+  onPopoverOpen,
 }) {
   const navigate = useNavigate()
   const [waMenu, setWaMenu] = useState(false)
+  const [estadoPopover, setEstadoPopoverLocal] = useState(false)
+  const [pagoPopover, setPagoPopoverLocal] = useState(false)
+
+  const setEstadoPopover = (val) => {
+    setEstadoPopoverLocal(val)
+    if (val && onPopoverOpen) onPopoverOpen(lavada.id)
+  }
+  const setPagoPopover = (val) => {
+    setPagoPopoverLocal(val)
+    if (val && onPopoverOpen) onPopoverOpen(lavada.id)
+  }
+
+  useEffect(() => {
+    if (activePopoverId !== undefined && activePopoverId !== lavada.id) {
+      setEstadoPopoverLocal(false)
+      setPagoPopoverLocal(false)
+    }
+  }, [activePopoverId, lavada.id])
   const [waMenuPos, setWaMenuPos] = useState({ top: 0, right: 0 })
   const waButtonRef = useRef(null)
   const pagos = lavada.pagos || []
+  const [localPagos, setLocalPagos] = useState([])
+  const debounceRef = useRef(null)
+
+  const lastLocalPagosRef = useRef(null)
+
+  const isEditingPagos = pagoPopover || isExpanded
+
+  // Sync pagos when editing starts; flush pending changes when it stops
+  useEffect(() => {
+    if (isEditingPagos) {
+      setLocalPagos(pagos.length > 0 ? pagos.map(p => ({ ...p })) : [])
+      lastLocalPagosRef.current = null
+    } else if (lastLocalPagosRef.current) {
+      // Flush immediately on close/collapse
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      onPagosChange(lavada.id, lastLocalPagosRef.current)
+      lastLocalPagosRef.current = null
+    }
+  }, [isEditingPagos])
+
+  // Debounced sync localPagos → parent
+  const syncPagosToParent = useCallback((newPagos) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      onPagosChange(lavada.id, newPagos)
+    }, 400)
+  }, [lavada.id, onPagosChange])
+
+  // Cleanup debounce on unmount
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
 
   const total = Math.round(lavada.valor || 0)
-  const sumaPagos = Math.round(pagos.reduce((s, p) => s + (Number(p.valor) || 0), 0))
+  // Use localPagos when editing (popover or expanded card), pagos otherwise
+  const activePagos = isEditingPagos ? localPagos : pagos
+  const sumaPagos = Math.round(activePagos.reduce((s, p) => s + (Number(p.valor) || 0), 0))
   const diff = sumaPagos - total
-  const pagosOk = total === 0 ? (pagos.length === 0 || Math.abs(diff) < 1) : (pagos.length > 0 && Math.abs(diff) < 1)
-  const allMetodosSet = pagos.length === 0 || pagos.every(p => p.metodo_pago_id)
+  const pagosOk = total === 0 ? (activePagos.length === 0 || Math.abs(diff) < 1) : (activePagos.length > 0 && Math.abs(diff) < 1)
+  const allMetodosSet = activePagos.length === 0 || activePagos.every(p => p.metodo_pago_id)
   const tipoOk = !!lavada.tipo_lavado_id
   const lavadorOk = !!lavada.lavador_id
   const canComplete = pagosOk && allMetodosSet && tipoOk && lavadorOk
   const yaEntregado = lavada.estado === 'ENTREGADO'
   const isEditingThisLavada = editingPago?.lavadaId === lavada.id
 
+  const tipoLavadoNombre = tiposLavado.find(t => t.id == lavada.tipo_lavado_id)?.nombre || ''
   const pagoStatus = pagosOk ? 'pagado' : sumaPagos > 0 ? 'parcial' : 'sin-pagar'
   const pagoLabel = pagoStatus === 'pagado' ? 'Pagado' : pagoStatus === 'parcial' ? 'Parcial' : 'Sin pagar'
   const vErrs = validationErrors || {}
-  const showBody = isExpanded || isCollapsing
+  // showBody removed — popup renders when isExpanded is true
 
   const triggerValidationErrors = () => {
     const errs = {}
@@ -86,307 +140,456 @@ export default function ServiceCard({
     setTimeout(() => onSetValidationErrors(null), 2000)
   }
 
+  const estadosConfig = [
+    { key: 'EN ESPERA', timer: 'espera', icon: Clock, label: 'Espera' },
+    { key: 'EN LAVADO', timer: 'lavado', icon: Droplets, label: 'Lavado' },
+    { key: 'TERMINADO', timer: 'terminado', icon: CircleCheck, label: 'Terminado' },
+    { key: 'ENTREGADO', timer: null, icon: HandCoins, label: 'Entregado' },
+  ]
+
+  const updateLocalPagos = (newPagos) => {
+    setLocalPagos(newPagos)
+    lastLocalPagosRef.current = newPagos
+    syncPagosToParent(newPagos)
+  }
+
+  const localSumaPagos = Math.round(localPagos.reduce((s, p) => s + (Number(p.valor) || 0), 0))
+  const localDiff = localSumaPagos - total
+  const localPagosOk = total === 0 ? (localPagos.length === 0 || Math.abs(localDiff) < 1) : (localPagos.length > 0 && Math.abs(localDiff) < 1)
+  const localAllMetodosSet = localPagos.length === 0 || localPagos.every(p => p.metodo_pago_id)
+
+  const renderPagoPopover = () => (
+    <>
+      <div className="pago-popover-overlay" onClick={(e) => { e.stopPropagation(); setPagoPopover(false) }} />
+      <div
+        className="pago-popover"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="pago-popover-header">
+          <span className="pago-popover-title">Pago</span>
+          <button className="pago-popover-close" onClick={() => setPagoPopover(false)}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="pago-popover-info">
+          <div className="pago-popover-info-left">
+            <span className="pago-popover-cliente">{lavada.cliente?.nombre || 'Sin cliente'}</span>
+            <span className="pago-popover-placa">{lavada.placa}</span>
+            {tipoLavadoNombre && <span className="pago-popover-tipo">{tipoLavadoNombre}</span>}
+            <span className="pago-popover-adicionales">{lavada.adicionales?.length > 0 ? lavada.adicionales.map(a => a.nombre).join(', ') : 'Sin adicionales'}</span>
+          </div>
+          <div className="pago-popover-info-right">
+            <span className="pago-popover-total-label">Total</span>
+            <span className={`pago-popover-total ${(pagosOk && allMetodosSet) ? 'pago-ok' : total > 0 ? 'pago-error' : ''}`}>{formatMoney(total)}</span>
+          </div>
+        </div>
+
+        <div className="pago-popover-rows">
+          {localPagos.map((p, idx) => (
+            <div key={idx} className="pago-popover-row">
+              <select
+                value={p.metodo_pago_id || ''}
+                onChange={(e) => {
+                  const metodo = metodosPago.find(m => m.id == e.target.value)
+                  updateLocalPagos(localPagos.map((pg, i) =>
+                    i === idx ? { ...pg, metodo_pago_id: e.target.value, nombre: metodo?.nombre || '' } : pg
+                  ))
+                }}
+                className="pago-popover-select"
+              >
+                <option value="">Método</option>
+                {metodosPago.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+              </select>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={p.valor === 0 ? '' : Number(p.valor).toLocaleString('es-CO')}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '')
+                  updateLocalPagos(localPagos.map((pg, i) =>
+                    i === idx ? { ...pg, valor: val === '' ? 0 : Number(val) } : pg
+                  ))
+                }}
+                className="pago-popover-input"
+                placeholder="$0"
+              />
+              <button
+                className="pago-popover-delete"
+                onClick={() => updateLocalPagos(localPagos.filter((_, i) => i !== idx))}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button
+          className="pago-popover-add"
+          onClick={() => {
+            const restante = total - localSumaPagos
+            updateLocalPagos([...localPagos, { metodo_pago_id: '', nombre: '', valor: restante > 0 ? restante : 0 }])
+          }}
+        >
+          <Plus size={14} /> <span>Agregar pago</span>
+        </button>
+
+        {localPagos.length > 0 && !localPagosOk && (
+          <div className="pago-popover-diff">
+            {localDiff > 0 ? `Excede ${formatMoney(localDiff)}` : `Falta ${formatMoney(Math.abs(localDiff))}`}
+          </div>
+        )}
+
+        {localPagos.length > 0 && localPagosOk && localAllMetodosSet && (
+          <div className="pago-popover-ok"><CheckCircle2 size={14} /> Pagos completos</div>
+        )}
+      </div>
+    </>
+  )
+
+  const renderEstadoPopover = () => (
+    <>
+      <div className="estado-popover-overlay" onClick={(e) => { e.stopPropagation(); setEstadoPopover(false) }} />
+      <div className="estado-popover" onClick={(e) => e.stopPropagation()}>
+        <div className="pago-popover-header">
+          <span className="pago-popover-title">Estado</span>
+          <button className="pago-popover-close" onClick={() => setEstadoPopover(false)}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="pago-popover-info">
+          <div className="pago-popover-info-left">
+            <span className="pago-popover-cliente">{lavada.cliente?.nombre || 'Sin cliente'}</span>
+            <span className="pago-popover-placa">{lavada.placa}</span>
+            {tipoLavadoNombre && <span className="pago-popover-tipo">{tipoLavadoNombre}</span>}
+          </div>
+          <div className="pago-popover-info-right">
+            <span className="pago-popover-total-label">Total</span>
+            <span className="pago-popover-total">{formatMoney(total)}</span>
+          </div>
+        </div>
+        {estadosConfig.map(({ key: est, timer }) => (
+          <button
+            key={est}
+            className={`estado-popover-option ${lavada.estado === est ? 'active' : ''} ${est === 'ENTREGADO' && !canComplete && !yaEntregado ? 'disabled-look' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (est === 'ENTREGADO' && !canComplete) {
+                triggerValidationErrors()
+                setEstadoPopover(false)
+                return
+              }
+              onEstadoChange(lavada.id, est)
+              setEstadoPopover(false)
+            }}
+          >
+            <span className="estado-popover-label">{ESTADO_LABELS[est]}</span>
+            {timer && <span className="estado-popover-time"><Timer {...getTimerProps(lavada, timer)} /></span>}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+
   return (
-    <div data-id={lavada.id} className={`lavada-card ${getEstadoClass(lavada.estado)}-border ${isExpanded && !isCollapsing ? 'expanded' : ''} ${isSelected ? 'card-selected' : ''} ${isUpdating ? 'card-updating' : ''} ${isHighlighted ? 'card-highlight' : ''}`}>
+    <div data-id={lavada.id} className={`lavada-card ${getEstadoClass(lavada.estado)}-border pago-${pagoStatus} ${isSelected ? 'card-selected' : ''} ${isUpdating ? 'card-updating' : ''} ${isHighlighted ? 'card-highlight' : ''}`}>
       <div
         className="lavada-card-header"
-        onClick={() => selectionMode && onToggleSelect ? onToggleSelect(lavada.id) : onToggleExpand()}
+        onClick={() => { setEstadoPopover(false); setPagoPopover(false); selectionMode && onToggleSelect ? onToggleSelect(lavada.id) : onToggleExpand() }}
       >
         <div className="lavada-card-cliente">
           <span className="lavada-card-nombre">{lavada.cliente?.nombre || 'No encontrado'} <span className="lavada-card-fecha">{new Date(lavada.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', timeZone: 'America/Bogota' })}</span></span>
-          <span className="lavada-card-placa" onClick={(e) => { e.stopPropagation(); onPlacaClick?.(lavada) }} style={{ cursor: 'pointer' }}>
-            {lavada.placa}
-            {clienteCategoria && <span className="cliente-categoria-badge">{clienteCategoria}</span>}
+          <span className="lavada-card-placa">
+            <span onClick={(e) => { e.stopPropagation(); onPlacaClick?.(lavada) }} style={{ cursor: 'pointer' }}>{lavada.placa}</span>
+            {clienteCategoria && <span className="cliente-categoria-badge badge-desktop-only">{clienteCategoria}</span>}
           </span>
+          {tipoLavadoNombre && <span className="lavada-card-tipo-mobile">{tipoLavadoNombre}</span>}
         </div>
         <div className="lavada-card-summary">
-          <span className={`pago-badge pago-badge-${pagoStatus}`}>{pagoLabel}</span>
-          <span className={`estado-badge-mini ${getEstadoClass(lavada.estado)}`}>{ESTADO_LABELS[lavada.estado] || lavada.estado}</span>
-          {hasActiveTimer(lavada) && (
-            <span className={`lavada-card-timer ${getEstadoClass(lavada.estado)}`}>
-              <Timer {...getTimerProps(lavada, lavada.estado === 'EN ESPERA' ? 'espera' : lavada.estado === 'EN LAVADO' ? 'lavado' : 'terminado')} />
-            </span>
-          )}
-          <span className="lavada-card-valor-mini">{formatMoney(lavada.valor)}</span>
-          <ChevronDown size={16} className={`lavada-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+          <span className={`pago-badge pago-badge-${pagoStatus} badge-desktop-only`}>{pagoLabel}</span>
+          <div className="summary-valor-estado">
+            <span
+              className={`lavada-card-valor-mini ${(pagosOk && allMetodosSet) ? 'valor-ok' : total > 0 ? 'valor-pendiente' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setEstadoPopover(false)
+                setPagoPopover(true)
+              }}
+              style={{ cursor: 'pointer' }}
+            >{formatMoney(lavada.valor)}</span>
+            <div className="summary-estado-row">
+              {hasActiveTimer(lavada) && (
+                <span className={`lavada-card-timer ${getEstadoClass(lavada.estado)}`}>
+                  <Timer {...getTimerProps(lavada, lavada.estado === 'EN ESPERA' ? 'espera' : lavada.estado === 'EN LAVADO' ? 'lavado' : 'terminado')} />
+                </span>
+              )}
+              <span className="estado-badge-wrapper">
+                <span
+                  className={`estado-badge-mini ${getEstadoClass(lavada.estado)} estado-badge-clickable`}
+                  onClick={(e) => { e.stopPropagation(); setPagoPopover(false); setEstadoPopover(!estadoPopover) }}
+                >
+                  {ESTADO_LABELS[lavada.estado] || lavada.estado}
+                </span>
+                {estadoPopover && renderEstadoPopover()}
+                {pagoPopover && renderPagoPopover()}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {showBody && (
-        <div className={`lavada-card-body ${isCollapsing ? 'collapsing' : ''}`}>
-          <div className="estado-flow">
-            <button
-              className={`estado-step-btn estado-espera-bg ${lavada.estado === 'EN ESPERA' ? 'active' : ''}`}
-              onClick={(e) => { e.stopPropagation(); onEstadoChange(lavada.id, 'EN ESPERA') }}
-            >
-              <span className="estado-step-label">Espera</span>
-              <span className="estado-step-time"><Timer {...getTimerProps(lavada, 'espera')} /></span>
-            </button>
-            <button
-              className={`estado-step-btn estado-lavado-bg ${lavada.estado === 'EN LAVADO' ? 'active' : ''}`}
-              onClick={(e) => { e.stopPropagation(); onEstadoChange(lavada.id, 'EN LAVADO') }}
-            >
-              <span className="estado-step-label">Lavado</span>
-              <span className="estado-step-time"><Timer {...getTimerProps(lavada, 'lavado')} /></span>
-            </button>
-            <button
-              className={`estado-step-btn estado-terminado-bg ${lavada.estado === 'TERMINADO' ? 'active' : ''}`}
-              onClick={(e) => { e.stopPropagation(); onEstadoChange(lavada.id, 'TERMINADO') }}
-            >
-              <span className="estado-step-label">Terminado</span>
-              <span className="estado-step-time"><Timer {...getTimerProps(lavada, 'terminado')} /></span>
-            </button>
-            <button
-              className={`estado-step-btn estado-entregado-bg ${yaEntregado ? 'active' : ''} ${!canComplete && !yaEntregado ? 'disabled-look' : ''}`}
-              title={yaEntregado ? 'Entregado' : (canComplete ? 'Marcar como entregado' : (
-                !tipoOk ? 'Falta tipo de lavado' :
-                  !lavadorOk ? 'Falta asignar lavador' :
-                    pagos.length === 0 ? 'Agrega al menos un pago' :
-                      !allMetodosSet ? 'Todos los pagos necesitan método' :
-                        !pagosOk ? (diff > 0 ? `Pagos exceden ${formatMoney(diff)}` : `Faltan ${formatMoney(Math.abs(diff))}`) : ''
-              ))}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (!canComplete) {
-                  triggerValidationErrors()
-                  return
-                }
-                onEstadoChange(lavada.id, 'ENTREGADO')
-                onSmoothCollapse(lavada.id)
-              }}
-            >
-              <span className="estado-step-label">Entregado</span>
-            </button>
-          </div>
-
-          <div className="lavada-card-tipo-adic">
-            <div className="lavada-card-field">
-              <label>Tipo</label>
-              <select
-                value={lavada.tipo_lavado_id || ''}
-                onChange={(e) => onTipoLavadoChange(lavada.id, e.target.value)}
-                className={`tipo-lavado-select ${vErrs.tipo ? 'field-error' : ''}`}
-              >
-                <option value="">Seleccionar</option>
-                {tiposLavado.map(t => (
-                  <option key={t.id} value={t.id}>{t.nombre}</option>
-                ))}
-              </select>
-            </div>
-
-            {serviciosAdicionales.length > 0 && (
-              <div className="lavada-card-adicionales">
-                <label>Adicionales</label>
-                <div className="lavada-card-checks">
-                  {serviciosAdicionales.map(s => {
-                    const adicionalesLavada = lavada.adicionales || []
-                    const checked = adicionalesLavada.some(a => a.id === s.id)
-                    return (
-                      <label key={s.id} className="adicional-check">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => onAdicionalChange(lavada.id, s, e.target.checked)}
-                        />
-                        <span>{s.nombre}</span>
-                      </label>
-                    )
-                  })}
-                </div>
+      {isExpanded && (
+        <>
+          <div className="pago-popover-overlay" onClick={() => onSmoothCollapse(lavada.id)} />
+          <div className="servicio-popup" onClick={(e) => e.stopPropagation()}>
+            <div className="servicio-popup-header">
+              <div className="servicio-popup-header-info">
+                <span className="servicio-popup-cliente">{lavada.cliente?.nombre || 'Sin cliente'}</span>
+                <span className="servicio-popup-sub">{lavada.placa} &middot; {formatMoney(total)}</span>
               </div>
-            )}
-          </div>
-
-          <div className="lavada-card-row">
-            <div className="lavada-card-field full">
-              <label>Lavador</label>
-              <select
-                value={lavada.lavador_id || ''}
-                onChange={(e) => onLavadorChange(lavada.id, e.target.value)}
-                className={`lavador-select ${vErrs.lavador ? 'field-error' : ''}`}
-              >
-                <option value="">Sin asignar</option>
-                {lavadores.map(l => (
-                  <option key={l.id} value={l.id}>{l.nombre}</option>
-                ))}
-              </select>
+              <button className="pago-popover-close" onClick={() => onSmoothCollapse(lavada.id)}>
+                <X size={20} />
+              </button>
             </div>
-          </div>
 
-          <div className="lavada-card-footer">
-            <div className={`lavada-card-valor ${pagos.length > 0 ? (pagosOk ? 'pago-ok' : 'pago-error') : ''}`}>
-              {formatMoney(total)}
+            <div className="estado-flow">
+              {estadosConfig.map(({ key: est, timer, icon: Icon, label }) => {
+                const isEntregado = est === 'ENTREGADO'
+                const isActive = isEntregado ? yaEntregado : lavada.estado === est
+                const bgClass = est === 'EN ESPERA' ? 'estado-espera-bg' : est === 'EN LAVADO' ? 'estado-lavado-bg' : est === 'TERMINADO' ? 'estado-terminado-bg' : 'estado-entregado-bg'
+                return (
+                  <button
+                    key={est}
+                    className={`estado-step-btn ${bgClass} ${isActive ? 'active' : ''} ${isEntregado && !canComplete && !yaEntregado ? 'disabled-look' : ''}`}
+                    title={isEntregado && !canComplete && !yaEntregado ? (
+                      !tipoOk ? 'Falta tipo de lavado' :
+                        !lavadorOk ? 'Falta asignar lavador' :
+                          activePagos.length === 0 ? 'Agrega al menos un pago' :
+                            !allMetodosSet ? 'Todos los pagos necesitan método' :
+                              !pagosOk ? (diff > 0 ? `Pagos exceden ${formatMoney(diff)}` : `Faltan ${formatMoney(Math.abs(diff))}`) : ''
+                    ) : undefined}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (isEntregado && !canComplete) {
+                        triggerValidationErrors()
+                        return
+                      }
+                      onEstadoChange(lavada.id, est)
+                    }}
+                  >
+                    <div className="estado-circle-icon">
+                      <Icon size={28} />
+                    </div>
+                    <span className="estado-step-label">{label}</span>
+                    {timer && <span className="estado-step-time"><Timer {...getTimerProps(lavada, timer)} /></span>}
+                  </button>
+                )
+              })}
             </div>
-            <div className={`lavada-card-pagos-pills ${vErrs.pagos ? 'field-error' : ''}`}>
-              {pagos.length === 0 && lavada.metodo_pago?.nombre && (
-                <span className="pago-pill legacy">{lavada.metodo_pago.nombre}</span>
+
+            <div className="lavada-card-tipo-adic">
+              <div className="lavada-card-field">
+                <label style={{ margin: '0.5rem 1rem 1.2rem' }}>Tipo de lavado</label>
+                <select
+                  value={lavada.tipo_lavado_id || ''}
+                  onChange={(e) => onTipoLavadoChange(lavada.id, e.target.value)}
+                  className={`tipo-lavado-select ${vErrs.tipo ? 'field-error' : ''}`}
+                >
+                  <option value="">Seleccionar</option>
+                  {tiposLavado.map(t => (
+                    <option key={t.id} value={t.id}>{t.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              {serviciosAdicionales.length > 0 && (
+                <div className="lavada-card-adicionales">
+                  <label style={{ margin: '0.5rem 1rem' }}>Adicionales</label>
+                  <div className="adicionales-circles">
+                    {serviciosAdicionales.map(s => {
+                      const checked = (lavada.adicionales || []).some(a => a.id === s.id)
+                      return (
+                        <button
+                          type="button"
+                          key={s.id}
+                          className={`adicional-circle-btn ${checked ? 'active' : ''}`}
+                          onClick={() => onAdicionalChange(lavada.id, s, !checked)}
+                        >
+                          <div className="adicional-circle-icon">
+                            <Sparkles size={28} />
+                          </div>
+                          <span className="adicional-circle-label">{s.nombre}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               )}
-              {pagos.map((p, idx) => {
-                const isEditing = isEditingThisLavada && editingPago.idx === idx
-                const metodoNombre = p.nombre || metodosPago.find(m => m.id == p.metodo_pago_id)?.nombre
+            </div>
 
-                if (isEditing || !p.metodo_pago_id) {
+            <div className="lavada-card-row">
+              <div className="lavada-card-field full">
+                <label style={{ margin: '0.5rem 1rem' }}>Lavador</label>
+                <select
+                  value={lavada.lavador_id || ''}
+                  onChange={(e) => onLavadorChange(lavada.id, e.target.value)}
+                  className={`lavador-select ${vErrs.lavador ? 'field-error' : ''}`}
+                >
+                  <option value="">Sin asignar</option>
+                  {lavadores.map(l => (
+                    <option key={l.id} value={l.id}>{l.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="lavada-card-footer">
+              <div className={`lavada-card-valor ${(pagosOk && allMetodosSet) ? 'pago-ok' : total > 0 ? 'pago-error' : ''}`}>
+                {formatMoney(total)}
+              </div>
+              <div className={`lavada-card-pagos-pills ${vErrs.pagos ? 'field-error' : ''}`}>
+                {activePagos.length === 0 && lavada.metodo_pago?.nombre && (
+                  <span className="pago-pill legacy">{lavada.metodo_pago.nombre}</span>
+                )}
+                {activePagos.map((p, idx) => {
+                  const isEditing = isEditingThisLavada && editingPago.idx === idx
+                  const metodoNombre = p.nombre || metodosPago.find(m => m.id == p.metodo_pago_id)?.nombre
+
+                  if (isEditing || !p.metodo_pago_id) {
+                    return (
+                      <div key={idx} className="pago-pill editing">
+                        <select
+                          value={p.metodo_pago_id || ''}
+                          onChange={(e) => {
+                            const metodo = metodosPago.find(m => m.id == e.target.value)
+                            const nuevosPagos = activePagos.map((pg, i) =>
+                              i === idx ? { ...pg, metodo_pago_id: e.target.value, nombre: metodo?.nombre || '' } : pg
+                            )
+                            updateLocalPagos(nuevosPagos)
+                            if (e.target.value && p.valor > 0) onSetEditingPago(null)
+                          }}
+                          className="pago-pill-select"
+                          autoFocus
+                        >
+                          <option value="">Método</option>
+                          {metodosPago.map(m => (
+                            <option key={m.id} value={m.id}>{m.nombre}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={p.valor === 0 ? '' : Number(p.valor).toLocaleString('es-CO')}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '')
+                            const nuevosPagos = activePagos.map((pg, i) =>
+                              i === idx ? { ...pg, valor: val === '' ? 0 : Number(val) } : pg
+                            )
+                            updateLocalPagos(nuevosPagos)
+                          }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && p.metodo_pago_id) onSetEditingPago(null) }}
+                          className="pago-pill-input"
+                          placeholder="$0"
+                        />
+                        <button
+                          className="pago-pill-x"
+                          onClick={() => {
+                            const nuevosPagos = activePagos.filter((_, i) => i !== idx)
+                            updateLocalPagos(nuevosPagos)
+                            onSetEditingPago(null)
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )
+                  }
+
                   return (
-                    <div key={idx} className="pago-pill editing">
-                      <select
-                        value={p.metodo_pago_id || ''}
-                        onChange={(e) => {
-                          const metodo = metodosPago.find(m => m.id == e.target.value)
-                          const nuevosPagos = pagos.map((pg, i) =>
-                            i === idx ? { ...pg, metodo_pago_id: e.target.value, nombre: metodo?.nombre || '' } : pg
-                          )
-                          onPagosChange(lavada.id, nuevosPagos)
-                          if (e.target.value && p.valor > 0) onSetEditingPago(null)
-                        }}
-                        className="pago-pill-select"
-                        autoFocus
-                      >
-                        <option value="">Método</option>
-                        {metodosPago.map(m => (
-                          <option key={m.id} value={m.id}>{m.nombre}</option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={p.valor === 0 ? '' : Number(p.valor).toLocaleString('es-CO')}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '')
-                          const nuevosPagos = pagos.map((pg, i) =>
-                            i === idx ? { ...pg, valor: val === '' ? 0 : Number(val) } : pg
-                          )
-                          onPagosChange(lavada.id, nuevosPagos)
-                        }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' && p.metodo_pago_id) onSetEditingPago(null) }}
-                        className="pago-pill-input"
-                        placeholder="$0"
-                      />
+                    <div
+                      key={idx}
+                      className="pago-pill"
+                      onClick={() => onSetEditingPago({ lavadaId: lavada.id, idx })}
+                    >
+                      <span className="pago-pill-metodo">{metodoNombre}</span>
+                      <span className="pago-pill-valor">{formatMoney(p.valor)}</span>
                       <button
                         className="pago-pill-x"
-                        onClick={() => {
-                          const nuevosPagos = pagos.filter((_, i) => i !== idx)
-                          onPagosChange(lavada.id, nuevosPagos)
-                          onSetEditingPago(null)
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const nuevosPagos = activePagos.filter((_, i) => i !== idx)
+                          updateLocalPagos(nuevosPagos)
                         }}
                       >
                         <X size={12} />
                       </button>
                     </div>
                   )
-                }
-
-                return (
-                  <div
-                    key={idx}
-                    className="pago-pill"
-                    onClick={() => onSetEditingPago({ lavadaId: lavada.id, idx })}
-                  >
-                    <span className="pago-pill-metodo">{metodoNombre}</span>
-                    <span className="pago-pill-valor">{formatMoney(p.valor)}</span>
-                    <button
-                      className="pago-pill-x"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const nuevosPagos = pagos.filter((_, i) => i !== idx)
-                        onPagosChange(lavada.id, nuevosPagos)
-                      }}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                )
-              })}
-              <button
-                className="pago-pill-add"
-                onClick={() => {
-                  const restante = total - sumaPagos
-                  const nuevosPagos = [...pagos, { metodo_pago_id: '', nombre: '', valor: restante > 0 ? restante : 0 }]
-                  onPagosChange(lavada.id, nuevosPagos)
-                  onSetEditingPago({ lavadaId: lavada.id, idx: pagos.length })
-                }}
-              >
-                <Plus size={14} />
-              </button>
-              {pagos.length > 0 && !pagosOk && (
-                <span className="pago-diff-msg">
-                  {diff > 0
-                    ? `Excede ${formatMoney(diff)}`
-                    : `Falta ${formatMoney(Math.abs(diff))}`}
-                </span>
-              )}
-            </div>
-            <div className="lavada-card-actions">
-              <div className="wa-menu-wrapper">
+                })}
                 <button
-                  ref={waButtonRef}
-                  className="btn-whatsapp"
-                  onClick={() => {
-                    if (!waMenu && waButtonRef.current) {
-                      const rect = waButtonRef.current.getBoundingClientRect()
-                      setWaMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
-                    }
-                    setWaMenu(!waMenu)
-                  }}
-                  title="Enviar WhatsApp"
+                  className="pago-pill-add"
+                  style={{ margin: '0 1rem' }}
+                  onClick={() => setPagoPopover(true)}
                 >
-                  <MessageCircle size={18} />
+                  <Plus size={14} />
                 </button>
-                {waMenu && (
-                  <>
-                    <div className="wa-menu-overlay" onClick={() => setWaMenu(false)} />
-                    <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
-                      {plantillasMensaje.length > 0 ? plantillasMensaje.map(p => (
-                        <button key={p.id} onClick={() => { setWaMenu(false); onWhatsApp(lavada, { plantillaId: p.id }) }}>
-                          {p.nombre}
-                        </button>
-                      )) : (
-                        <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em' }}>No hay plantillas</span>
-                      )}
-                      <button onClick={() => { setWaMenu(false); onWhatsApp(lavada, {}) }}>
-                        Ir al contacto
-                      </button>
-                      <button onClick={() => { setWaMenu(false); navigate('/cuenta?tab=config&subtab=mensajes') }}>
-                        + Agregar plantilla
-                      </button>
-                    </div>
-                  </>
+                {pagoPopover && renderPagoPopover()}
+                {activePagos.length > 0 && !pagosOk && (
+                  <span className="pago-diff-msg">
+                    {diff > 0
+                      ? `Excede ${formatMoney(diff)}`
+                      : `Falta ${formatMoney(Math.abs(diff))}`}
+                  </span>
                 )}
               </div>
-              <button
-                className="btn-eliminar-card"
-                onClick={() => onEliminar(lavada.id)}
-                title="Eliminar"
-              >
-                <Trash2 size={16} />
-              </button>
+              <div className="lavada-card-actions">
+                <div className="wa-menu-wrapper">
+                  <button
+                    ref={waButtonRef}
+                    className="btn-whatsapp"
+                    onClick={() => {
+                      if (!waMenu && waButtonRef.current) {
+                        const rect = waButtonRef.current.getBoundingClientRect()
+                        setWaMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+                      }
+                      setWaMenu(!waMenu)
+                    }}
+                    title="Enviar WhatsApp"
+                  >
+                    <MessageCircle size={18} />
+                  </button>
+                  {waMenu && (
+                    <>
+                      <div className="wa-menu-overlay" onClick={() => setWaMenu(false)} />
+                      <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
+                        {plantillasMensaje.length > 0 ? plantillasMensaje.map(p => (
+                          <button key={p.id} onClick={() => { setWaMenu(false); onWhatsApp(lavada, { plantillaId: p.id }) }}>
+                            {p.nombre}
+                          </button>
+                        )) : (
+                          <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em' }}>No hay plantillas</span>
+                        )}
+                        <button onClick={() => { setWaMenu(false); onWhatsApp(lavada, {}) }}>
+                          Ir al contacto
+                        </button>
+                        <button onClick={() => { setWaMenu(false); navigate('/cuenta?tab=config&subtab=mensajes') }}>
+                          + Agregar plantilla
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <button
+                  className="btn-eliminar-card"
+                  onClick={() => onEliminar(lavada.id)}
+                  title="Eliminar"
+                >
+                  <Trash2 size={24} style={{ margin: '0 1rem', color: 'var(--accent-red)' }} />
+                </button>
+              </div>
             </div>
-            <button
-              className={`btn-completar-servicio ${yaEntregado ? 'completado' : ''} ${!canComplete && !yaEntregado ? 'error' : ''}`}
-              title={yaEntregado ? 'Servicio entregado' : (canComplete ? 'Marcar como completado' : (
-                !tipoOk ? 'Falta tipo de lavado' :
-                  !lavadorOk ? 'Falta asignar lavador' :
-                    pagos.length === 0 ? 'Agrega al menos un pago' :
-                      !allMetodosSet ? 'Todos los pagos necesitan método' :
-                        !pagosOk ? (diff > 0 ? `Pagos exceden ${formatMoney(diff)}` : `Faltan ${formatMoney(Math.abs(diff))}`) : ''
-              ))}
-              onClick={() => {
-                if (yaEntregado) {
-                  onSmoothCollapse(lavada.id)
-                  return
-                }
-                if (!canComplete) {
-                  triggerValidationErrors()
-                  return
-                }
-                onEstadoChange(lavada.id, 'ENTREGADO')
-                onSmoothCollapse(lavada.id)
-              }}
-            >
-              <CheckCircle2 size={16} />
-              {yaEntregado ? 'Completado' : 'Completar'}
-            </button>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

@@ -25,6 +25,11 @@ export function useServiceHandlers() {
     }, 350)
   }
 
+  const collapseAllExcept = (openId) => {
+    setCollapsingCards({})
+    setExpandedCards(openId ? { [openId]: true } : {})
+  }
+
   const withCardUpdate = async (lavadaId, fn) => {
     setUpdatingCards(prev => new Set(prev).add(lavadaId))
     try {
@@ -162,9 +167,13 @@ export function useServiceHandlers() {
       const nuevosAdicionales = autoAddIncluidos(tipo, lavada.adicionales || [])
       let nuevoValor = calcularValor(tipoId, nuevosAdicionales)
 
-      // If client has active membership, force price to 0
+      // Membresía cubre el lavado base, pero adicionales se cobran
       const cliente = clientes.find(c => c.id == lavada.cliente_id)
-      if (clienteTieneMembresia(cliente)) nuevoValor = 0
+      if (clienteTieneMembresia(cliente)) {
+        const tipo2 = tiposLavado.find(t => t.id == tipoId)
+        nuevoValor = nuevoValor - Number(tipo2?.precio || 0)
+        if (nuevoValor < 0) nuevoValor = 0
+      }
 
       const { error } = await supabase
         .from('lavadas')
@@ -194,18 +203,18 @@ export function useServiceHandlers() {
       ? pagosSanitized[0].metodo_pago_id
       : null
 
-    await withCardUpdate(lavadaId, async () => {
-      const { error } = await supabase
-        .from('lavadas')
-        .update({ pagos: pagosSanitized, metodo_pago_id: metodoCompatible })
-        .eq('id', lavadaId)
+    // No withCardUpdate — pagos use localPagos + debounce in ServiceCard,
+    // so we skip the card-updating class to avoid opacity flash
+    const { error } = await supabase
+      .from('lavadas')
+      .update({ pagos: pagosSanitized, metodo_pago_id: metodoCompatible })
+      .eq('id', lavadaId)
 
-      if (error) {
-        toast.error('Error al actualizar pagos: ' + error.message)
-        return
-      }
-      updateLavadaLocal(lavadaId, { pagos: pagosSanitized, metodo_pago_id: metodoCompatible })
-    })
+    if (error) {
+      toast.error('Error al actualizar pagos: ' + error.message)
+      return
+    }
+    updateLavadaLocal(lavadaId, { pagos: pagosSanitized, metodo_pago_id: metodoCompatible })
   }
 
   const handleAdicionalChange = async (lavadaId, servicio, checked) => {
@@ -220,7 +229,15 @@ export function useServiceHandlers() {
         nuevosAdicionales = adicionalesActuales.filter(a => a.id !== servicio.id)
       }
 
-      const nuevoValor = calcularValor(lavada.tipo_lavado_id, nuevosAdicionales)
+      let nuevoValor = calcularValor(lavada.tipo_lavado_id, nuevosAdicionales)
+
+      // Membresía cubre el lavado base, pero adicionales se cobran
+      const cliente = clientes.find(c => c.id == lavada.cliente_id)
+      if (clienteTieneMembresia(cliente)) {
+        const tipo = tiposLavado.find(t => t.id == lavada.tipo_lavado_id)
+        nuevoValor = nuevoValor - Number(tipo?.precio || 0)
+        if (nuevoValor < 0) nuevoValor = 0
+      }
 
       const { error } = await supabase
         .from('lavadas')
@@ -343,6 +360,7 @@ export function useServiceHandlers() {
     updatingCards,
     // Helpers
     smoothCollapse,
+    collapseAllExcept,
     getTimerProps,
     hasActiveTimer,
     getEstadoClass,

@@ -67,7 +67,7 @@ const PieTooltip = ({ active, payload }) => {
 }
 
 export default function Reportes() {
-  const { negocioNombre } = useTenant()
+  const { negocioNombre, negocioId } = useTenant()
   const { lavadas: allLavadas, lavadores, loading: dataLoading } = useData()
   const { displayMoney } = useMoneyVisibility()
   const hoyInit = new Date(); hoyInit.setHours(0,0,0,0)
@@ -143,13 +143,13 @@ export default function Reportes() {
 
     // ALL queries in parallel: 7 total
     const [lavadasRes, transRes, lavAntRes, transAntRes, lavHistRes, transHistRes, clientesRes] = await Promise.all([
-      supabase.from('lavadas').select('*, tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre), tipo_membresia:tipos_membresia(nombre)').gte('fecha', desdeStr).lt('fecha', hastaStr),
-      supabase.from('transacciones').select('*').gte('fecha', desdeStr).lt('fecha', hastaStr),
-      supabase.from('lavadas').select('valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
-      supabase.from('transacciones').select('tipo, valor').gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
-      supabase.from('lavadas').select('valor, fecha').gte('fecha', hist6Desde).lt('fecha', hist6Hasta),
-      supabase.from('transacciones').select('tipo, valor, fecha').gte('fecha', hist6Desde).lt('fecha', hist6Hasta),
-      supabase.from('clientes').select('id, nombre, created_at').gte('created_at', desdeStr).lt('created_at', hastaStr),
+      supabase.from('lavadas').select('*, tipo_lavado:tipos_lavado(nombre), lavador:lavadores(nombre), metodo_pago:metodos_pago(nombre), tipo_membresia:tipos_membresia(nombre)').eq('negocio_id', negocioId).gte('fecha', desdeStr).lt('fecha', hastaStr),
+      supabase.from('transacciones').select('*').eq('negocio_id', negocioId).gte('fecha', desdeStr).lt('fecha', hastaStr),
+      supabase.from('lavadas').select('valor').eq('negocio_id', negocioId).gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
+      supabase.from('transacciones').select('tipo, valor').eq('negocio_id', negocioId).gte('fecha', maDesdeStr).lt('fecha', maHastaStr),
+      supabase.from('lavadas').select('valor, fecha').eq('negocio_id', negocioId).gte('fecha', hist6Desde).lt('fecha', hist6Hasta),
+      supabase.from('transacciones').select('tipo, valor, fecha').eq('negocio_id', negocioId).gte('fecha', hist6Desde).lt('fecha', hist6Hasta),
+      supabase.from('clientes').select('id, nombre, created_at').eq('negocio_id', negocioId).gte('created_at', desdeStr).lt('created_at', hastaStr),
     ])
 
     const lavadas = lavadasRes.data || []

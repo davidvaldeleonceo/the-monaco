@@ -154,7 +154,7 @@ export default function Configuracion() {
   const getTable = () => configSubTabs.find(t => t.id === configSubTab)?.table
 
   const fetchData = async () => {
-    let query = supabase.from(getTable()).select('*')
+    let query = supabase.from(getTable()).select('*').eq('negocio_id', negocioId)
     if (configSubTab === 'cat_ingresos') query = query.eq('tipo', 'INGRESO')
     if (configSubTab === 'cat_egresos') query = query.eq('tipo', 'EGRESO')
     const { data: result } = await query.order('nombre')
