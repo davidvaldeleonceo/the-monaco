@@ -356,6 +356,9 @@ DO $$ BEGIN
   ALTER TABLE tipos_lavado ADD COLUMN IF NOT EXISTS es_base BOOLEAN DEFAULT false;
   ALTER TABLE pago_trabajadores ADD COLUMN IF NOT EXISTS abonos_detalle JSONB DEFAULT '[]';
   ALTER TABLE transacciones ALTER COLUMN fecha SET DEFAULT (now() AT TIME ZONE 'America/Bogota')::date;
+  ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS categoria TEXT;
+  ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS descripcion TEXT;
+  ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS placa_o_persona TEXT;
 END $$;
 
 -- Ensure nombre/placa are NOT NULL (idempotent — safe to re-run)

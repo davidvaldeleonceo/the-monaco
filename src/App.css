@@ -3471,6 +3471,9 @@ body {
   color: var(--text-primary);
   font-size: 0.875rem;
   cursor: pointer;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
 }
 
 @media (hover: hover) {
@@ -3490,6 +3493,9 @@ body {
   font-size: 0.8rem;
   cursor: pointer;
   max-width: 140px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
 }
 
 @media (hover: hover) {
@@ -3971,6 +3977,7 @@ body {
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  border-radius: 20px;
 }
 
 .lavada-card.expanded .lavada-card-header {
@@ -4622,6 +4629,9 @@ body {
   font-size: 0.85rem;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
 }
 @media (hover: hover) {
   .lavada-card-field select:hover { background: var(--bg-hover); border-color: var(--accent-green); }
@@ -6672,10 +6682,10 @@ input:checked + .slider:before {
 /* Balance Carousel */
 .home-balance-carousel { display: flex; gap: 1rem; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; padding: 0.25rem 1rem; scroll-padding: 0 1rem; }
 .home-balance-carousel::-webkit-scrollbar { display: none; }
-.home-balance-card { min-width: 85%; scroll-snap-align: start; background: var(--bg-card); border-radius: 16px; padding: 1.5rem; display: flex; flex-direction: column; gap: 0.25rem; flex-shrink: 0; border-left: 4px solid var(--accent-blue); position: relative; }
+.home-balance-card { min-width: 85%; scroll-snap-align: start; background: var(--bg-card); border-radius: 16px; padding: 1.5rem; display: flex; flex-direction: column; gap: 0.25rem; flex-shrink: 0; border-left: 4px solid var(--accent-blue); position: static; }
 .home-balance-card.ingresos { border-left-color: var(--accent-green); }
 .home-balance-card.egresos { border-left-color: var(--accent-red); }
-.home-balance-label { font-size: 0.875rem; color: var(--text-secondary); font-weight: 500; }
+.home-balance-label { font-size: 0.875rem; color: var(--text-secondary); font-weight: 500; text-align: left; }
 .home-balance-amount { font-size: 1.75rem; font-weight: 700; color: var(--text-primary); }
 .home-balance-amount.positivo { color: var(--accent-green); }
 .home-balance-amount.negativo { color: var(--accent-red); }
@@ -6874,6 +6884,7 @@ input:checked + .slider:before {
   position: relative; transition: all 0.2s;
 }
 .home-filtros-icon-btn.active { color: var(--accent-blue); }
+.home-filtros-label-desktop { display: none; }
 
 /* Expandable search bar */
 .home-search-bar-expanded {
@@ -6892,6 +6903,11 @@ input:checked + .slider:before {
 .home-search-bar-expanded button {
   background: none; border: none; color: var(--text-secondary);
   cursor: pointer; padding: 2px; display: flex; align-items: center;
+}
+
+/* Inline search in period row — desktop only */
+.home-search-inline-desktop {
+  display: none;
 }
 
 /* Desktop search row — hidden on mobile */
@@ -6918,8 +6934,15 @@ input:checked + .slider:before {
 .home-filtros-btn { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.75rem; border-radius: 10px; border: 1.5px solid var(--border-color); background: var(--bg-card); color: var(--text-secondary); font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 0.2s; position: relative; flex-shrink: 0; }
 .home-filtros-btn.active { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
 
+/* Tab Row (pills + total + actions) */
+.home-tab-row { display: flex; flex-wrap: wrap; align-items: center; margin: 0.25rem 1rem 0.75rem; row-gap: 1.5rem; column-gap: 0.5rem; }
+.home-tab-total-inline { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); text-align: left; order: 3; flex: 1; }
+.home-tab-total-inline.negative { color: var(--accent-red); }
+.home-tab-total-cobrado { font-size: 0.8em; font-weight: 600; color: var(--text-secondary); }
+.home-tab-actions { display: flex; gap: 0.5rem; flex-shrink: 0; order: 4; }
+.home-tab-actions .home-desktop-add { display: none; }
 /* Tab Pills (Servicios / Productos) */
-.home-tab-pills { display: flex; gap: 1rem; width: 100%; margin: 0.25rem 1rem 0.75rem; justify-content: flex-start; }
+.home-tab-pills { display: flex; gap: 1rem; justify-content: flex-start; width: 100%; }
 .home-tab-pill { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; padding: 0; border: none; background: none; cursor: pointer; transition: all 0.2s; text-align: center; }
 .home-tab-pill-icon { width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--border-color); background: var(--bg-card); display: flex; align-items: center; justify-content: center; transition: all 0.2s; color: var(--text-secondary); }
 .home-tab-pill.active .home-tab-pill-icon { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
@@ -7108,8 +7131,9 @@ input:checked + .slider:before {
   .home-page { padding: 2rem; }
   .home-balance-inline { display: none; }
   .home-balance-desktop { display: block; }
+  .money-toggle-card { display: none; }
   .home-balance-carousel { overflow: visible; padding: 0; }
-  .home-balance-card { min-width: 0; flex: 1; }
+  .home-balance-card { min-width: 0; flex: 1; width: 277px; }
   .ingresos-donut { width: 80px; height: 80px; }
   .ingresos-donut-hole { width: 46px; height: 46px; }
   .egresos-donut { width: 80px; height: 80px; }
@@ -7327,7 +7351,45 @@ input:checked + .slider:before {
   .home-period-wheel { height: 44px; --period-wheel-gap: 100px; }
   .home-period-wheel-item, .home-period-wheel-item.active { font-size: 1.5rem; padding: 0.3rem 1.5rem; }
   .home-search-desktop-row { display: none !important; }
-  .home-tab-pills { width: auto; margin: 0 0 2rem 0; gap: 0.5rem; }
+
+  /* Inline search in period row — desktop only */
+  .home-search-inline-desktop {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.4rem 0.75rem;
+    min-width: 180px;
+    max-width: 280px;
+    animation: fadeIn 0.2s ease;
+  }
+  .home-search-inline-desktop input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    outline: none;
+    min-width: 0;
+  }
+  .home-search-inline-desktop input::placeholder { color: var(--text-secondary); }
+  .home-search-inline-desktop svg { color: var(--text-secondary); flex-shrink: 0; }
+  .home-search-inline-desktop button {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Hide mobile expanded search bar on desktop */
+  .home-search-bar-expanded { display: none !important; }
+  .home-filtros-label-desktop { display: inline; font-size: 0.85rem; margin-left: 0.25rem; }
+  .home-filtros-icon-btn { gap: 0.25rem; }
   .home-tab-pill { flex-direction: column; padding: 0.75rem 1rem; border-radius: 16px; background: none; border: none; }
   .home-tab-pill.active { background: none; border: none; }
   .home-tab-pill-icon { display: flex; }
@@ -7338,6 +7400,11 @@ input:checked + .slider:before {
   .home-section-title { padding: 0; display: none; }
   .home-section-header { padding: 0; justify-content: flex-end; margin-top: -5.5rem; margin-bottom: 2rem; align-items: center; }
   .home-tab-total { display: none; }
+  .home-tab-row { margin: 0 0 2rem 0; align-items: center; flex-wrap: nowrap; gap: 0.75rem; }
+  .home-tab-pills { flex: 1; width: auto; margin: 0; gap: 0.5rem; }
+  .home-tab-total-inline { flex: 0 0 auto; font-size: 1.25rem; text-align: center; order: 0; }
+  .home-tab-actions { display: flex; flex: 1; justify-content: flex-end; }
+  .home-tab-actions .home-desktop-add { display: flex; }
   .home-filter-cards { padding: 0; }
   .home-recent-list { padding: 0; display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
   .home-desktop-add { display: flex; }

@@ -59,7 +59,7 @@ export default function Home() {
   const [activePopoverId, setActivePopoverId] = useState(null)
 
   const [periodo, setPeriodo] = useState(() => {
-    return localStorage.getItem('home-periodo') || 'd'
+    return localStorage.getItem('home-periodo') || 'm'
   })
   const [tab, setTab] = useState('servicios')
   const [transacciones, setTransacciones] = useState([])
@@ -289,16 +289,19 @@ export default function Home() {
 
   // Effective date range: union of period range and custom date filters
   // Ensures custom pills like "Ayer" always include the target dates
+  // If only start date selected, treat it as a single-day filter
+  const _effectiveHasta = filtroFechaHasta ?? filtroFechaDesde
   const _periodRange = getDateRange(periodo)
   const fechaDesde = (!filtroFechaDesde || !_periodRange.desde)
     ? (filtroFechaDesde || _periodRange.desde)
     : (filtroFechaDesde < _periodRange.desde ? filtroFechaDesde : _periodRange.desde)
-  const fechaHasta = (!filtroFechaHasta || !_periodRange.hasta)
-    ? (filtroFechaHasta || _periodRange.hasta)
-    : (filtroFechaHasta > _periodRange.hasta ? filtroFechaHasta : _periodRange.hasta)
+  const fechaHasta = (!_effectiveHasta || !_periodRange.hasta)
+    ? (_effectiveHasta || _periodRange.hasta)
+    : (_effectiveHasta > _periodRange.hasta ? _effectiveHasta : _periodRange.hasta)
 
   // Fetch transacciones
   const fetchTransacciones = async () => {
+    if (!negocioId) return
     let query = supabase
       .from('transacciones')
       .select('*, metodo_pago:metodos_pago(nombre)')
@@ -337,7 +340,7 @@ export default function Home() {
       setPrevTransacciones(data || [])
     }
     fetchPrevTransacciones()
-  }, [periodo, filtroFechaDesde, filtroFechaHasta])
+  }, [periodo, filtroFechaDesde, filtroFechaHasta, negocioId])
 
   useEffect(() => {
     if (periodo === 'a' && !lavadasAllLoaded) {
@@ -793,13 +796,13 @@ export default function Home() {
     }
 
     // Fecha personalizada (se aplica DESPUES del filtro de periodo)
-    if (filtroFechaDesde || filtroFechaHasta) {
+    if (filtroFechaDesde || _effectiveHasta) {
       const dateOnly = fechaToBogotaDate(l.fecha)
       if (!dateOnly) return false
       const fechaL = new Date(dateOnly + 'T00:00:00')
       if (filtroFechaDesde && fechaL < filtroFechaDesde) return false
-      if (filtroFechaHasta) {
-        const h = new Date(filtroFechaHasta)
+      if (_effectiveHasta) {
+        const h = new Date(_effectiveHasta)
         h.setHours(23, 59, 59, 999)
         if (fechaL > h) return false
       }
@@ -815,13 +818,13 @@ export default function Home() {
       if (filtroTipo && t.tipo !== filtroTipo) return false
       if (filtroMetodoPago && t.metodo_pago_id != filtroMetodoPago) return false
       // Fecha personalizada
-      if (filtroFechaDesde || filtroFechaHasta) {
+      if (filtroFechaDesde || _effectiveHasta) {
         const dateOnly = fechaToBogotaDate(t.fecha)
         if (!dateOnly) return false
         const fechaT = new Date(dateOnly + 'T00:00:00')
         if (filtroFechaDesde && fechaT < filtroFechaDesde) return false
-        if (filtroFechaHasta) {
-          const h = new Date(filtroFechaHasta)
+        if (_effectiveHasta) {
+          const h = new Date(_effectiveHasta)
           h.setHours(23, 59, 59, 999)
           if (fechaT > h) return false
         }
@@ -838,13 +841,13 @@ export default function Home() {
       if (filtroMetodoPago && t.metodo_pago_id != filtroMetodoPago) return false
       if (filtroCategoria && t.categoria !== filtroCategoria) return false
       // Fecha personalizada
-      if (filtroFechaDesde || filtroFechaHasta) {
+      if (filtroFechaDesde || _effectiveHasta) {
         const dateOnly = fechaToBogotaDate(t.fecha)
         if (!dateOnly) return false
         const fechaT = new Date(dateOnly + 'T00:00:00')
         if (filtroFechaDesde && fechaT < filtroFechaDesde) return false
-        if (filtroFechaHasta) {
-          const h = new Date(filtroFechaHasta)
+        if (_effectiveHasta) {
+          const h = new Date(_effectiveHasta)
           h.setHours(23, 59, 59, 999)
           if (fechaT > h) return false
         }
@@ -873,9 +876,11 @@ export default function Home() {
   }, [highlightId, tab, allServicios, allProductos, allMovimientos])
 
   const totalServicios = allServicios.reduce((sum, l) => sum + Number(l.valor || 0), 0)
+  const cobradoServicios = allServicios.reduce((sum, l) => sum + (l.pagos || []).reduce((s, p) => s + Number(p.valor || 0), 0), 0)
   const totalProductos = allProductos.reduce((sum, t) => sum + (t.tipo === 'EGRESO' ? -1 : 1) * Number(t.valor || 0), 0)
   const totalMovimientos = allMovimientos.reduce((sum, t) => sum + (t.tipo === 'EGRESO' ? -1 : 1) * Number(t.valor || 0), 0)
   const totalTab = tab === 'servicios' ? totalServicios : tab === 'productos' ? totalProductos : totalMovimientos
+  const cobradoTab = tab === 'servicios' ? cobradoServicios : tab === 'productos' ? totalProductos : totalMovimientos
 
   const pagosServicios = allServicios.flatMap(l => {
     const pagos = l.pagos || []
@@ -1209,7 +1214,7 @@ export default function Home() {
   const resetFiltrosTab = () => {
     setFiltroEstado([]); setFiltroLavador([]); setFiltroTipo(''); setFiltroMetodoPago('')
     setFiltroPago(''); setFiltroTipoLavado([]); setFiltroAdicionales([])
-    setFiltroFechaDesde(null); setFiltroFechaHasta(null); setFiltroCategoria('')
+    setFiltroCategoria('')
     setModoSeleccion(false); setSelectedItems(new Set()); setExpandedFilterCard(null)
   }
 
@@ -1279,16 +1284,16 @@ export default function Home() {
 
   // Format relative date
   const formatFechaRelativa = (fechaStr) => {
-    const fecha = new Date(fechaStr)
-    const hoy = new Date()
+    const dateOnly = fechaToBogotaDate(fechaStr) || fechaStr
+    const fecha = new Date(dateOnly + 'T00:00:00')
+    const hoy = nowBogota()
     hoy.setHours(0, 0, 0, 0)
-    const diff = Math.floor((hoy - fecha) / (1000 * 60 * 60 * 24))
+    const diff = Math.round((hoy - fecha) / (1000 * 60 * 60 * 24))
     if (diff === 0) return 'Hoy'
     if (diff === 1) return 'Ayer'
-    if (diff < 7) return `Hace ${diff} días`
     const d = fecha.getDate()
-    const m = fecha.getMonth() + 1
-    return `${d}/${m}`
+    const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+    return `${d} de ${meses[fecha.getMonth()]}`
   }
 
   // Product card edit handlers
@@ -2301,12 +2306,30 @@ export default function Home() {
 
       {/* Search + Period Row (mobile: icon + wheel + filter icon) */}
       <div className="home-search-period-row">
-        <button
-          className={`home-search-icon-btn ${showSearchBar ? 'active' : ''}`}
-          onClick={() => { setShowSearchBar(v => !v); if (!showSearchBar) setTimeout(() => searchInputRef.current?.focus(), 100) }}
-        >
-          <Search size={18} />
-        </button>
+        {showSearchBar ? (
+          <div className="home-search-inline-desktop">
+            <Search size={16} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Buscar..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { setShowSearchBar(false); setSearchQuery('') } }}
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')}><X size={14} /></button>
+            )}
+            <button onClick={() => { setShowSearchBar(false); setSearchQuery('') }}><X size={16} /></button>
+          </div>
+        ) : (
+          <button
+            className={`home-search-icon-btn ${showSearchBar ? 'active' : ''}`}
+            onClick={() => { setShowSearchBar(true); setTimeout(() => searchInputRef.current?.focus(), 100) }}
+          >
+            <Search size={18} />
+          </button>
+        )}
         <div className="home-period-wheel" ref={periodWheelRef} onTouchStart={onWheelTouchStart} onTouchEnd={onWheelTouchEnd}>
           {periodWheelItems.map((item, i) => {
             const offset = circularOffset(wheelIndex, i)
@@ -2337,14 +2360,15 @@ export default function Home() {
           style={{ position: 'relative' }}
         >
           <SlidersHorizontal size={18} />
+          <span className="home-filtros-label-desktop">Más filtros</span>
           {activeFilterCount > 0 && <span className="home-filter-badge">{activeFilterCount}</span>}
         </button>
       </div>
+      {/* Mobile-only expanded search bar (below the row) */}
       {showSearchBar && (
         <div className="home-search-bar-expanded">
           <Search size={16} />
           <input
-            ref={searchInputRef}
             type="text"
             placeholder="Buscar..."
             value={searchQuery}
@@ -2428,37 +2452,34 @@ export default function Home() {
       )}
 
       {/* Tab Pills: Servicios / Productos / Movimientos */}
-      <div className="home-tab-pills">
-        <button
-          className={`home-tab-pill ${tab === 'servicios' ? 'active' : ''}`}
-          onClick={() => { setTab('servicios'); resetFiltrosTab() }}
-        >
-          <span className="home-tab-pill-icon"><Droplets size={22} /></span>
-          <span className="home-tab-pill-label">Servicios</span>
-        </button>
-        <button
-          className={`home-tab-pill ${tab === 'productos' ? 'active' : ''}`}
-          onClick={() => { setTab('productos'); resetFiltrosTab() }}
-        >
-          <span className="home-tab-pill-icon"><ShoppingBag size={22} /></span>
-          <span className="home-tab-pill-label">Prod/Memb</span>
-        </button>
-        <button
-          className={`home-tab-pill ${tab === 'movimientos' ? 'active' : ''}`}
-          onClick={() => { setTab('movimientos'); resetFiltrosTab() }}
-        >
-          <span className="home-tab-pill-icon"><ArrowLeftRight size={22} /></span>
-          <span className="home-tab-pill-label">Movimientos</span>
-        </button>
-      </div>
-
-      {/* Recent Cards */}
-      <div className="home-section-header">
-        <p className="home-section-title">
-          Recientes — {{ servicios: 'Servicios', productos: 'Prod/Memb', movimientos: 'Movimientos' }[tab]}
-        </p>
-        <span className={`home-tab-total${totalTab < 0 ? ' negative' : ''}`}>{showMoney ? formatMoney(totalTab) : '•••'}</span>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+      <div className="home-tab-row">
+        <div className="home-tab-pills">
+          <button
+            className={`home-tab-pill ${tab === 'servicios' ? 'active' : ''}`}
+            onClick={() => { setTab('servicios'); resetFiltrosTab() }}
+          >
+            <span className="home-tab-pill-icon"><Droplets size={22} /></span>
+            <span className="home-tab-pill-label">Servicios</span>
+          </button>
+          <button
+            className={`home-tab-pill ${tab === 'productos' ? 'active' : ''}`}
+            onClick={() => { setTab('productos'); resetFiltrosTab() }}
+          >
+            <span className="home-tab-pill-icon"><ShoppingBag size={22} /></span>
+            <span className="home-tab-pill-label">Prod/Memb</span>
+          </button>
+          <button
+            className={`home-tab-pill ${tab === 'movimientos' ? 'active' : ''}`}
+            onClick={() => { setTab('movimientos'); resetFiltrosTab() }}
+          >
+            <span className="home-tab-pill-icon"><ArrowLeftRight size={22} /></span>
+            <span className="home-tab-pill-label">Movimientos</span>
+          </button>
+        </div>
+        <span className={`home-tab-total-inline${totalTab < 0 ? ' negative' : ''}`}>
+          {showMoney ? (<>{formatMoney(totalTab)}<span className="home-tab-total-cobrado"> / {formatMoney(cobradoTab)}</span></>) : '•••'}
+        </span>
+        <div className="home-tab-actions">
           <button
             className={`home-filter-btn ${modoSeleccion ? 'active' : ''}`}
             onClick={() => { setModoSeleccion(prev => !prev); setSelectedItems(new Set()) }}
@@ -2475,6 +2496,8 @@ export default function Home() {
           </button>
         </div>
       </div>
+
+      {/* Recent Cards */}
       <div className="home-recent-list">
         {tab === 'servicios' && (
           recentServicios.length > 0 ? (
