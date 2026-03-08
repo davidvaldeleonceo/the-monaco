@@ -70,7 +70,7 @@ export default function UpgradeModal({ onClose, reason, initialPeriod }) {
             <div className="plan-option-card plan-option-trial" onClick={handleStartTrial}>
               <Zap size={24} />
               <h3>Prueba gratis</h3>
-              <p className="plan-option-price">14 días</p>
+              <p className="plan-option-price">7 días</p>
               <p className="plan-option-desc">Acceso completo a todas las funciones PRO</p>
               {startingTrial && <span className="plan-option-loading">Activando...</span>}
               {trialError && <span className="plan-option-error">{trialError}</span>}

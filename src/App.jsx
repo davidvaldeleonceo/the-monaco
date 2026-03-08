@@ -19,6 +19,7 @@ import { ToastProvider } from './components/Toast'
 import Onboarding from './components/Onboarding'
 import SetupWizard from './components/SetupWizard'
 import RoleGuard from './components/RoleGuard'
+import AdminDashboard from './components/Admin/AdminDashboard'
 import PlanGuard from './components/PlanGuard'
 import { TourProvider } from './components/AppTour'
 import './App.css'
@@ -52,6 +53,7 @@ function AuthenticatedApp({ session }) {
           <Route path="/clientes" element={<RoleGuard path="/clientes"><Clientes /></RoleGuard>} />
           <Route path="/pagos" element={<RoleGuard path="/pagos"><PlanGuard feature="Pago de Trabajadores"><PagoTrabajadores /></PlanGuard></RoleGuard>} />
           <Route path="/cuenta" element={<RoleGuard path="/cuenta"><Configuracion /></RoleGuard>} />
+          <Route path="/admin" element={<RoleGuard path="/admin"><AdminDashboard /></RoleGuard>} />
         </Route>
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, Fragment } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useData } from './DataContext'
@@ -91,6 +91,12 @@ export default function Home() {
   const [showFilterCards, setShowFilterCards] = useState(false)
   const [expandedFilterCard, setExpandedFilterCard] = useState(null)
   const [filtroEstado, setFiltroEstado] = useState([])
+  const [showQuickFilter, setShowQuickFilter] = useState(false)
+  const [quickFilterClosing, setQuickFilterClosing] = useState(false)
+  const closeQuickFilter = useCallback(() => {
+    setQuickFilterClosing(true)
+    setTimeout(() => { setShowQuickFilter(false); setQuickFilterClosing(false) }, 200)
+  }, [])
   const [filtroLavador, setFiltroLavador] = useState([])
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroMetodoPago, setFiltroMetodoPago] = useState('')
@@ -458,7 +464,7 @@ export default function Home() {
 
   // Filter card config
   const FILTER_CARDS = {
-    servicios: ['fechas', 'estado', 'estadoPago', 'tipoLavado', 'adicionales', 'lavador'],
+    servicios: ['fechas', 'estado', 'estadoPago', 'tipoLavado', 'adicionales', 'lavador', 'metodoPago'],
     productos: ['fechas', 'tipo', 'metodoPago'],
     movimientos: ['fechas', 'tipo', 'categoria', 'metodoPago'],
   }
@@ -794,6 +800,9 @@ export default function Home() {
       const idsLavada = (l.adicionales || []).map(a => a.id)
       if (!filtroAdicionales.every(id => idsLavada.includes(id))) return false
     }
+
+    // Método de pago (busca en los pagos de la lavada)
+    if (filtroMetodoPago && !(l.pagos || []).some(p => p.metodo_pago_id == filtroMetodoPago)) return false
 
     // Fecha personalizada (se aplica DESPUES del filtro de periodo)
     if (filtroFechaDesde || _effectiveHasta) {
@@ -2014,9 +2023,6 @@ export default function Home() {
             {displayMoney(balance)}
           </span>
         </div>
-        <button className="money-toggle-btn" onClick={e => { e.stopPropagation(); toggleMoney() }}>
-          {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
-        </button>
       </div>
 
       {/* Balance Sheet (mobile) */}
@@ -2171,10 +2177,16 @@ export default function Home() {
               </span>
             </div>
             <div className="home-balance-card ingresos home-balance-clickable" onClick={() => { setActiveBalancePanel('ingresos'); setBalanceSheetPill('ingresos'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); window.scrollTo(0, 0) }}>
+              <button className="money-toggle-btn money-toggle-card" onClick={e => { e.stopPropagation(); toggleMoney() }} title={showMoney ? 'Ocultar valores' : 'Mostrar valores'}>
+                {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
+              </button>
               <span className="home-balance-label ingresos-title">Ingresos - {displayPeriodoLabel}</span>
               <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
             </div>
             <div className="home-balance-card egresos home-balance-clickable" onClick={() => { setActiveBalancePanel('egresos'); setBalanceSheetPill('egresos'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); window.scrollTo(0, 0) }}>
+              <button className="money-toggle-btn money-toggle-card" onClick={e => { e.stopPropagation(); toggleMoney() }} title={showMoney ? 'Ocultar valores' : 'Mostrar valores'}>
+                {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
+              </button>
               <span className="home-balance-label egresos-title">Egresos - {displayPeriodoLabel}</span>
               <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
             </div>
@@ -2223,7 +2235,7 @@ export default function Home() {
           {/* Pill + View switch row */}
           <div className="balance-panel-controls-row">
             <button className="balance-pill-dropdown-trigger" onClick={() => { const pills = ['balance', 'ingresos', 'egresos']; const next = pills[(pills.indexOf(balanceSheetPill) + 1) % 3]; setBalanceSheetPill(next); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}>
-              {balanceSheetPill.charAt(0).toUpperCase() + balanceSheetPill.slice(1)}
+              👉 {balanceSheetPill.charAt(0).toUpperCase() + balanceSheetPill.slice(1)}
             </button>
             <button className="balance-view-pill-trigger" onClick={() => { setBalanceSheetView(balanceSheetView === 'metodo' ? 'categoria' : 'metodo'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}>
               {balanceSheetView === 'metodo' ? 'Métodos de pago' : 'Categorías'}
@@ -2452,25 +2464,26 @@ export default function Home() {
       )}
 
       {/* Tab Pills: Servicios / Productos / Movimientos */}
+      {!activeBalancePanel && (<>
       <div className="home-tab-row">
         <div className="home-tab-pills">
           <button
             className={`home-tab-pill ${tab === 'servicios' ? 'active' : ''}`}
-            onClick={() => { setTab('servicios'); resetFiltrosTab() }}
+            onClick={() => setTab('servicios')}
           >
             <span className="home-tab-pill-icon"><Droplets size={22} /></span>
             <span className="home-tab-pill-label">Servicios</span>
           </button>
           <button
             className={`home-tab-pill ${tab === 'productos' ? 'active' : ''}`}
-            onClick={() => { setTab('productos'); resetFiltrosTab() }}
+            onClick={() => setTab('productos')}
           >
             <span className="home-tab-pill-icon"><ShoppingBag size={22} /></span>
             <span className="home-tab-pill-label">Prod/Memb</span>
           </button>
           <button
             className={`home-tab-pill ${tab === 'movimientos' ? 'active' : ''}`}
-            onClick={() => { setTab('movimientos'); resetFiltrosTab() }}
+            onClick={() => setTab('movimientos')}
           >
             <span className="home-tab-pill-icon"><ArrowLeftRight size={22} /></span>
             <span className="home-tab-pill-label">Movimientos</span>
@@ -2480,20 +2493,112 @@ export default function Home() {
           {showMoney ? (<>{formatMoney(totalTab)}<span className="home-tab-total-cobrado"> / {formatMoney(cobradoTab)}</span></>) : '•••'}
         </span>
         <div className="home-tab-actions">
-          <button
-            className={`home-filter-btn ${modoSeleccion ? 'active' : ''}`}
-            onClick={() => { setModoSeleccion(prev => !prev); setSelectedItems(new Set()) }}
-          >
-            <span className="home-filter-btn-icon"><CheckSquare size={16} /></span>
-            <span className="home-filter-btn-label">Seleccionar</span>
-          </button>
-          <button
-            className="btn-primary home-desktop-add"
-            onClick={() => setShowFabMenu(!showFabMenu)}
-          >
-            <Plus size={18} />
-            <span>Nuevo</span>
-          </button>
+          <div className="quick-filter-wrapper">
+            <div
+              className={`quick-filter-trigger ${filtroEstado.length > 0 || filtroPago ? 'has-filters' : ''}`}
+              onClick={() => setShowQuickFilter(prev => !prev)}
+              role="button"
+              tabIndex={0}
+            >
+              <div className="quick-filter-circle">{(tab === 'servicios' ? allServicios : tab === 'productos' ? allProductos : allMovimientos).length}</div>
+              <span className="quick-filter-text">{filtroEstado.length === 0 && !filtroPago ? 'Todas' : filtroEstado.length === 1 ? ESTADO_LABELS[filtroEstado[0]] : filtroEstado.length > 1 ? `${filtroEstado.length} estados` : filtroPago === 'pagado' ? 'Pagado' : 'No pagado'}</span>
+            </div>
+            {showQuickFilter && (
+              <>
+                <div className={`quick-filter-backdrop ${quickFilterClosing ? 'closing' : ''}`} onClick={closeQuickFilter} />
+                <div className={`quick-filter-popup ${quickFilterClosing ? 'closing' : ''}`}>
+                  <div className="quick-filter-section">
+                    <span className="quick-filter-label">Estado</span>
+                    <div className="quick-filter-chips">
+                      {[
+                        { key: 'EN ESPERA', emoji: '🕐', label: 'Espera' },
+                        { key: 'EN LAVADO', emoji: '🫧', label: 'Lavando' },
+                        { key: 'TERMINADO', emoji: '✅', label: 'Terminado' },
+                        { key: 'ENTREGADO', emoji: '🚗', label: 'Entregado' },
+                      ].map(item => (
+                        <button
+                          key={item.key}
+                          className={`quick-filter-chip ${ESTADO_CLASSES[item.key]} ${filtroEstado.includes(item.key) ? 'active' : ''}`}
+                          onClick={() => {
+                            setFiltroEstado(prev => prev.includes(item.key) ? [] : [item.key])
+                            setFiltroPago('')
+                            closeQuickFilter()
+                          }}
+                        >
+                          {item.emoji} {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="quick-filter-divider" />
+                  <div className="quick-filter-section">
+                    <span className="quick-filter-label">Pago</span>
+                    <div className="quick-filter-chips">
+                      {[
+                        { key: 'pagado', emoji: '💰', label: 'Pagado' },
+                        { key: 'sin-pagar', emoji: '🚫', label: 'No pagado' },
+                      ].map(p => (
+                        <button
+                          key={p.key}
+                          className={`quick-filter-chip quick-filter-pago ${filtroPago === p.key ? 'active' : ''}`}
+                          onClick={() => {
+                            setFiltroPago(prev => prev === p.key ? '' : p.key)
+                            setFiltroEstado([])
+                            closeQuickFilter()
+                          }}
+                        >
+                          {p.emoji} {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {(filtroEstado.length > 0 || filtroPago) && (
+                    <button className="quick-filter-clear" onClick={() => { setFiltroEstado([]); setFiltroPago(''); closeQuickFilter() }}>
+                      Limpiar filtros
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          <div className="home-desktop-add-wrapper">
+            <button
+              className={`home-desktop-add-circle ${showFabMenu ? 'open' : ''}`}
+              onClick={() => setShowFabMenu(!showFabMenu)}
+            >
+              <Plus size={22} />
+            </button>
+            {showFabMenu && (
+              <>
+                <div className="desktop-fab-overlay" onClick={() => setShowFabMenu(false)} />
+                <div className="desktop-fab-dropdown">
+                  <button onClick={() => { setShowFabMenu(false); openMovimientoModal('INGRESO') }}>
+                    <TrendingUp size={18} /> Registrar Ing/Egr
+                  </button>
+                  <button onClick={() => { setShowFabMenu(false); setShowServicioModal(true) }}>
+                    <Droplets size={18} /> Nuevo Servicio
+                  </button>
+                  <button onClick={() => { setShowFabMenu(false); setShowNuevoClienteModal(true) }}>
+                    <UserPlus size={18} /> Nuevo Cliente
+                  </button>
+                  <button onClick={() => { setShowFabMenu(false); setShowVentaModal(true) }}>
+                    <DollarSign size={18} /> Nueva Venta
+                  </button>
+                  <button onClick={() => {
+                    setShowFabMenu(false)
+                    if (tab === 'servicios') {
+                      navigate('/lavadas?import=1')
+                    } else {
+                      setImportTipo(tab)
+                      setShowImportModal(true)
+                    }
+                  }}>
+                    <Upload size={18} /> Importar {{ servicios: 'Servicios', productos: 'Productos', movimientos: 'Movimientos' }[tab]}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -2879,6 +2984,7 @@ export default function Home() {
           </button>
         )}
       </div>
+      </>)}
 
       {/* Bulk Action Bar */}
       {modoSeleccion && selectedItems.size > 0 && (

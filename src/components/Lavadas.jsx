@@ -527,6 +527,7 @@ export default function Lavadas() {
     setImportProgress(0)
     setImportResult(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
+    navigate('/home')
   }
 
   const lavadasFiltradas = lavadas.filter(l => {

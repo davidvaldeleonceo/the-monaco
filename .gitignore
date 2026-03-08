@@ -32,6 +32,9 @@ dist-ssr
 server/.env
 server/.env.local
 
+# Deploy scripts (contain secrets)
+scripts/deploy-backend.sh
+
 # Server exports
 server/src/db/exported/
 

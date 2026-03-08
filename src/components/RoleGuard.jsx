@@ -1,6 +1,8 @@
 import { useTenant } from './TenantContext'
 import { ShieldAlert } from 'lucide-react'
 
+const SUPERADMIN_EMAILS = ['principal@themonaco.com.co']
+
 // Role hierarchy: admin > trabajador > viewer
 const ROLE_ACCESS = {
   '/home':          ['admin', 'trabajador', 'viewer'],
@@ -18,7 +20,8 @@ export function getAccessibleRoutes(rol) {
     .map(([path]) => path)
 }
 
-export function canAccess(rol, path) {
+export function canAccess(rol, path, email) {
+  if (path === '/admin') return SUPERADMIN_EMAILS.includes(email)
   const role = (rol || 'admin').toLowerCase()
   const allowed = ROLE_ACCESS[path]
   if (!allowed) return false // unknown routes denied by default
@@ -26,10 +29,10 @@ export function canAccess(rol, path) {
 }
 
 export default function RoleGuard({ path, children }) {
-  const { userProfile } = useTenant()
+  const { userProfile, userEmail } = useTenant()
   const rol = (userProfile?.rol || 'admin').toLowerCase()
 
-  if (!canAccess(rol, path)) {
+  if (!canAccess(rol, path, userEmail)) {
     return (
       <div className="role-restricted-overlay">
         <ShieldAlert size={48} />

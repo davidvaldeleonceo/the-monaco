@@ -4,6 +4,7 @@ import { useTenant } from './TenantContext'
 import { useTheme } from './ThemeContext'
 import { canAccess } from './RoleGuard'
 import UpgradeModal from './UpgradeModal'
+import AiChat from './AiChat'
 import {
   Home,
   LayoutDashboard,
@@ -16,6 +17,7 @@ import {
   ChevronRight,
   Sun,
   Moon,
+  Sparkles,
 } from 'lucide-react'
 
 const PRO_ROUTES = ['/pagos']
@@ -34,6 +36,7 @@ export default function Layout({ user }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [aiPanelOpen, setAiPanelOpen] = useState(true)
 
   const rol = userProfile?.rol || 'admin'
   const isAdmin = rol === 'admin'
@@ -120,6 +123,11 @@ export default function Layout({ user }) {
           ))}
         </nav>
 
+        <button className={`ai-sparkle-btn ${aiPanelOpen ? 'active' : ''}`} onClick={() => { if (!isPro) return; setAiPanelOpen(prev => !prev) }} title="Asistente IA">
+          <Sparkles size={18} />
+          {!sidebarCollapsed && <span className="ai-sparkle-label">AI {appTitle}</span>}
+        </button>
+
         <div className="sidebar-theme-area">
           <span className="sidebar-theme-label">Apariencia</span>
           <button onClick={toggleTheme} className="sidebar-theme-switch" title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
@@ -164,7 +172,7 @@ export default function Layout({ user }) {
         </div>
       </aside>
 
-      <main className="main-content">
+      <main className={`main-content ${aiPanelOpen ? 'ai-panel-active' : ''}`}>
         {planStatus === 'trial' && daysLeftInTrial <= 5 && (
           <div className="plan-banner plan-banner--trial">
             Te quedan {daysLeftInTrial} día{daysLeftInTrial !== 1 ? 's' : ''} de prueba PRO.
@@ -180,6 +188,7 @@ export default function Layout({ user }) {
         <Outlet />
         {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
       </main>
+      <AiChat panelOpen={aiPanelOpen} onTogglePanel={() => setAiPanelOpen(prev => !prev)} />
 
       <nav className="floating-bottom-bar">
         {[
