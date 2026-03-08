@@ -2501,7 +2501,7 @@ export default function Home() {
               tabIndex={0}
             >
               <div className="quick-filter-circle">{(tab === 'servicios' ? allServicios : tab === 'productos' ? allProductos : allMovimientos).length}</div>
-              <span className="quick-filter-text">{filtroEstado.length === 0 && !filtroPago ? 'Todas' : filtroEstado.length === 1 ? ESTADO_LABELS[filtroEstado[0]] : filtroEstado.length > 1 ? `${filtroEstado.length} estados` : filtroPago === 'pagado' ? 'Pagado' : 'No pagado'}</span>
+              <span className="quick-filter-text">{filtroEstado.length === 0 && !filtroPago ? 'Todas' : filtroEstado.length === 1 ? ESTADO_LABELS[filtroEstado[0]] : filtroEstado.length > 1 ? `${filtroEstado.length} estados` : filtroPago === 'pagado' ? 'Pagado' : 'No pagado'} ({(tab === 'servicios' ? allServicios : tab === 'productos' ? allProductos : allMovimientos).length})</span>
             </div>
             {showQuickFilter && (
               <>
