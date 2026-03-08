@@ -28,9 +28,9 @@ router.post('/register_negocio', async (req, res, next) => {
 
     await client.query('BEGIN')
 
-    // Create negocio with 14-day PRO trial
+    // Create negocio with 7-day PRO trial
     const { rows: [negocio] } = await client.query(
-      "INSERT INTO negocios (nombre, plan, trial_ends_at) VALUES ($1, 'pro', now() + INTERVAL '14 days') RETURNING id",
+      "INSERT INTO negocios (nombre, plan, trial_ends_at) VALUES ($1, 'pro', now() + INTERVAL '7 days') RETURNING id",
       [p_nombre_negocio]
     )
 
@@ -74,9 +74,9 @@ router.post('/crear_negocio_y_perfil', async (req, res, next) => {
 
     await client.query('BEGIN')
 
-    // Create negocio with 14-day PRO trial
+    // Create negocio with 7-day PRO trial
     const { rows: [negocio] } = await client.query(
-      "INSERT INTO negocios (nombre, plan, trial_ends_at) VALUES ($1, 'pro', now() + INTERVAL '14 days') RETURNING id",
+      "INSERT INTO negocios (nombre, plan, trial_ends_at) VALUES ($1, 'pro', now() + INTERVAL '7 days') RETURNING id",
       [p_nombre]
     )
 

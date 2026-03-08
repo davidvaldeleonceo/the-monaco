@@ -12,7 +12,10 @@ import authRoutes from './routes/auth.js'
 import rpcRoutes from './routes/rpc.js'
 import crudRoutes from './routes/crud.js'
 import wompiRoutes from './routes/wompi.js'
+import aiRoutes from './routes/ai.js'
 import planLimits from './middleware/planLimits.js'
+import superadmin from './middleware/superadmin.js'
+import adminRoutes from './routes/admin.js'
 import { initRealtime } from './services/realtimeService.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -49,8 +52,14 @@ app.use('/api/auth', authRoutes)
 // RPC routes (auth required)
 app.use('/api/rpc', auth, rpcRoutes)
 
+// AI assistant routes (auth required, PRO check inside)
+app.use('/api/ai', auth, aiRoutes)
+
 // Wompi routes (auth applied per-route inside, webhook is public)
 app.use('/api/wompi', wompiRoutes)
+
+// Admin routes (auth + superadmin, NO tenant scope)
+app.use('/api/admin', auth, superadmin, adminRoutes)
 
 // CRUD routes (auth + tenant scope + plan limits)
 app.use('/api', auth, tenantScope, planLimits, crudRoutes)

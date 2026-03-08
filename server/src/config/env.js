@@ -1,6 +1,6 @@
 import 'dotenv/config'
 
-const required = ['DATABASE_URL', 'JWT_SECRET', 'CORS_ORIGIN', 'WOMPI_PUBLIC_KEY', 'WOMPI_PRIVATE_KEY', 'WOMPI_EVENTS_SECRET', 'WOMPI_INTEGRITY_SECRET']
+const required = ['DATABASE_URL', 'JWT_SECRET', 'CORS_ORIGIN', 'WOMPI_PUBLIC_KEY', 'WOMPI_PRIVATE_KEY', 'WOMPI_EVENTS_SECRET', 'WOMPI_INTEGRITY_SECRET', 'OPENAI_API_KEY']
 
 for (const key of required) {
   if (!process.env[key]) {
@@ -20,4 +20,6 @@ export default {
   wompiPrivateKey: process.env.WOMPI_PRIVATE_KEY || '',
   wompiEventsSecret: process.env.WOMPI_EVENTS_SECRET || '',
   wompiIntegritySecret: process.env.WOMPI_INTEGRITY_SECRET || '',
+  openaiApiKey: process.env.OPENAI_API_KEY || '',
+  openaiModel: process.env.OPENAI_MODEL || 'gpt-5.3-chat-latest',
 }

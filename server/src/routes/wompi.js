@@ -167,7 +167,7 @@ router.get('/status', auth, async (req, res) => {
   }
 })
 
-// POST /api/wompi/start-trial — start/restart 14-day trial
+// POST /api/wompi/start-trial — start/restart 7-day trial
 router.post('/start-trial', auth, async (req, res) => {
   try {
     const negocioId = req.user?.negocio_id
@@ -193,11 +193,11 @@ router.post('/start-trial', auth, async (req, res) => {
     }
 
     await pool.query(
-      "UPDATE negocios SET plan = 'pro', trial_ends_at = now() + INTERVAL '14 days' WHERE id = $1",
+      "UPDATE negocios SET plan = 'pro', trial_ends_at = now() + INTERVAL '7 days' WHERE id = $1",
       [negocioId]
     )
 
-    res.json({ success: true, trialEndsAt: new Date(Date.now() + 14 * 86400000) })
+    res.json({ success: true, trialEndsAt: new Date(Date.now() + 7 * 86400000) })
   } catch (err) {
     logger.error('Start trial error:', err)
     res.status(500).json({ error: 'Error al iniciar período de prueba' })
