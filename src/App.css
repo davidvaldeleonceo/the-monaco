@@ -9690,8 +9690,8 @@ input:checked + .slider:before {
   filter: none;
 }
 .landing-steps-grid > .landing-step-card--carousel:nth-child(3) .landing-step-carousel-img {
-  width: 75%;
-  max-width: 75%;
+  width: 55%;
+  max-width: 55%;
 }
 .landing-steps-grid > .landing-step-card--carousel:nth-child(3) h3 {
   margin-top: -1.5rem;
