@@ -234,15 +234,7 @@ export default function LandingPage() {
           <span className="landing-hero-note">Sin tarjeta de crédito para la prueba</span>
         </div>
         <div className="landing-hero-visual">
-          <div className="landing-phone-mockup">
-            <div className="landing-phone-notch" />
-            <div className="landing-phone-screen">
-              <div className="landing-img-placeholder">
-                <Smartphone size={32} />
-                <span>Screenshot del Home de Monaco mostrando el dashboard con turnos activos, lavadas del día y balance general</span>
-              </div>
-            </div>
-          </div>
+          <img src="/img/hero-phone.png" alt="Monaco PRO - App en acción" className="landing-hero-img" />
         </div>
       </section>
 
@@ -269,14 +261,36 @@ export default function LandingPage() {
         <h2>Cómo funciona</h2>
         <p className="landing-section-subtitle">En 3 pasos tu lavadero queda organizado</p>
         <div className="landing-steps-grid">
-          {steps.map((s) => (
-            <div key={s.number} className="landing-step-card">
-              <div className="landing-step-number">{s.number}</div>
-              <s.icon size={28} strokeWidth={1.5} />
-              <h3>{s.title}</h3>
-              <p>{s.desc}</p>
+          <div className="landing-step-card landing-step-card--carousel">
+            <div className="landing-step-carousel landing-step-carousel--5">
+              <img src="/img/step-3.png" alt="Registro de lavada" className="landing-step-carousel-img" />
+              <img src="/img/step-4.png" alt="Registro de lavada" className="landing-step-carousel-img" />
+              <img src="/img/step-5.png" alt="Registro de lavada" className="landing-step-carousel-img" />
+              <img src="/img/step-6.png" alt="Registro de lavada" className="landing-step-carousel-img" />
+              <img src="/img/step-7.png" alt="Registro de lavada" className="landing-step-carousel-img" />
             </div>
-          ))}
+            <h3>{steps[0].title}</h3>
+            <p>{steps[0].desc}</p>
+          </div>
+          <div className="landing-step-card landing-step-card--carousel">
+            <div className="landing-step-carousel landing-step-carousel--4">
+              <img src="/img/step-8.png" alt="Control de estados" className="landing-step-carousel-img" />
+              <img src="/img/step-9.png" alt="Control de pagos" className="landing-step-carousel-img" />
+              <img src="/img/step-10.png" alt="Control de turnos" className="landing-step-carousel-img" />
+              <img src="/img/step-11.png" alt="Control de clientes" className="landing-step-carousel-img" />
+            </div>
+            <h3>{steps[1].title}</h3>
+            <p>{steps[1].desc}</p>
+          </div>
+          <div className="landing-step-card landing-step-card--carousel">
+            <div className="landing-step-carousel landing-step-carousel--3">
+              <img src="/img/step-18.jpg" alt="Reportes de ingresos" className="landing-step-carousel-img" />
+              <img src="/img/step-19.jpg" alt="Balance del periodo" className="landing-step-carousel-img" />
+              <img src="/img/step-20.jpg" alt="Métricas principales" className="landing-step-carousel-img" />
+            </div>
+            <h3>{steps[2].title}</h3>
+            <p>{steps[2].desc}</p>
+          </div>
         </div>
       </section>
 
