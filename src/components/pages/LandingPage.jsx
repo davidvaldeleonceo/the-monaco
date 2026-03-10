@@ -10,6 +10,7 @@ import EstadoMockup from './EstadoMockup'
 import PagoMockup from './PagoMockup'
 import IaMockup from './IaMockup'
 import BalanceMockup from './BalanceMockup'
+import VideoWidget from './VideoWidget'
 import { API_URL } from '../../config/constants'
 
 const scrollTo = (id) => {
@@ -419,6 +420,9 @@ export default function LandingPage() {
           <p>&copy; 2026 Monaco PRO — Hecho en Colombia</p>
         </div>
       </footer>
+
+      {/* Video Widget */}
+      <VideoWidget />
 
       {/* Checkout Modal */}
       {checkoutPeriod && (
