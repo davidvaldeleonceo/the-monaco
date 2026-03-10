@@ -1,0 +1,2134 @@
+import { useState, useEffect } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { supabase } from '../../apiClient'
+import { useData } from '../context/DataContext'
+import { useTenant } from '../context/TenantContext'
+import { useToast } from '../layout/Toast'
+import { Plus, X, Edit, Trash2, Settings, ChevronDown, Crown, Shield, MessageCircle, Mail, User, Check, LogOut, HelpCircle, Loader } from 'lucide-react'
+import { formatMoney } from '../../utils/money'
+import { API_URL, TOKEN_KEY, SESSION_KEY } from '../../config/constants'
+import { useTour } from '../layout/AppTour'
+import UpgradeModal from '../payment/UpgradeModal'
+import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
+import PasswordInput from '../shared/PasswordInput'
+
+export default function Configuracion() {
+  const navigate = useNavigate()
+  const { refreshConfig, serviciosAdicionales, productos, negocioId, tiposLavado, categoriasTransaccion } = useData()
+  const { userProfile, isPro, planStatus, planCancelled, daysLeftInTrial, refresh, userEmail, negocioNombre, subscriptionPeriod } = useTenant()
+  const toast = useToast()
+  const { startTour } = useTour()
+  const isAdmin = userProfile?.rol === 'admin'
+  const [activeTab, setActiveTab] = useState('datos')
+  const [configSubTab, setConfigSubTab] = useState('membresias')
+  const [editingField, setEditingField] = useState(null) // 'negocio' | 'email' | 'password'
+  const [negocioNombreEdit, setNegocioNombreEdit] = useState('')
+  const [emailEdit, setEmailEdit] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [datosError, setDatosError] = useState('')
+  const [datosSaving, setDatosSaving] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [data, setData] = useState([])
+  const [showModal, setShowModal] = useState(false)
+  const [editando, setEditando] = useState(null)
+  const [formData, setFormData] = useState({})
+  const [expandedCard, setExpandedCard] = useState(null)
+  const [showBulkModal, setShowBulkModal] = useState(false)
+  const [showFabMenu, setShowFabMenu] = useState(false)
+  // Adicionales inline editing (inside lavados tab)
+  const [adicionalEdit, setAdicionalEdit] = useState(null) // { id, nombre, precio } or { id: null, nombre, precio } for new
+  const [showAdicionales, setShowAdicionales] = useState(true)
+  const [pendingDeleteId, setPendingDeleteId] = useState(null)
+  const [pendingAdicionalDeleteId, setPendingAdicionalDeleteId] = useState(null)
+  const [pendingCancelSub, setPendingCancelSub] = useState(false)
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false)
+  const [showDeleteZone, setShowDeleteZone] = useState(false)
+  const [showTypeConfirm, setShowTypeConfirm] = useState(false)
+  const [typeConfirmText, setTypeConfirmText] = useState('')
+  const [showPlanFeatures, setShowPlanFeatures] = useState(false)
+  const [pseStatus, setPseStatus] = useState(null) // 'polling' | 'approved' | 'failed' | 'timeout' | null
+  const [bulkForm, setBulkForm] = useState({
+    tipo_pago: null,
+    pago_porcentaje: '',
+    pago_sueldo_base: '',
+    pago_por_lavada: '',
+    pago_por_adicional: '',
+    pago_porcentaje_lavada: '',
+    pago_adicional_fijo: '',
+    pago_adicionales_detalle: null
+  })
+
+  const tabs = [
+    { id: 'datos', label: 'Mi Cuenta' },
+    ...(isAdmin ? [{ id: 'plan', label: 'Mi Plan' }] : []),
+    ...(isAdmin ? [{ id: 'config', label: 'Configuración' }] : []),
+    { id: 'soporte', label: 'Soporte' },
+  ]
+
+  const configSubTabs = [
+    { id: 'membresias', label: 'Tipos de Cliente', table: 'tipos_membresia' },
+    { id: 'lavados', label: 'Tipos de Servicio', table: 'tipos_lavado' },
+    { id: 'metodos', label: 'Métodos de Pago', table: 'metodos_pago' },
+    { id: 'lavadores', label: 'Lavadores', table: 'lavadores' },
+    { id: 'productos', label: 'Productos', table: 'productos' },
+    { id: 'mensajes', label: 'Mensajes', table: 'plantillas_mensaje' },
+    { id: 'cat_ingresos', label: 'Cat. Ingresos', table: 'categorias_transaccion' },
+    { id: 'cat_egresos', label: 'Cat. Egresos', table: 'categorias_transaccion' },
+  ]
+
+  // Handle ?tab=plan from URL
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab && tabs.some(t => t.id === tab)) setActiveTab(tab)
+    const subtab = searchParams.get('subtab')
+    if (subtab && configSubTabs.some(t => t.id === subtab)) {
+      setActiveTab('config')
+      setConfigSubTab(subtab)
+    }
+  }, [searchParams])
+
+  // PSE return: detect ?pse_return=1, poll transaction, show banner in Plan tab
+  useEffect(() => {
+    if (searchParams.get('pse_return') !== '1') return
+    const txId = localStorage.getItem('monaco_pse_tx_id')
+    if (!txId) {
+      setSearchParams(prev => { prev.delete('pse_return'); return prev })
+      return
+    }
+
+    setActiveTab('plan')
+    setPseStatus('polling')
+
+    let cancelled = false
+    let attempts = 0
+    const MAX_ATTEMPTS = 30 // 30 * 4s = 2 min
+    const token = localStorage.getItem(TOKEN_KEY)
+
+    const poll = setInterval(async () => {
+      if (cancelled) return
+      attempts++
+      try {
+        const res = await fetch(`${API_URL}/api/wompi/check-transaction/${txId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+
+        if (data.status === 'APPROVED') {
+          clearInterval(poll)
+          localStorage.removeItem('monaco_pse_tx_id')
+          setPseStatus('approved')
+          refresh()
+          setSearchParams({ tab: 'plan' })
+          setTimeout(() => setPseStatus(null), 3000)
+        } else if (data.status === 'DECLINED' || data.status === 'ERROR' || data.status === 'VOIDED') {
+          clearInterval(poll)
+          localStorage.removeItem('monaco_pse_tx_id')
+          setPseStatus('failed')
+          setSearchParams({ tab: 'plan' })
+        } else if (attempts >= MAX_ATTEMPTS) {
+          clearInterval(poll)
+          localStorage.removeItem('monaco_pse_tx_id')
+          setPseStatus('timeout')
+          setSearchParams({ tab: 'plan' })
+        }
+      } catch {
+        // network error — keep polling
+      }
+    }, 4000)
+
+    return () => {
+      cancelled = true
+      clearInterval(poll)
+    }
+  }, [])
+
+
+  useEffect(() => {
+    if (activeTab === 'config') fetchData()
+    setExpandedCard(null)
+  }, [activeTab, configSubTab])
+
+  const getTable = () => configSubTabs.find(t => t.id === configSubTab)?.table
+
+  const fetchData = async () => {
+    let query = supabase.from(getTable()).select('*').eq('negocio_id', negocioId)
+    if (configSubTab === 'cat_ingresos') query = query.eq('tipo', 'INGRESO')
+    if (configSubTab === 'cat_egresos') query = query.eq('tipo', 'EGRESO')
+    const { data: result } = await query.order('nombre')
+    setData(result || [])
+  }
+
+  const getInitialForm = () => {
+    switch (configSubTab) {
+      case 'membresias':
+        return { nombre: '', precio: '', descuento: '', duracion_dias: 1, activo: true }
+      case 'lavados':
+        return { nombre: '', precio: '', descripcion: '', adicionales_incluidos: [], activo: true, es_base: false }
+      case 'metodos':
+        return { nombre: '', activo: true }
+      case 'lavadores':
+        return { nombre: '', telefono: '', activo: true, tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null }
+      case 'productos':
+        return { nombre: '', precio: '', cantidad: '', activo: true }
+      case 'mensajes':
+        return { nombre: '', texto: '', activo: true }
+      case 'cat_ingresos':
+        return { nombre: '', tipo: 'INGRESO', activo: true }
+      case 'cat_egresos':
+        return { nombre: '', tipo: 'EGRESO', activo: true }
+      default:
+        return {}
+    }
+  }
+
+  const getEditableFields = () => {
+    switch (configSubTab) {
+      case 'membresias':
+        return ['nombre', 'precio', 'descuento', 'duracion_dias', 'activo']
+      case 'lavados':
+        return ['nombre', 'precio', 'descripcion', 'adicionales_incluidos', 'activo', 'es_base']
+      case 'metodos':
+        return ['nombre', 'activo']
+      case 'lavadores':
+        return ['nombre', 'telefono', 'activo', 'tipo_pago', 'pago_porcentaje', 'pago_sueldo_base', 'pago_por_lavada', 'pago_por_adicional', 'pago_porcentaje_lavada', 'pago_adicional_fijo', 'pago_adicionales_detalle']
+      case 'productos':
+        return ['nombre', 'precio', 'cantidad', 'activo']
+      case 'mensajes':
+        return ['nombre', 'texto', 'activo']
+      case 'cat_ingresos':
+        return ['nombre', 'activo']
+      case 'cat_egresos':
+        return ['nombre', 'activo']
+      default:
+        return []
+    }
+  }
+
+  const stringFields = ['nombre', 'telefono', 'descripcion', 'tipo_pago', 'activo', 'pago_adicionales_detalle', 'adicionales_incluidos', 'es_base', 'texto', 'tipo']
+
+  const numVal = (v) => v === '' || v === null || v === undefined ? '' : v
+  const numChange = (field) => (e) => {
+    setFormData(prev => ({ ...prev, [field]: e.target.value === '' ? '' : Number(e.target.value) }))
+  }
+  const bulkNumChange = (field) => (e) => {
+    setBulkForm(prev => ({ ...prev, [field]: e.target.value === '' ? '' : Number(e.target.value) }))
+  }
+
+  const cleanForSave = (obj) => {
+    const cleaned = { ...obj }
+    for (const key of Object.keys(cleaned)) {
+      if (stringFields.includes(key)) continue
+      if (Array.isArray(cleaned[key])) continue
+      if (cleaned[key] === '' || cleaned[key] === null || cleaned[key] === undefined) {
+        cleaned[key] = 0
+      }
+    }
+    if (cleaned.tipo_pago === '') cleaned.tipo_pago = null
+    // UUID[] column: convert JS array to PostgreSQL array literal or omit for default
+    if ('adicionales_incluidos' in cleaned) {
+      let arr = cleaned.adicionales_incluidos
+      if (!Array.isArray(arr)) {
+        try { arr = JSON.parse(arr) } catch { arr = [] }
+        if (!Array.isArray(arr)) arr = []
+      }
+      if (arr.length === 0) {
+        delete cleaned.adicionales_incluidos
+      } else {
+        cleaned.adicionales_incluidos = `{${arr.join(',')}}`
+      }
+    }
+    return cleaned
+  }
+
+  const handleNew = () => {
+    setEditando(null)
+    setFormData(getInitialForm())
+    setShowModal(true)
+  }
+
+  const handleEdit = (item) => {
+    setEditando(item.id)
+    const fields = getEditableFields()
+    const editData = {}
+    for (const f of fields) {
+      if (f === 'tipo_pago') {
+        editData[f] = item[f] || null
+      } else if (f === 'pago_adicionales_detalle') {
+        editData[f] = item[f] || null
+      } else if (f === 'adicionales_incluidos') {
+        const raw = item[f]
+        editData[f] = Array.isArray(raw) ? raw : []
+      } else if (stringFields.includes(f)) {
+        editData[f] = item[f] ?? ''
+      } else {
+        editData[f] = item[f] ?? ''
+      }
+    }
+    setFormData(editData)
+    setShowModal(true)
+  }
+
+  const requestDeleteConfig = (id) => {
+    setPendingDeleteId(id)
+  }
+
+  const executeDeleteConfig = async () => {
+    const id = pendingDeleteId
+    if (!id) return
+    const { error } = await supabase.from(getTable()).delete().eq('id', id)
+    if (error) {
+      toast.error('Error al eliminar: ' + error.message)
+    } else {
+      fetchData()
+      refreshConfig()
+    }
+    setPendingDeleteId(null)
+  }
+
+  const handleToggleActive = async (item) => {
+    const newStatus = !item.activo
+    setData(data.map(d => d.id === item.id ? { ...d, activo: newStatus } : d))
+
+    const { error } = await supabase.from(getTable()).update({ activo: newStatus }).eq('id', item.id)
+
+    if (error) {
+      toast.error(`Error al actualizar estado: ${error.message}`)
+      fetchData()
+    }
+    refreshConfig()
+  }
+
+  const handleToggleBase = async (item) => {
+    const newBase = !item.es_base
+    if (newBase) {
+      // Optimistic: set all to false, then this one to true
+      setData(data.map(d => ({ ...d, es_base: d.id === item.id })))
+      // DB: clear all, then set this one
+      await supabase.from('tipos_lavado').update({ es_base: false }).eq('negocio_id', negocioId)
+      await supabase.from('tipos_lavado').update({ es_base: true }).eq('id', item.id)
+    } else {
+      setData(data.map(d => d.id === item.id ? { ...d, es_base: false } : d))
+      await supabase.from('tipos_lavado').update({ es_base: false }).eq('id', item.id)
+    }
+    refreshConfig()
+  }
+
+  const handleTipoPagoInline = async (item, nuevoTipo) => {
+    const valor = nuevoTipo || null
+    setData(data.map(d => d.id === item.id ? { ...d, tipo_pago: valor } : d))
+
+    const { error } = await supabase
+      .from('lavadores')
+      .update({ tipo_pago: valor })
+      .eq('id', item.id)
+
+    if (error) {
+      toast.error('Error al actualizar tipo de pago: ' + error.message)
+      fetchData()
+    }
+    refreshConfig()
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+
+    const fields = getEditableFields()
+    const payload = {}
+    for (const f of fields) {
+      payload[f] = formData[f]
+    }
+    const cleaned = cleanForSave(payload)
+
+    // If saving a lavado as base, clear others first
+    if (configSubTab === 'lavados' && cleaned.es_base) {
+      await supabase.from('tipos_lavado').update({ es_base: false }).eq('negocio_id', negocioId)
+    }
+
+    // For categorias, inject the tipo field
+    if (configSubTab === 'cat_ingresos') cleaned.tipo = 'INGRESO'
+    if (configSubTab === 'cat_egresos') cleaned.tipo = 'EGRESO'
+
+    let error
+    if (editando) {
+      const res = await supabase.from(getTable()).update(cleaned).eq('id', editando)
+      error = res.error
+    } else {
+      const res = await supabase.from(getTable()).insert([{ ...cleaned, negocio_id: negocioId }])
+      error = res.error
+    }
+
+    if (error) {
+      toast.error('Error al guardar: ' + error.message)
+      return
+    }
+
+    setShowModal(false)
+    setEditando(null)
+    fetchData()
+    refreshConfig()
+  }
+
+  const handleBulkSubmit = async (e) => {
+    e.preventDefault()
+    const cleaned = cleanForSave({ ...bulkForm })
+    const { error } = await supabase
+      .from('lavadores')
+      .update(cleaned)
+      .eq('activo', true)
+
+    if (error) {
+      toast.error('Error al actualizar: ' + error.message)
+    } else {
+      setShowBulkModal(false)
+      fetchData()
+      refreshConfig()
+    }
+  }
+
+
+  // ─── Adicionales CRUD ─────────────────────────────────────────────
+  const handleAdicionalSave = async () => {
+    if (!adicionalEdit || !adicionalEdit.nombre.trim()) return
+    const payload = { nombre: adicionalEdit.nombre.trim(), precio: Number(adicionalEdit.precio) || 0, activo: true }
+    let error
+    if (adicionalEdit.id) {
+      const res = await supabase.from('servicios_adicionales').update(payload).eq('id', adicionalEdit.id)
+      error = res.error
+    } else {
+      const res = await supabase.from('servicios_adicionales').insert([{ ...payload, negocio_id: negocioId }])
+      error = res.error
+    }
+    if (error) { toast.error('Error: ' + error.message); return }
+    setAdicionalEdit(null)
+    refreshConfig()
+  }
+
+  const requestAdicionalDelete = (id) => {
+    setPendingAdicionalDeleteId(id)
+  }
+
+  const executeAdicionalDelete = async () => {
+    const id = pendingAdicionalDeleteId
+    if (!id) return
+    const { error } = await supabase.from('servicios_adicionales').delete().eq('id', id)
+    if (error) { toast.error('Error: ' + error.message); return }
+    refreshConfig()
+    setPendingAdicionalDeleteId(null)
+  }
+
+  const handleAdicionalToggle = async (item) => {
+    const { error } = await supabase.from('servicios_adicionales').update({ activo: !item.activo }).eq('id', item.id)
+    if (error) { toast.error('Error: ' + error.message); return }
+    refreshConfig()
+  }
+
+  const formatPct = (v) => (Number(v) || 0) + '%'
+
+  const getDetallePago = (item) => {
+    if (!item.tipo_pago) return '-'
+    if (item.tipo_pago === 'porcentaje') {
+      return formatPct(item.pago_porcentaje) + ' del valor total'
+    }
+    if (item.tipo_pago === 'sueldo_fijo') {
+      return `Base ${formatMoney(item.pago_sueldo_base || 0)} + ${formatMoney(item.pago_por_lavada || 0)}/lav + ${formatMoney(item.pago_por_adicional || 0)}/adic`
+    }
+    if (item.tipo_pago === 'porcentaje_lavada') {
+      const tipoBase = tiposLavado.find(t => t.es_base)
+      const baseLabel = tipoBase ? `${tipoBase.nombre} (${formatMoney(tipoBase.precio)})` : 'lavada básica'
+      const adicInfo = item.pago_adicionales_detalle
+        ? 'valor por servicio'
+        : `${formatMoney(item.pago_adicional_fijo || 0)}/adic`
+      return `${formatPct(item.pago_porcentaje_lavada)} de ${baseLabel} + ${adicInfo}`
+    }
+    return '-'
+  }
+
+  const getModoAdicional = (formObj) => {
+    return formObj.pago_adicionales_detalle ? 'por_servicio' : 'mismo_valor'
+  }
+
+  const handleModoAdicionalChange = (setFn, formObj, modo) => {
+    if (modo === 'por_servicio') {
+      const detalle = {}
+      serviciosAdicionales.forEach(s => { detalle[s.id] = 0 })
+      setFn(prev => ({ ...prev, pago_adicionales_detalle: detalle, pago_adicional_fijo: '' }))
+    } else {
+      setFn(prev => ({ ...prev, pago_adicionales_detalle: null, pago_adicional_fijo: '' }))
+    }
+  }
+
+  const handleDetalleAdicionalChange = (setFn, servicioId, value) => {
+    setFn(prev => ({
+      ...prev,
+      pago_adicionales_detalle: {
+        ...(prev.pago_adicionales_detalle || {}),
+        [servicioId]: value === '' ? '' : Number(value)
+      }
+    }))
+  }
+
+  const renderAdicionalesSection = () => (
+    <div key="adicionales-section" className="adicionales-section">
+      <div className="adicionales-section-header" onClick={() => setShowAdicionales(!showAdicionales)}>
+        <h3>Servicios Adicionales ({serviciosAdicionales.length})</h3>
+        <ChevronDown size={16} className={showAdicionales ? 'rotated' : ''} />
+      </div>
+      {showAdicionales && (
+        <div className="adicionales-section-body">
+          {serviciosAdicionales.map(s => (
+            <div key={s.id} className="adicional-row">
+              {adicionalEdit?.id === s.id ? (
+                <>
+                  <input
+                    type="text"
+                    className="adicional-input"
+                    value={adicionalEdit.nombre}
+                    onChange={(e) => setAdicionalEdit({ ...adicionalEdit, nombre: e.target.value })}
+                    placeholder="Nombre"
+                    autoFocus
+                  />
+                  <input
+                    type="number"
+                    className="adicional-input adicional-input-precio"
+                    value={adicionalEdit.precio}
+                    onChange={(e) => setAdicionalEdit({ ...adicionalEdit, precio: e.target.value })}
+                    placeholder="Precio"
+                  />
+                  <button className="btn-icon" onClick={handleAdicionalSave} title="Guardar"><Plus size={16} style={{ transform: 'rotate(45deg)' }} /></button>
+                  <button className="btn-icon" onClick={() => setAdicionalEdit(null)} title="Cancelar"><X size={16} /></button>
+                </>
+              ) : (
+                <>
+                  <span className="adicional-nombre">{s.nombre}</span>
+                  <span className="adicional-precio">{formatMoney(s.precio)}</span>
+                  <label className="switch switch-sm" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={s.activo} onChange={() => handleAdicionalToggle(s)} />
+                    <span className="slider"></span>
+                  </label>
+                  <button className="btn-icon" onClick={() => setAdicionalEdit({ id: s.id, nombre: s.nombre, precio: s.precio })} title="Editar"><Edit size={14} /></button>
+                  <button className="btn-icon delete" onClick={() => requestAdicionalDelete(s.id)} title="Eliminar"><Trash2 size={14} /></button>
+                </>
+              )}
+            </div>
+          ))}
+          {adicionalEdit?.id === null ? (
+            <div className="adicional-row adicional-row-new">
+              <input
+                type="text"
+                className="adicional-input"
+                value={adicionalEdit.nombre}
+                onChange={(e) => setAdicionalEdit({ ...adicionalEdit, nombre: e.target.value })}
+                placeholder="Nombre del adicional"
+                autoFocus
+              />
+              <input
+                type="number"
+                className="adicional-input adicional-input-precio"
+                value={adicionalEdit.precio}
+                onChange={(e) => setAdicionalEdit({ ...adicionalEdit, precio: e.target.value })}
+                placeholder="Precio"
+              />
+              <button className="btn-icon" onClick={handleAdicionalSave} title="Guardar"><Plus size={16} /></button>
+              <button className="btn-icon" onClick={() => setAdicionalEdit(null)} title="Cancelar"><X size={16} /></button>
+            </div>
+          ) : (
+            <button className="btn-add-adicional" onClick={() => setAdicionalEdit({ id: null, nombre: '', precio: '' })}>
+              <Plus size={14} /> Agregar adicional
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderTable = () => {
+    switch (configSubTab) {
+      case 'membresias':
+        return (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Precio</th>
+                  <th>Descuento</th>
+                  <th>Duración</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td>{formatMoney(item.precio)}</td>
+                    <td>{(item.descuento * 100).toFixed(0)}%</td>
+                    <td>{item.duracion_dias === 1 ? '1 mes' : `${item.duracion_dias} meses`}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      case 'lavados':
+        return (
+          <>
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Precio</th>
+                    <th>Incluye</th>
+                    <th>Base</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map(item => {
+                    const inclNames = (item.adicionales_incluidos || [])
+                      .map(id => serviciosAdicionales.find(s => s.id === id)?.nombre)
+                      .filter(Boolean)
+                    return (
+                      <tr key={item.id}>
+                        <td>{item.nombre}</td>
+                        <td>{formatMoney(item.precio)}</td>
+                        <td style={{ fontSize: '0.85em', color: inclNames.length ? 'inherit' : '#999' }}>
+                          {inclNames.length ? inclNames.join(', ') : '—'}
+                        </td>
+                        <td>
+                          <label className="switch">
+                            <input type="checkbox" checked={!!item.es_base} onChange={() => handleToggleBase(item)} />
+                            <span className="slider"></span>
+                          </label>
+                        </td>
+                        <td>
+                          <label className="switch">
+                            <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                            <span className="slider"></span>
+                          </label>
+                        </td>
+                        <td>
+                          <div className="acciones">
+                            <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                            <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {renderAdicionalesSection()}
+          </>
+        )
+      case 'metodos':
+        return (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      case 'lavadores':
+        return (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Teléfono</th>
+                  <th>Modo de Pago</th>
+                  <th>Detalle</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td className="lavador-telefono">{item.telefono || '-'}</td>
+                    <td>
+                      <select
+                        value={item.tipo_pago || ''}
+                        onChange={(e) => handleTipoPagoInline(item, e.target.value)}
+                        className="config-inline-select"
+                      >
+                        <option value="">Sin configurar</option>
+                        <option value="porcentaje">Porcentaje</option>
+                        <option value="sueldo_fijo">Sueldo fijo</option>
+                        <option value="porcentaje_lavada">% de lavada + adic.</option>
+                      </select>
+                    </td>
+                    <td className={`lavador-detalle ${!item.tipo_pago ? 'muted' : ''}`}>
+                      {getDetallePago(item)}
+                    </td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      case 'productos':
+        return (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Precio</th>
+                  <th>Cantidad</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td>{formatMoney(item.precio)}</td>
+                    <td>{item.cantidad}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      case 'mensajes':
+        return (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Título</th>
+                  <th>Texto</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.texto}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      case 'cat_ingresos':
+      case 'cat_egresos':
+        return (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id}>
+                    <td>{item.nombre}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                        <span className="slider"></span>
+                      </label>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      default:
+        return null
+    }
+  }
+
+  const renderMobileCards = () => {
+    if (data.length === 0) return null
+
+    switch (configSubTab) {
+      case 'membresias':
+        return data.map(item => {
+          const isExpanded = expandedCard === item.id
+          return (
+            <div key={item.id} className={`config-card ${isExpanded ? 'expanded' : ''}`}>
+              <div className="config-card-header" onClick={() => setExpandedCard(isExpanded ? null : item.id)}>
+                <div className="config-card-left">
+                  <span className="config-card-nombre">{item.nombre}</span>
+                  <span className="config-card-sub">{formatMoney(item.precio)}</span>
+                </div>
+                <div className="config-card-right">
+                  <label className="switch" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                    <span className="slider"></span>
+                  </label>
+                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="config-card-body">
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Descuento</span>
+                    <span className="cliente-card-value">{(item.descuento * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Duración</span>
+                    <span className="cliente-card-value">{item.duracion_dias === 1 ? '1 mes' : `${item.duracion_dias} meses`}</span>
+                  </div>
+                  <div className="cliente-card-actions">
+                    <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })
+      case 'lavados':
+        return data.map(item => {
+          const isExpanded = expandedCard === item.id
+          const inclNames = (item.adicionales_incluidos || [])
+            .map(id => serviciosAdicionales.find(s => s.id === id)?.nombre)
+            .filter(Boolean)
+          return (
+            <div key={item.id} className={`config-card ${isExpanded ? 'expanded' : ''}`}>
+              <div className="config-card-header" onClick={() => setExpandedCard(isExpanded ? null : item.id)}>
+                <div className="config-card-left">
+                  <span className="config-card-nombre">
+                    {item.nombre}
+                    {item.es_base && <span className="badge-base">Base</span>}
+                  </span>
+                  <span className="config-card-sub">{formatMoney(item.precio)}</span>
+                </div>
+                <div className="config-card-right">
+                  <label className="switch" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                    <span className="slider"></span>
+                  </label>
+                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="config-card-body">
+                  {inclNames.length > 0 && (
+                    <div className="config-card-incluye">
+                      {inclNames.map(name => (
+                        <span key={name} className="tag-incluido">{name}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Lavada Base</span>
+                    <label className="switch" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={!!item.es_base} onChange={() => handleToggleBase(item)} />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
+                  <div className="cliente-card-actions">
+                    <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        }).concat(renderAdicionalesSection())
+      case 'metodos':
+        return data.map(item => (
+          <div key={item.id} className="config-card">
+            <div className="config-card-header">
+              <div className="config-card-left">
+                <span className="config-card-nombre">{item.nombre}</span>
+              </div>
+              <div className="config-card-right">
+                <label className="switch" onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                  <span className="slider"></span>
+                </label>
+                <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={16} /></button>
+                <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /></button>
+              </div>
+            </div>
+          </div>
+        ))
+      case 'lavadores':
+        return data.map(item => {
+          const isExpanded = expandedCard === item.id
+          return (
+            <div key={item.id} className={`config-card ${isExpanded ? 'expanded' : ''}`}>
+              <div className="config-card-header" onClick={() => setExpandedCard(isExpanded ? null : item.id)}>
+                <div className="config-card-left">
+                  <span className="config-card-nombre">{item.nombre}</span>
+                  <span className="config-card-sub">{item.telefono || 'Sin teléfono'}</span>
+                </div>
+                <div className="config-card-right">
+                  <label className="switch" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                    <span className="slider"></span>
+                  </label>
+                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="config-card-body">
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Modo de Pago</span>
+                    <span className="cliente-card-value">
+                      <select
+                        value={item.tipo_pago || ''}
+                        onChange={(e) => handleTipoPagoInline(item, e.target.value)}
+                        className="config-inline-select"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <option value="">Sin configurar</option>
+                        <option value="porcentaje">Porcentaje</option>
+                        <option value="sueldo_fijo">Sueldo fijo</option>
+                        <option value="porcentaje_lavada">% lavada + adic.</option>
+                      </select>
+                    </span>
+                  </div>
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Detalle</span>
+                    <span className={`cliente-card-value lavador-detalle ${!item.tipo_pago ? 'muted' : ''}`}>{getDetallePago(item)}</span>
+                  </div>
+                  <div className="cliente-card-actions">
+                    <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })
+      case 'productos':
+        return data.map(item => {
+          const isExpanded = expandedCard === item.id
+          return (
+            <div key={item.id} className={`config-card ${isExpanded ? 'expanded' : ''}`}>
+              <div className="config-card-header" onClick={() => setExpandedCard(isExpanded ? null : item.id)}>
+                <div className="config-card-left">
+                  <span className="config-card-nombre">{item.nombre}</span>
+                  <span className="config-card-sub">{formatMoney(item.precio)} · {item.cantidad} disp.</span>
+                </div>
+                <div className="config-card-right">
+                  <label className="switch" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                    <span className="slider"></span>
+                  </label>
+                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="config-card-body">
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Precio</span>
+                    <span className="cliente-card-value">{formatMoney(item.precio)}</span>
+                  </div>
+                  <div className="cliente-card-row">
+                    <span className="cliente-card-label">Cantidad</span>
+                    <span className="cliente-card-value">{item.cantidad}</span>
+                  </div>
+                  <div className="cliente-card-actions">
+                    <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })
+      case 'mensajes':
+        return data.map(item => {
+          const isExpanded = expandedCard === item.id
+          return (
+            <div key={item.id} className={`config-card ${isExpanded ? 'expanded' : ''}`}>
+              <div className="config-card-header" onClick={() => setExpandedCard(isExpanded ? null : item.id)}>
+                <div className="config-card-left">
+                  <span className="config-card-nombre">{item.nombre}</span>
+                  <span className="config-card-sub" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>{item.texto}</span>
+                </div>
+                <div className="config-card-right">
+                  <label className="switch" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                    <span className="slider"></span>
+                  </label>
+                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="config-card-body">
+                  <div className="cliente-card-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                    <span className="cliente-card-label">Texto completo</span>
+                    <span className="cliente-card-value" style={{ whiteSpace: 'pre-wrap', fontSize: '0.9em' }}>{item.texto}</span>
+                  </div>
+                  <p style={{ fontSize: '0.8em', color: '#888', margin: '8px 0 4px' }}>
+                    Variables: {'{nombre}'}, {'{telefono}'}, {'{negocio}'}, {'{membresia}'}, {'{estado_membresia}'}, {'{vencimiento}'}, {'{placa}'}, {'{ultimo_servicio}'}, {'{valor_ultimo}'}
+                  </p>
+                  <div className="cliente-card-actions">
+                    <button className="btn-secondary" onClick={() => handleEdit(item)}><Edit size={16} /> Editar</button>
+                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /> Eliminar</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })
+      case 'cat_ingresos':
+      case 'cat_egresos':
+        return data.map(item => (
+          <div key={item.id} className="config-card">
+            <div className="config-card-header">
+              <div className="config-card-left">
+                <span className="config-card-nombre">{item.nombre}</span>
+              </div>
+              <div className="config-card-right">
+                <label className="switch" onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={item.activo} onChange={() => handleToggleActive(item)} />
+                  <span className="slider"></span>
+                </label>
+                <button className="btn-icon" onClick={() => handleEdit(item)}><Edit size={16} /></button>
+                <button className="btn-icon delete" onClick={() => requestDeleteConfig(item.id)}><Trash2 size={16} /></button>
+              </div>
+            </div>
+          </div>
+        ))
+      default:
+        return null
+    }
+  }
+
+  const renderPagoFields = (formObj, setFn, changeHandler) => (
+    <>
+      <div className="form-group">
+        <label>Tipo de Pago</label>
+        <select value={formObj.tipo_pago || ''} onChange={(e) => setFn(prev => ({ ...prev, tipo_pago: e.target.value || null }))}>
+          <option value="">Sin configurar</option>
+          <option value="porcentaje">Porcentaje del valor total</option>
+          <option value="sueldo_fijo">Sueldo fijo + adicionales</option>
+          <option value="porcentaje_lavada">% sobre lavada básica + adicionales</option>
+        </select>
+      </div>
+      {formObj.tipo_pago === 'porcentaje' && (
+        <div className="form-group">
+          <label>Porcentaje sobre el valor total (ej: 40 = 40%)</label>
+          <input type="number" value={numVal(formObj.pago_porcentaje)} onChange={changeHandler('pago_porcentaje')} />
+        </div>
+      )}
+      {formObj.tipo_pago === 'sueldo_fijo' && (
+        <>
+          <div className="form-group">
+            <label>Sueldo Base</label>
+            <input type="number" value={numVal(formObj.pago_sueldo_base)} onChange={changeHandler('pago_sueldo_base')} />
+          </div>
+          <div className="form-group">
+            <label>Pago por Lavada</label>
+            <input type="number" value={numVal(formObj.pago_por_lavada)} onChange={changeHandler('pago_por_lavada')} />
+          </div>
+          <div className="form-group">
+            <label>Pago por Adicional</label>
+            <input type="number" value={numVal(formObj.pago_por_adicional)} onChange={changeHandler('pago_por_adicional')} />
+          </div>
+        </>
+      )}
+      {formObj.tipo_pago === 'porcentaje_lavada' && (
+        <>
+          {(() => {
+            const tipoBase = tiposLavado.find(t => t.es_base)
+            return tipoBase ? (
+              <div className="info-box">
+                Lavada base: <strong>{tipoBase.nombre}</strong> ({formatMoney(tipoBase.precio)})
+              </div>
+            ) : (
+              <div className="info-box warning">
+                No hay lavada base configurada. Ve a Tipos de Servicio y marca una como "Base".
+              </div>
+            )
+          })()}
+          <div className="form-group">
+            <label>% sobre lavada básica (ej: 40 = 40%)</label>
+            <input type="number" value={numVal(formObj.pago_porcentaje_lavada)} onChange={changeHandler('pago_porcentaje_lavada')} />
+          </div>
+          <div className="form-group">
+            <label>Pago por adicionales</label>
+            <select
+              value={getModoAdicional(formObj)}
+              onChange={(e) => handleModoAdicionalChange(setFn, formObj, e.target.value)}
+            >
+              <option value="mismo_valor">Mismo valor por cada adicional</option>
+              <option value="por_servicio">Valor diferente por servicio</option>
+            </select>
+          </div>
+          {getModoAdicional(formObj) === 'mismo_valor' && (
+            <div className="form-group">
+              <label>Pago fijo por cada adicional</label>
+              <input type="number" value={numVal(formObj.pago_adicional_fijo)} onChange={changeHandler('pago_adicional_fijo')} />
+            </div>
+          )}
+          {getModoAdicional(formObj) === 'por_servicio' && (
+            <>
+              <div className="adicionales-config-list">
+                {Object.keys(formObj.pago_adicionales_detalle || {}).map(id => {
+                  const s = serviciosAdicionales.find(serv => serv.id === id)
+                  if (!s) return null
+                  return (
+                    <div className="form-group-row" key={id}>
+                      <label style={{ flex: 1 }}>{s.nombre}</label>
+                      <input
+                        type="number"
+                        style={{ width: '100px' }}
+                        value={numVal(formObj.pago_adicionales_detalle[id])}
+                        onChange={(e) => handleDetalleAdicionalChange(setFn, id, e.target.value)}
+                        placeholder="$0"
+                      />
+                      <button
+                        type="button"
+                        className="btn-icon delete"
+                        onClick={() => {
+                          const newDetalle = { ...formObj.pago_adicionales_detalle }
+                          delete newDetalle[id]
+                          setFn(prev => ({ ...prev, pago_adicionales_detalle: newDetalle }))
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="form-group">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const id = e.target.value
+                    if (id) {
+                      setFn(prev => ({
+                        ...prev,
+                        pago_adicionales_detalle: {
+                          ...(prev.pago_adicionales_detalle || {}),
+                          [id]: 0
+                        }
+                      }))
+                    }
+                  }}
+                  className="add-service-select"
+                >
+                  <option value="">+ Agregar servicio adicional</option>
+                  {serviciosAdicionales
+                    .filter(s => !formObj.pago_adicionales_detalle?.[s.id])
+                    .map(s => (
+                      <option key={s.id} value={s.id}>{s.nombre}</option>
+                    ))}
+                </select>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </>
+  )
+
+  const renderForm = () => {
+    switch (configSubTab) {
+      case 'membresias':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+            </div>
+            <div className="form-group">
+              <label>Precio</label>
+              <input type="number" value={numVal(formData.precio)} onChange={numChange('precio')} required />
+            </div>
+            <div className="form-group">
+              <label>Descuento (decimal, ej: 0.4 = 40%)</label>
+              <input type="number" step="0.01" value={numVal(formData.descuento)} onChange={numChange('descuento')} />
+            </div>
+            <div className="form-group">
+              <label>Duración (meses, 0 = sin vencimiento)</label>
+              <input type="number" min="0" value={numVal(formData.duracion_dias)} onChange={numChange('duracion_dias')} />
+            </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
+            </div>
+          </>
+        )
+      case 'lavados':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+            </div>
+            <div className="form-group">
+              <label>Precio</label>
+              <input type="number" value={numVal(formData.precio)} onChange={numChange('precio')} required />
+            </div>
+            {serviciosAdicionales.length > 0 && (
+              <div className="form-group">
+                <label>Adicionales incluidos en el precio</label>
+                <div className="adicionales-check-list">
+                  {serviciosAdicionales.map(s => (
+                    <label key={s.id} className="adicional-check-item">
+                      <input
+                        type="checkbox"
+                        checked={(formData.adicionales_incluidos || []).includes(s.id)}
+                        onChange={(e) => {
+                          const current = formData.adicionales_incluidos || []
+                          setFormData({
+                            ...formData,
+                            adicionales_incluidos: e.target.checked
+                              ? [...current, s.id]
+                              : current.filter(id => id !== s.id)
+                          })
+                        }}
+                      />
+                      {s.nombre}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
+            </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={!!formData.es_base} onChange={(e) => setFormData({ ...formData, es_base: e.target.checked })} /> Lavada base (para cálculo de pago %)</label>
+            </div>
+          </>
+        )
+      case 'metodos':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+            </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
+            </div>
+          </>
+        )
+      case 'lavadores':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData(prev => ({ ...prev, nombre: e.target.value }))} required />
+            </div>
+            <div className="form-group">
+              <label>Teléfono</label>
+              <input type="text" value={formData.telefono || ''} onChange={(e) => setFormData(prev => ({ ...prev, telefono: e.target.value }))} />
+            </div>
+            {renderPagoFields(formData, setFormData, numChange)}
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData(prev => ({ ...prev, activo: e.target.checked }))} /> Activo</label>
+            </div>
+          </>
+        )
+      case 'productos':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+            </div>
+            <div className="form-group">
+              <label>Precio</label>
+              <input type="number" value={numVal(formData.precio)} onChange={numChange('precio')} required />
+            </div>
+            <div className="form-group">
+              <label>Cantidad disponible</label>
+              <input type="number" min="0" value={numVal(formData.cantidad)} onChange={numChange('cantidad')} required />
+            </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
+            </div>
+          </>
+        )
+      case 'mensajes':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre de la plantilla</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+            </div>
+            <div className="form-group">
+              <label>Texto del mensaje</label>
+              <textarea
+                rows={5}
+                value={formData.texto || ''}
+                onChange={(e) => setFormData({ ...formData, texto: e.target.value })}
+                required
+                style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 'inherit', padding: '8px 12px', borderRadius: '8px', border: '1px solid #ddd' }}
+              />
+              <p style={{ fontSize: '0.8em', color: '#888', marginTop: '6px' }}>
+                Variables disponibles: {'{nombre}'}, {'{telefono}'}, {'{negocio}'}, {'{membresia}'}, {'{estado_membresia}'}, {'{vencimiento}'}, {'{placa}'}, {'{ultimo_servicio}'}, {'{valor_ultimo}'}
+              </p>
+            </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
+            </div>
+          </>
+        )
+      case 'cat_ingresos':
+      case 'cat_egresos':
+        return (
+          <>
+            <div className="form-group">
+              <label>Nombre de la categoría</label>
+              <input type="text" value={formData.nombre || ''} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+            </div>
+            <div className="form-group checkbox-group">
+              <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
+            </div>
+          </>
+        )
+      default:
+        return null
+    }
+  }
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    navigate('/')
+  }
+
+  const handleDeleteAccount = async () => {
+    setShowDeleteAccount(false)
+    setShowTypeConfirm(true)
+    setTypeConfirmText('')
+  }
+
+  const executeDeleteAccount = async () => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    const res = await fetch(`${API_URL}/api/auth/account`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    })
+    const data = await res.json()
+    if (!data.success) throw new Error(data.error || 'Error al eliminar la cuenta')
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(SESSION_KEY)
+    navigate('/')
+  }
+
+  const cancelEdit = () => {
+    setEditingField(null)
+    setDatosError('')
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+  }
+
+  const handleSaveNegocioNombre = async () => {
+    if (!negocioNombreEdit.trim()) return
+    setDatosSaving(true)
+    const { error } = await supabase
+      .from('negocios')
+      .update({ nombre: negocioNombreEdit.trim() })
+      .eq('id', negocioId)
+    setDatosSaving(false)
+    if (error) {
+      setDatosError('Error al guardar: ' + error.message)
+    } else {
+      refresh()
+      cancelEdit()
+    }
+  }
+
+  const handleSaveEmail = async () => {
+    if (!emailEdit.trim() || !currentPassword) return
+    setDatosError('')
+    setDatosSaving(true)
+    try {
+      const token = localStorage.getItem(TOKEN_KEY)
+      const res = await fetch(`${API_URL}/api/auth/update-email`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword, newEmail: emailEdit.trim() }),
+      })
+      const result = await res.json()
+      setDatosSaving(false)
+      if (result.error) {
+        setDatosError(result.error)
+      } else {
+        // Update local session with new token
+        if (result.data?.session) {
+          localStorage.setItem(TOKEN_KEY, result.data.session.access_token)
+          localStorage.setItem(SESSION_KEY, JSON.stringify(result.data.session))
+        }
+        refresh()
+        cancelEdit()
+      }
+    } catch {
+      setDatosSaving(false)
+      setDatosError('Error de conexión')
+    }
+  }
+
+  const handleSavePassword = async () => {
+    if (!currentPassword || !newPassword) return
+    if (newPassword !== confirmPassword) {
+      setDatosError('Las contraseñas no coinciden')
+      return
+    }
+    if (newPassword.length < 6) {
+      setDatosError('La contraseña debe tener al menos 6 caracteres')
+      return
+    }
+    setDatosError('')
+    setDatosSaving(true)
+    try {
+      const token = localStorage.getItem(TOKEN_KEY)
+      const res = await fetch(`${API_URL}/api/auth/update-password`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      const result = await res.json()
+      setDatosSaving(false)
+      if (result.error) {
+        setDatosError(result.error)
+      } else {
+        cancelEdit()
+      }
+    } catch {
+      setDatosSaving(false)
+      setDatosError('Error de conexión')
+    }
+  }
+
+  const renderDatosTab = () => (
+    <div className="cuenta-datos-panel">
+      {datosError && <div className="cuenta-datos-error">{datosError}</div>}
+
+      {/* Correo electrónico */}
+      <div className="cuenta-datos-row">
+        <div className="cuenta-datos-left">
+          <span className="cuenta-datos-label">Correo electrónico</span>
+          {editingField === 'email' ? (
+            <div className="cuenta-datos-edit-fields">
+              <input type="email" className="cuenta-datos-input" value={emailEdit} onChange={(e) => setEmailEdit(e.target.value)} placeholder="Nuevo correo" autoFocus />
+              <PasswordInput className="cuenta-datos-input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Contraseña actual" />
+            </div>
+          ) : (
+            <span className="cuenta-datos-value">{userEmail || '—'}</span>
+          )}
+        </div>
+        {editingField === 'email' ? (
+          <div className="cuenta-datos-confirm-icons">
+            <button className="btn-icon-plain" onClick={handleSaveEmail} disabled={datosSaving} title="Confirmar"><Check size={18} /></button>
+            <button className="btn-icon-plain" onClick={cancelEdit} title="Cancelar"><X size={18} /></button>
+          </div>
+        ) : (
+          editingField === null && (
+            <button className="btn-icon" onClick={() => { setEmailEdit(userEmail || ''); setEditingField('email') }} title="Editar"><Edit size={16} /></button>
+          )
+        )}
+      </div>
+
+      {/* Contraseña */}
+      <div className="cuenta-datos-row">
+        <div className="cuenta-datos-left">
+          <span className="cuenta-datos-label">Contraseña</span>
+          {editingField === 'password' ? (
+            <div className="cuenta-datos-edit-fields">
+              <PasswordInput className="cuenta-datos-input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Contraseña actual" autoFocus />
+              <PasswordInput className="cuenta-datos-input" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Nueva contraseña" />
+              <PasswordInput className="cuenta-datos-input" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirmar nueva contraseña" />
+            </div>
+          ) : (
+            <span className="cuenta-datos-value">••••••••</span>
+          )}
+        </div>
+        {editingField === 'password' ? (
+          <div className="cuenta-datos-confirm-icons">
+            <button className="btn-icon-plain" onClick={handleSavePassword} disabled={datosSaving} title="Confirmar"><Check size={18} /></button>
+            <button className="btn-icon-plain" onClick={cancelEdit} title="Cancelar"><X size={18} /></button>
+          </div>
+        ) : (
+          editingField === null && (
+            <button className="btn-icon" onClick={() => setEditingField('password')} title="Editar"><Edit size={16} /></button>
+          )
+        )}
+      </div>
+
+      {/* Rol */}
+      <div className="cuenta-datos-row">
+        <div className="cuenta-datos-left">
+          <span className="cuenta-datos-label">Rol</span>
+          <span className="cuenta-datos-value">{userProfile?.rol || 'admin'}</span>
+        </div>
+      </div>
+
+      {/* Nombre del negocio */}
+      <div className="cuenta-datos-row">
+        <div className="cuenta-datos-left">
+          <span className="cuenta-datos-label">Nombre del negocio</span>
+          {editingField === 'negocio' ? (
+            <div className="cuenta-datos-edit-fields">
+              <input type="text" className="cuenta-datos-input" value={negocioNombreEdit} onChange={(e) => setNegocioNombreEdit(e.target.value)} autoFocus />
+            </div>
+          ) : (
+            <span className="cuenta-datos-value">{negocioNombre || '—'}</span>
+          )}
+        </div>
+        {editingField === 'negocio' ? (
+          <div className="cuenta-datos-confirm-icons">
+            <button className="btn-icon-plain" onClick={handleSaveNegocioNombre} disabled={datosSaving} title="Confirmar"><Check size={18} /></button>
+            <button className="btn-icon-plain" onClick={cancelEdit} title="Cancelar"><X size={18} /></button>
+          </div>
+        ) : (
+          editingField === null && isAdmin && (
+            <button className="btn-icon" onClick={() => { setNegocioNombreEdit(negocioNombre || ''); setEditingField('negocio') }} title="Editar"><Edit size={16} /></button>
+          )
+        )}
+      </div>
+
+      {/* Cerrar sesión */}
+      <div className="cuenta-datos-row cuenta-datos-logout" onClick={handleLogout}>
+        <div className="cuenta-datos-left">
+          <LogOut size={18} />
+          <span className="cuenta-datos-label">Cerrar sesión</span>
+        </div>
+      </div>
+
+      {/* Eliminar cuenta (solo admin) */}
+      {isAdmin && (
+        <div className="cuenta-delete-zone">
+          <div className="cuenta-datos-row cuenta-datos-delete-toggle" onClick={() => setShowDeleteZone(!showDeleteZone)}>
+            <div className="cuenta-datos-left">
+              <Trash2 size={18} />
+              <span className="cuenta-datos-label">Eliminar mi cuenta</span>
+            </div>
+            <ChevronDown size={18} className={`chevron-icon ${showDeleteZone ? 'rotated' : ''}`} />
+          </div>
+          {showDeleteZone && (
+            <div className="cuenta-delete-content">
+              <p className="cuenta-delete-warning">
+                Esta acción eliminará permanentemente tu negocio, todos los datos y tu cuenta de usuario.
+              </p>
+              <button className="btn-delete-account" onClick={() => setShowDeleteAccount(true)}>
+                Eliminar mi cuenta
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderSoporteTab = () => (
+    <div className="plan-panel">
+      <div className="plan-panel-header">
+        <MessageCircle size={32} />
+        <div>
+          <h2>Soporte</h2>
+        </div>
+      </div>
+      <div className="plan-panel-info">
+        <p>¿Necesitas ayuda? Contáctanos:</p>
+        <div className="cuenta-actions">
+          <a
+            href="https://wa.me/573144016349?text=Hola%2C%20necesito%20ayuda%20con%20Monaco"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary"
+          >
+            <MessageCircle size={18} /> WhatsApp
+          </a>
+          <a
+            href="mailto:soporte@monaco.app"
+            className="btn-secondary"
+          >
+            <Mail size={18} /> Email
+          </a>
+          <button
+            className="btn-secondary"
+            onClick={() => { localStorage.removeItem('monaco_tour_completed'); startTour() }}
+          >
+            <HelpCircle size={18} /> Repetir tutorial
+          </button>
+        </div>
+        <p className="cuenta-version">Monaco v1.0.0</p>
+      </div>
+    </div>
+  )
+
+  const requestCancelSubscription = () => {
+    setPendingCancelSub(true)
+  }
+
+  const executeCancelSubscription = async () => {
+    try {
+      const token = localStorage.getItem(TOKEN_KEY)
+      const res = await fetch(`${API_URL}/api/wompi/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (data.success) {
+        refresh()
+      }
+    } catch {
+      // silently fail
+    }
+    setPendingCancelSub(false)
+  }
+
+  const renderPlanTab = () => {
+    const statusLabel = planCancelled && isPro ? 'CANCELADO'
+      : planStatus === 'active' ? (subscriptionPeriod === 'yearly' ? 'PRO ANUAL' : 'PRO MENSUAL')
+      : planStatus === 'trial' ? 'PRO TRIAL'
+      : 'GRATUITO'
+    const statusClass = planStatus === 'free' ? 'plan-status--free'
+      : planCancelled ? 'plan-status--cancelled'
+      : 'plan-status--pro'
+
+    const expiresAt = userProfile?.negocio?.subscription_expires_at || userProfile?.negocio?.trial_ends_at
+    const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleDateString('es-CO') : null
+
+    const freeFeatures = [
+      { label: 'Hasta 50 lavadas por mes', included: true },
+      { label: 'Hasta 30 clientes', included: true },
+      { label: 'Registro de servicios', included: true },
+      { label: 'Métodos de pago', included: true },
+      { label: 'Lavadas ilimitadas', included: false },
+      { label: 'Clientes ilimitados', included: false },
+      { label: 'Pago de trabajadores', included: false },
+      { label: 'Membresías', included: false },
+      { label: 'Análisis y reportes', included: false },
+      { label: 'Mensajes por WhatsApp', included: false },
+    ]
+
+    const proFeatures = [
+      { label: 'Lavadas ilimitadas', included: true },
+      { label: 'Clientes ilimitados', included: true },
+      { label: 'Registro de servicios', included: true },
+      { label: 'Métodos de pago', included: true },
+      { label: 'Pago de trabajadores', included: true },
+      { label: 'Membresías', included: true },
+      { label: 'Análisis y reportes', included: true },
+      { label: 'Mensajes por WhatsApp', included: true },
+      { label: 'Productos e inventario', included: true },
+      { label: 'Soporte prioritario', included: true },
+    ]
+
+    const features = isPro || planStatus === 'trial' ? proFeatures : freeFeatures
+
+    return (
+      <div className="plan-panel">
+        <div className="plan-panel-header">
+          <Crown size={32} />
+          <div>
+            <h2>Tu Plan</h2>
+            <span className={`plan-status-badge ${statusClass}`}>{statusLabel}</span>
+          </div>
+        </div>
+
+        {pseStatus === 'polling' && (
+          <div className="pse-banner pse-banner--polling">
+            <Loader size={20} className="spin" />
+            <span>Verificando tu pago PSE...</span>
+          </div>
+        )}
+        {pseStatus === 'approved' && (
+          <div className="pse-banner pse-banner--approved">
+            <Check size={20} />
+            <span>¡Pago PSE exitoso! Tu plan PRO está activo.</span>
+          </div>
+        )}
+        {pseStatus === 'failed' && (
+          <div className="pse-banner pse-banner--failed">
+            <X size={20} />
+            <div>
+              <span>El pago PSE fue rechazado.</span>
+              <button className="btn-link" onClick={() => { setPseStatus(null); setShowUpgradeModal(true) }}>Intentar de nuevo</button>
+            </div>
+          </div>
+        )}
+        {pseStatus === 'timeout' && (
+          <div className="pse-banner pse-banner--timeout">
+            <HelpCircle size={20} />
+            <span>El pago está siendo procesado. Tu plan se activará automáticamente cuando se confirme.</span>
+          </div>
+        )}
+
+        {planCancelled && isPro && (
+          <>
+            <div className="plan-panel-info">
+              <p>Tu suscripción fue cancelada. Seguirás con acceso PRO hasta el <strong>{expiresLabel}</strong>.</p>
+            </div>
+            <div className="plan-upgrade-cta">
+              <div className="plan-upgrade-cta-text">
+                <Crown size={20} />
+                <div>
+                  <strong>Reactiva tu suscripción</strong>
+                  <p>No pierdas acceso a todas las funciones PRO</p>
+                </div>
+              </div>
+              <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+                Reactivar Plan
+              </button>
+            </div>
+          </>
+        )}
+
+        {planStatus === 'trial' && !planCancelled && (
+          <div className="plan-panel-info">
+            <p>Te quedan <strong>{daysLeftInTrial}</strong> día{daysLeftInTrial !== 1 ? 's' : ''} de prueba gratuita.</p>
+          </div>
+        )}
+
+        {planStatus === 'active' && !planCancelled && (
+          <div className="plan-panel-info">
+            <p>Tu suscripción está activa — {subscriptionPeriod === 'yearly' ? 'plan anual' : 'plan mensual'}, expira el {expiresLabel || 'N/A'}</p>
+          </div>
+        )}
+
+        {planStatus === 'free' && (
+          <div className="plan-panel-info">
+            <p>Estás en el plan gratuito con funciones limitadas.</p>
+          </div>
+        )}
+
+        {/* Smart CTA first — visible immediately */}
+        {planStatus === 'free' && !planCancelled && (
+          <div className="plan-upgrade-cta">
+            <div className="plan-upgrade-cta-text">
+              <Crown size={20} />
+              <div>
+                <strong>Pasa a PRO Mensual</strong>
+                <p>Desbloquea todas las funciones por $49.900/mes</p>
+              </div>
+            </div>
+            <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+              Actualizar a PRO
+            </button>
+          </div>
+        )}
+
+        {planStatus === 'trial' && !planCancelled && (
+          <div className="plan-upgrade-cta">
+            <div className="plan-upgrade-cta-text">
+              <Crown size={20} />
+              <div>
+                <strong>No pierdas tu acceso PRO</strong>
+                <p>Suscríbete antes de que termine tu prueba</p>
+              </div>
+            </div>
+            <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+              Suscribirse ahora
+            </button>
+          </div>
+        )}
+
+        {planStatus === 'active' && !planCancelled && subscriptionPeriod === 'monthly' && (
+          <div className="plan-upgrade-cta plan-upgrade-cta--savings">
+            <div className="plan-upgrade-cta-text">
+              <Crown size={20} />
+              <div>
+                <strong>Ahorra con el Plan Anual</strong>
+                <p>Paga $490.000/año en vez de $598.800 — ahorra 18%</p>
+              </div>
+            </div>
+            <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+              Cambiar a Anual
+            </button>
+          </div>
+        )}
+
+        {planCancelled && !isPro && (
+          <div className="plan-upgrade-cta">
+            <div className="plan-upgrade-cta-text">
+              <Crown size={20} />
+              <div>
+                <strong>Reactiva tu suscripción</strong>
+                <p>Recupera acceso a todas las funciones PRO</p>
+              </div>
+            </div>
+            <button className="btn-primary plan-upgrade-btn" onClick={() => setShowUpgradeModal(true)}>
+              Reactivar suscripción
+            </button>
+          </div>
+        )}
+
+        {/* Features toggle card */}
+        <div className={`plan-features-card ${showPlanFeatures ? 'expanded' : ''}`}>
+          <div className="plan-features-card-header" onClick={() => setShowPlanFeatures(!showPlanFeatures)}>
+            <span>Tu plan incluye</span>
+            <ChevronDown size={18} className={showPlanFeatures ? 'rotated' : ''} />
+          </div>
+          {showPlanFeatures && (
+            <div className="plan-features-body">
+              <ul className="plan-features">
+                {features.map((f, i) => (
+                  <li key={i} className={f.included ? 'plan-feature-included' : 'plan-feature-locked'}>
+                    {f.included ? <Check size={16} /> : <X size={16} />}
+                    <span>{f.label}</span>
+                  </li>
+                ))}
+              </ul>
+              {isPro && !planCancelled && (
+                <button className="btn-cancel-sub" onClick={requestCancelSubscription}>
+                  Cancelar suscripción
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {showUpgradeModal && (
+          <UpgradeModal
+            onClose={() => setShowUpgradeModal(false)}
+            initialPeriod={planStatus === 'active' && subscriptionPeriod === 'monthly' ? 'yearly' : undefined}
+          />
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="configuracion-page">
+      <div className="config-title-row">
+        <h1 className="page-title">Mi Cuenta</h1>
+      </div>
+
+      {/* Mobile: horizontal pills */}
+      <div className="config-pills-mobile">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            className={`config-pill cuenta-tab-${t.id} ${activeTab === t.id ? 'active' : ''}`}
+            onClick={() => setActiveTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Desktop: tab buttons */}
+      <div className="tabs config-tabs-desktop">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            className={`tab cuenta-tab-${tab.id} ${activeTab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Mis Datos tab */}
+      {activeTab === 'datos' && renderDatosTab()}
+
+      {/* Plan tab */}
+      {activeTab === 'plan' && renderPlanTab()}
+
+      {/* Configuración tab */}
+      {activeTab === 'config' && (
+        <>
+          {/* Config sub-tabs */}
+          <div className="config-pills-mobile config-sub-pills">
+            {configSubTabs.map(t => (
+              <button
+                key={t.id}
+                className={`config-pill ${configSubTab === t.id ? 'active' : ''}`}
+                onClick={() => setConfigSubTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="config-title-row">
+            <div />
+            <div className="config-desktop-actions">
+              {configSubTab === 'lavadores' && (
+                <button className="btn-secondary" onClick={() => {
+                  setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
+                  setShowBulkModal(true)
+                }}>
+                  <Settings size={18} />
+                  <span className="btn-label">Pago General</span>
+                </button>
+              )}
+              <button className="btn-primary" onClick={handleNew}>
+                <Plus size={18} />
+                <span className="btn-label">Nuevo</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Desktop: tabla */}
+          <div className="card config-tabla-desktop">
+            {configSubTab === 'membresias' && !isPro ? (
+              <div className="plan-restricted-inline">
+                <Shield size={32} />
+                <p>Tipos de Cliente/Membresía requiere plan PRO</p>
+                <button className="btn-primary" onClick={() => setShowUpgradeModal(true)}>Ver opciones</button>
+                {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
+              </div>
+            ) : (
+              <>
+                {renderTable()}
+                {data.length === 0 && (
+                  <p className="empty">No hay registros</p>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="config-cards-mobile">
+            {renderMobileCards()}
+            {data.length === 0 && (
+              <div className="clientes-cards-empty">No hay registros</div>
+            )}
+          </div>
+
+          {/* FAB (mobile only) */}
+          {configSubTab === 'lavadores' ? (
+            <>
+              <button
+                className={`config-fab ${showFabMenu ? 'open' : ''}`}
+                onClick={() => setShowFabMenu(!showFabMenu)}
+              >
+                <Plus size={24} />
+              </button>
+              {showFabMenu && (
+                <>
+                  <div className="config-fab-overlay" onClick={() => setShowFabMenu(false)} />
+                  <div className="config-fab-menu">
+                    <button onClick={() => { setShowFabMenu(false); handleNew() }}>
+                      <Plus size={18} /> Nuevo Lavador
+                    </button>
+                    <button onClick={() => {
+                      setShowFabMenu(false)
+                      setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
+                      setShowBulkModal(true)
+                    }}>
+                      <Settings size={18} /> Pago General
+                    </button>
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <button className="config-fab" onClick={handleNew}>
+              <Plus size={24} />
+            </button>
+          )}
+        </>
+      )}
+
+      {/* Soporte tab */}
+      {activeTab === 'soporte' && renderSoporteTab()}
+
+      {showModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h2>{editando ? 'Editar' : 'Nuevo'}</h2>
+              <button className="btn-close" onClick={() => setShowModal(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              {renderForm()}
+              <div className="modal-footer">
+                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button>
+                <button type="submit" className="btn-primary">{editando ? 'Actualizar' : 'Guardar'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showBulkModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h2>Configurar Pago General</h2>
+              <button className="btn-close" onClick={() => setShowBulkModal(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            <p style={{ padding: '0 20px', color: '#666', fontSize: '0.9em' }}>
+              Esto aplicará la configuración de pago a <strong>todos los lavadores activos</strong>.
+            </p>
+            <form onSubmit={handleBulkSubmit}>
+              {renderPagoFields(bulkForm, setBulkForm, bulkNumChange)}
+              <div className="modal-footer">
+                <button type="button" className="btn-secondary" onClick={() => setShowBulkModal(false)}>Cancelar</button>
+                <button type="submit" className="btn-primary">Aplicar a Todos</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingDeleteId}
+        onClose={() => setPendingDeleteId(null)}
+        onConfirm={executeDeleteConfig}
+        message="Se eliminará este registro permanentemente. Ingresa tu contraseña para confirmar."
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingAdicionalDeleteId}
+        onClose={() => setPendingAdicionalDeleteId(null)}
+        onConfirm={executeAdicionalDelete}
+        message="Se eliminará este adicional permanentemente. Ingresa tu contraseña para confirmar."
+      />
+
+      <ConfirmDeleteModal
+        isOpen={pendingCancelSub}
+        onClose={() => setPendingCancelSub(false)}
+        onConfirm={executeCancelSubscription}
+        message="¿Estás seguro de cancelar tu suscripción? Seguirás con acceso PRO hasta que expire. Ingresa tu contraseña para confirmar."
+      />
+
+      <ConfirmDeleteModal
+        isOpen={showDeleteAccount}
+        onClose={() => setShowDeleteAccount(false)}
+        onConfirm={handleDeleteAccount}
+        message="Se eliminarán TODOS los datos de tu negocio: clientes, lavadas, pagos, trabajadores, configuración y tu cuenta de usuario. Esta acción es permanente y no se puede deshacer."
+      />
+
+      {showTypeConfirm && (
+        <div className="modal-overlay confirm-delete-overlay">
+          <div className="modal confirm-delete-modal">
+            <div className="modal-header">
+              <h2>Confirmación final</h2>
+              <button className="btn-close" onClick={() => setShowTypeConfirm(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            <div style={{ padding: '1.5rem' }}>
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                ¿Estás seguro? Escribe <strong>eliminar</strong> para confirmar.
+              </p>
+              <div className="form-group">
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder='Escribe "eliminar"'
+                  value={typeConfirmText}
+                  onChange={(e) => setTypeConfirmText(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowTypeConfirm(false)}>Cancelar</button>
+              <button
+                className="btn-primary"
+                style={{ background: 'var(--accent-red)' }}
+                disabled={typeConfirmText.toLowerCase() !== 'eliminar'}
+                onClick={executeDeleteAccount}
+              >
+                Eliminar definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

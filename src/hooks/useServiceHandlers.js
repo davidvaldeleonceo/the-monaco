@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { supabase } from '../supabaseClient'
-import { useData } from '../components/DataContext'
-import { useToast } from '../components/Toast'
+import { supabase } from '../apiClient'
+import { useData } from '../components/context/DataContext'
+import { useToast } from '../components/layout/Toast'
 import { ESTADO_CLASSES } from '../config/constants'
 
 export function useServiceHandlers() {

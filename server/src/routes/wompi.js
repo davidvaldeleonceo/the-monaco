@@ -155,8 +155,8 @@ router.get('/status', auth, async (req, res) => {
         pool.query('SELECT COUNT(*) FROM clientes WHERE negocio_id = $1', [negocioId]),
       ])
       result.limits = {
-        lavadas: { used: parseInt(lavadaCount.rows[0].count), max: 50 },
-        clientes: { used: parseInt(clienteCount.rows[0].count), max: 30 },
+        lavadas: { used: parseInt(lavadaCount.rows[0].count), max: 5 },
+        clientes: { used: parseInt(clienteCount.rows[0].count), max: 10 },
       }
     }
 
@@ -167,41 +167,9 @@ router.get('/status', auth, async (req, res) => {
   }
 })
 
-// POST /api/wompi/start-trial — start/restart 7-day trial
-router.post('/start-trial', auth, async (req, res) => {
-  try {
-    const negocioId = req.user?.negocio_id
-    if (!negocioId) return res.status(401).json({ error: 'No negocio' })
-
-    const { rows } = await pool.query(
-      'SELECT trial_ends_at, subscription_expires_at FROM negocios WHERE id = $1',
-      [negocioId]
-    )
-    const negocio = rows[0]
-    if (!negocio) return res.status(404).json({ error: 'Negocio not found' })
-
-    const now = new Date()
-
-    // Can't start trial if subscription is active
-    if (negocio.subscription_expires_at && new Date(negocio.subscription_expires_at) > now) {
-      return res.status(400).json({ error: 'Already has active subscription' })
-    }
-
-    // Can't start trial if trial is still active
-    if (negocio.trial_ends_at && new Date(negocio.trial_ends_at) > now) {
-      return res.status(400).json({ error: 'Trial is still active' })
-    }
-
-    await pool.query(
-      "UPDATE negocios SET plan = 'pro', trial_ends_at = now() + INTERVAL '7 days' WHERE id = $1",
-      [negocioId]
-    )
-
-    res.json({ success: true, trialEndsAt: new Date(Date.now() + 7 * 86400000) })
-  } catch (err) {
-    logger.error('Start trial error:', err)
-    res.status(500).json({ error: 'Error al iniciar período de prueba' })
-  }
+// POST /api/wompi/start-trial — DEPRECATED: trial no longer available (freemium model)
+router.post('/start-trial', auth, async (_req, res) => {
+  res.status(410).json({ error: 'El trial gratuito ya no está disponible. Por favor adquiere un plan.' })
 })
 
 // POST /api/wompi/cancel — cancel subscription (keeps PRO until expiration)

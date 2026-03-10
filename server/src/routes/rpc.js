@@ -24,14 +24,14 @@ function issueNewSession(userId, email, negocioId) {
 router.post('/register_negocio', async (req, res, next) => {
   const client = await pool.connect()
   try {
-    const { p_nombre_negocio, p_nombre_usuario, p_email, p_user_id } = req.body
+    const { p_nombre_negocio, p_nombre_usuario, p_email, p_user_id, p_telefono } = req.body
 
     await client.query('BEGIN')
 
-    // Create negocio with 7-day PRO trial
+    // Create negocio on free plan (no trial)
     const { rows: [negocio] } = await client.query(
-      "INSERT INTO negocios (nombre, plan, trial_ends_at) VALUES ($1, 'pro', now() + INTERVAL '7 days') RETURNING id",
-      [p_nombre_negocio]
+      "INSERT INTO negocios (nombre, plan, telefono) VALUES ($1, 'free', $2) RETURNING id",
+      [p_nombre_negocio, p_telefono || null]
     )
 
     // Create user_profile linking user to negocio
@@ -65,7 +65,7 @@ router.post('/register_negocio', async (req, res, next) => {
 router.post('/crear_negocio_y_perfil', async (req, res, next) => {
   const client = await pool.connect()
   try {
-    const { p_nombre, p_email } = req.body
+    const { p_nombre, p_email, p_telefono } = req.body
     const userId = req.user?.id
 
     if (!userId) {
@@ -74,10 +74,10 @@ router.post('/crear_negocio_y_perfil', async (req, res, next) => {
 
     await client.query('BEGIN')
 
-    // Create negocio with 7-day PRO trial
+    // Create negocio on free plan (no trial)
     const { rows: [negocio] } = await client.query(
-      "INSERT INTO negocios (nombre, plan, trial_ends_at) VALUES ($1, 'pro', now() + INTERVAL '7 days') RETURNING id",
-      [p_nombre]
+      "INSERT INTO negocios (nombre, plan, telefono) VALUES ($1, 'free', $2) RETURNING id",
+      [p_nombre, p_telefono || null]
     )
 
     // Create user_profile

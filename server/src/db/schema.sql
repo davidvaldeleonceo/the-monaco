@@ -359,6 +359,7 @@ DO $$ BEGIN
   ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS categoria TEXT;
   ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS descripcion TEXT;
   ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS placa_o_persona TEXT;
+  ALTER TABLE negocios ADD COLUMN IF NOT EXISTS telefono TEXT;
 END $$;
 
 -- Ensure nombre/placa are NOT NULL (idempotent — safe to re-run)
@@ -375,9 +376,11 @@ END $$;
 -- Mark existing negocios as already configured so they skip the wizard
 UPDATE negocios SET setup_complete = true WHERE setup_complete IS NULL OR setup_complete = false;
 
--- Negocios existentes: plan PRO activo por 1 año (grandfathered)
+-- Negocios existentes antes del modelo freemium (2026-03-01): plan PRO activo por 1 año (grandfathered).
+-- Negocios creados después arrancan en free y deben pagar o usar el free tier.
 UPDATE negocios
 SET plan = 'pro',
     trial_ends_at = created_at,
     subscription_expires_at = now() + INTERVAL '365 days'
-WHERE trial_ends_at IS NULL;
+WHERE trial_ends_at IS NULL
+  AND created_at < '2026-03-01';

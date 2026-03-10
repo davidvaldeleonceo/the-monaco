@@ -16,18 +16,18 @@ export const CLIENTES_SELECT = '*, membresia:tipos_membresia(nombre)'
 
 // ─── Estado (service workflow) ──────────────────────────────────────
 export const ESTADO_COLORS = {
-  'EN ESPERA': '#f59e0b',
-  'EN LAVADO': '#3b82f6',
-  'TERMINADO': '#8BA7BF',
-  'ENTREGADO': '#62B6CB',
+  'EN ESPERA': '#575200',
+  'EN LAVADO': '#0A2F7E',
+  'TERMINADO': '#8090A8',
+  'ENTREGADO': '#006048',
 }
 
 export const CHART_THEME = {
-  grid: '#1E3A5F',
-  axis: '#8BA7BF',
-  tooltipBg: '#133253',
-  tooltipBorder: '#1E3A5F',
-  cursorFill: 'rgba(255, 255, 255, 0.04)',
+  grid: '#5B95EE',
+  axis: '#5B95EE',
+  tooltipBg: '#000D3B',
+  tooltipBorder: '#0A2F7E',
+  cursorFill: 'oklch(0.4 0.18 259 / 0.04)',
 }
 
 export const ESTADO_LABELS = {

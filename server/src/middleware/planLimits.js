@@ -35,10 +35,10 @@ export default async function planLimits(req, res, next) {
          AND fecha >= date_trunc('month', now())`,
         [negocioId]
       )
-      if (parseInt(countRows[0].count) >= 50) {
+      if (parseInt(countRows[0].count) >= 5) {
         return res.status(403).json({
           error: 'PLAN_LIMIT_REACHED',
-          limit: 50,
+          limit: 5,
           resource: 'lavadas'
         })
       }
@@ -49,10 +49,10 @@ export default async function planLimits(req, res, next) {
         'SELECT COUNT(*) FROM clientes WHERE negocio_id = $1',
         [negocioId]
       )
-      if (parseInt(countRows[0].count) >= 30) {
+      if (parseInt(countRows[0].count) >= 10) {
         return res.status(403).json({
           error: 'PLAN_LIMIT_REACHED',
-          limit: 30,
+          limit: 10,
           resource: 'clientes'
         })
       }

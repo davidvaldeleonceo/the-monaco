@@ -758,7 +758,7 @@ async function crearLavada(args, negocioId, io) {
   const descuento = Math.round(subtotal * (descuentoMembresia / 100))
   const valor = Math.max(0, subtotal - descuento)
 
-  // 6. Plan limit check (free plan = 50 lavadas/month)
+  // 6. Plan limit check (free plan = 5 lavadas/month)
   const { rows: negocioRows } = await pool.query(
     `SELECT plan, trial_ends_at, subscription_expires_at FROM negocios WHERE id = $1`,
     [negocioId]
@@ -774,8 +774,8 @@ async function crearLavada(args, negocioId, io) {
        WHERE negocio_id = $1 AND fecha >= (date_trunc('month', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`,
       [negocioId]
     )
-    if (parseInt(countRows[0].cnt) >= 50) {
-      return { error: 'Limite del plan gratuito alcanzado (50 lavadas/mes). Actualiza a PRO para continuar.' }
+    if (parseInt(countRows[0].cnt) >= 5) {
+      return { error: 'Limite del plan gratuito alcanzado (5 lavadas/mes). Actualiza a PRO para continuar.' }
     }
   }
 
