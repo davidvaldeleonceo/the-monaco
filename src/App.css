@@ -10437,8 +10437,8 @@ input:checked + .slider:before {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  width: 112px;
-  border-radius: 12px;
+  width: 75px;
+  border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0,0,0,0.25);
   z-index: 1000;
@@ -10466,8 +10466,8 @@ input:checked + .slider:before {
 .vw-mini-close,
 .vw-mini-mute {
   position: absolute;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: rgba(0,0,0,0.6);
   backdrop-filter: blur(4px);
@@ -10489,8 +10489,8 @@ input:checked + .slider:before {
   position: absolute;
   inset: -8px;
 }
-.vw-mini-close { top: 6px; right: 6px; }
-.vw-mini-mute { bottom: 6px; left: 6px; }
+.vw-mini-close { top: 4px; right: 4px; }
+.vw-mini-mute { bottom: 4px; left: 4px; }
 .vw-mini-close:hover,
 .vw-mini-mute:hover { background: rgba(0,0,0,0.8); }
 .vw-mini-close:active,
@@ -10623,7 +10623,7 @@ input:checked + .slider:before {
 
 /* Desktop: make mini player slightly bigger */
 @media (min-width: 768px) {
-  .vw-mini { width: 135px; bottom: 28px; right: 28px; }
+  .vw-mini { width: 90px; bottom: 28px; right: 28px; }
   .vw-expanded { max-width: 440px; }
 }
 

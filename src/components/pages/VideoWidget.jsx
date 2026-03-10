@@ -103,10 +103,10 @@ export default function VideoWidget() {
             className="vw-mini-video"
           />
           <button className="vw-mini-close" onClick={handleClose} aria-label="Cerrar video">
-            <X size={14} strokeWidth={2.5} />
+            <X size={11} strokeWidth={2.5} />
           </button>
           <button className="vw-mini-mute" onClick={handleMuteClick} aria-label={muted ? 'Activar sonido' : 'Silenciar'}>
-            {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            {muted ? <VolumeX size={11} /> : <Volume2 size={11} />}
           </button>
         </div>
       )}
