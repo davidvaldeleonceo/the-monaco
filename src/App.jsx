@@ -1,28 +1,32 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './apiClient'
-import Login from './components/auth/Login'
-import Register from './components/auth/Register'
 import Layout from './components/layout/Layout'
-import Lavadas from './components/pages/Lavadas'
-import Clientes from './components/pages/Clientes'
-import Reportes from './components/pages/Reportes'
-import PagoTrabajadores from './components/pages/PagoTrabajadores'
-import Configuracion from './components/pages/Configuracion'
-import Home from './components/pages/Home'
-import LandingPage from './components/pages/LandingPage'
 import { DataProvider } from './components/context/DataContext'
 import { TenantProvider, useTenant } from './components/context/TenantContext'
 import { ThemeProvider } from './components/context/ThemeContext'
 import { MoneyVisibilityProvider } from './components/context/MoneyVisibilityContext'
 import { ToastProvider } from './components/layout/Toast'
-import Onboarding from './components/auth/Onboarding'
-import SetupWizard from './components/auth/SetupWizard'
 import RoleGuard from './components/guards/RoleGuard'
-import AdminDashboard from './components/Admin/AdminDashboard'
 import PlanGuard from './components/guards/PlanGuard'
 import { TourProvider } from './components/layout/AppTour'
 import './App.css'
+
+// Lazy: pages (loaded on demand)
+const Home = lazy(() => import('./components/pages/Home'))
+const Lavadas = lazy(() => import('./components/pages/Lavadas'))
+const Clientes = lazy(() => import('./components/pages/Clientes'))
+const Reportes = lazy(() => import('./components/pages/Reportes'))
+const PagoTrabajadores = lazy(() => import('./components/pages/PagoTrabajadores'))
+const Configuracion = lazy(() => import('./components/pages/Configuracion'))
+const AdminDashboard = lazy(() => import('./components/Admin/AdminDashboard'))
+
+// Lazy: unauthenticated pages
+const LandingPage = lazy(() => import('./components/pages/LandingPage'))
+const Login = lazy(() => import('./components/auth/Login'))
+const Register = lazy(() => import('./components/auth/Register'))
+const Onboarding = lazy(() => import('./components/auth/Onboarding'))
+const SetupWizard = lazy(() => import('./components/auth/SetupWizard'))
 
 function AuthenticatedApp({ session }) {
   const { loading, needsOnboarding, needsSetup } = useTenant()
@@ -32,16 +36,17 @@ function AuthenticatedApp({ session }) {
   }
 
   if (needsOnboarding) {
-    return <Onboarding />
+    return <Suspense fallback={<div className="loading-screen">Cargando...</div>}><Onboarding /></Suspense>
   }
 
   if (needsSetup) {
-    return <SetupWizard />
+    return <Suspense fallback={<div className="loading-screen">Cargando...</div>}><SetupWizard /></Suspense>
   }
 
   return (
     <DataProvider>
       <TourProvider>
+      <Suspense fallback={<div className="loading-screen">Cargando...</div>}>
       <Routes>
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/login" element={<Navigate to="/home" replace />} />
@@ -57,6 +62,7 @@ function AuthenticatedApp({ session }) {
         </Route>
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
+      </Suspense>
       </TourProvider>
     </DataProvider>
   )
@@ -91,9 +97,9 @@ function App() {
         <Routes>
           {!session ? (
             <>
-              <Route path="/" element={<LandingPage />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/registro" element={<Register />} />
+              <Route path="/" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><LandingPage /></Suspense>} />
+              <Route path="/login" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><Login /></Suspense>} />
+              <Route path="/registro" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><Register /></Suspense>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           ) : (

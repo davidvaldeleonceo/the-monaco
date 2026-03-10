@@ -7,33 +7,31 @@ export default function VideoWidget() {
   const [muted, setMuted] = useState(true)
   const videoMiniRef = useRef(null)
   const videoExpandedRef = useRef(null)
+  const pendingTimeRef = useRef(null)
 
-  // Sync time when switching between mini and expanded
+  // Issue 3 fix: Sync video AFTER React commits the DOM via useEffect
+  useEffect(() => {
+    if (pendingTimeRef.current === null) return
+    const time = pendingTimeRef.current
+    pendingTimeRef.current = null
+
+    const video = mode === 'expanded' ? videoExpandedRef.current : videoMiniRef.current
+    if (video) {
+      video.currentTime = time
+      video.play().catch(() => {})
+    }
+  }, [mode])
+
   const switchToExpanded = useCallback(() => {
     const miniV = videoMiniRef.current
-    const time = miniV ? miniV.currentTime : 0
+    pendingTimeRef.current = miniV ? miniV.currentTime : 0
     setMode('expanded')
-    // After render, sync expanded video
-    requestAnimationFrame(() => {
-      const expV = videoExpandedRef.current
-      if (expV) {
-        expV.currentTime = time
-        expV.play().catch(() => {})
-      }
-    })
   }, [])
 
   const switchToMini = useCallback(() => {
     const expV = videoExpandedRef.current
-    const time = expV ? expV.currentTime : 0
+    pendingTimeRef.current = expV ? expV.currentTime : 0
     setMode('mini')
-    requestAnimationFrame(() => {
-      const miniV = videoMiniRef.current
-      if (miniV) {
-        miniV.currentTime = time
-        miniV.play().catch(() => {})
-      }
-    })
   }, [])
 
   const handleRestart = useCallback(() => {
@@ -129,6 +127,7 @@ export default function VideoWidget() {
               muted={muted}
               autoPlay
               playsInline
+              loop
               preload="metadata"
               className="vw-expanded-video"
             />
