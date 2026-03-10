@@ -10437,8 +10437,8 @@ input:checked + .slider:before {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  width: 150px;
-  border-radius: 14px;
+  width: 112px;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0,0,0,0.25);
   z-index: 1000;
@@ -10623,7 +10623,7 @@ input:checked + .slider:before {
 
 /* Desktop: make mini player slightly bigger */
 @media (min-width: 768px) {
-  .vw-mini { width: 180px; bottom: 28px; right: 28px; }
+  .vw-mini { width: 135px; bottom: 28px; right: 28px; }
   .vw-expanded { max-width: 440px; }
 }
 
