@@ -9513,7 +9513,7 @@ input:checked + .slider:before {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 3rem 1.5rem 2rem;
+  padding: 4rem 1.5rem 2rem;
   max-width: 1400px;
   margin: 0 auto;
   gap: 2.5rem;
@@ -9525,7 +9525,7 @@ input:checked + .slider:before {
 }
 
 .landing-hero h1 {
-  font-size: 2.2rem;
+  font-size: 1.5rem;
   font-weight: 800;
   line-height: 1.15;
   margin-bottom: 1rem;
@@ -9537,6 +9537,18 @@ input:checked + .slider:before {
   color: var(--lp-text-sec);
   line-height: 1.6;
   margin-bottom: 2rem;
+}
+.landing-hero-desc {
+  display: none;
+}
+.landing-hero-img-mobile {
+  display: block;
+  max-width: 336px;
+  width: 100%;
+  height: auto;
+  margin: 4rem auto;
+  border-radius: 16px;
+  animation: fadeInUp 0.7s ease-out 0.1s both;
 }
 
 .landing-hero-buttons {
@@ -9653,6 +9665,7 @@ input:checked + .slider:before {
 
 /* Hero Visual */
 .landing-hero-visual {
+  display: none;
   animation: fadeInUp 0.8s ease-out 0.2s both;
   flex-shrink: 0;
 }
@@ -10915,12 +10928,24 @@ input:checked + .slider:before {
     font-size: 2.8rem;
   }
 
+  .landing-hero-desc {
+    display: block;
+  }
+
+  .landing-hero-img-mobile {
+    display: none;
+  }
+
   .landing-hero-buttons {
     justify-content: flex-start;
   }
 
   .landing-hero-note {
     text-align: left;
+  }
+
+  .landing-hero-visual {
+    display: block;
   }
 
   .landing-hero-img {

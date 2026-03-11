@@ -222,7 +222,8 @@ export default function LandingPage() {
       <section className="landing-hero">
         <div className="landing-hero-content">
           <h1>Tu lavadero funcionando bien, estés o no estés</h1>
-          <p>Controla turnos, pagos y clientes desde el celular. Deja de ser el único que sabe cómo funciona tu negocio.</p>
+          <p className="landing-hero-desc">Controla turnos, pagos y clientes desde el celular. Deja de ser el único que sabe cómo funciona tu negocio.</p>
+          <img src="/img/hero-phone-mobile.png" alt="Monaco PRO en acción" className="landing-hero-img-mobile" />
           <div className="landing-hero-buttons">
             <a href="https://wa.me/573144016349?text=Hola%2C%20quiero%20información%20sobre%20Monaco%20PRO"
                target="_blank" rel="noopener noreferrer" className="landing-cta-primary">
