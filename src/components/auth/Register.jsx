@@ -99,12 +99,15 @@ export default function Register() {
         </div>
         <div className="login-box celebration-box">
           <div className="celebration-icon">🎉</div>
-          <h1 className="celebration-title">¡Registro exitoso!</h1>
+          <h1 className="celebration-title">¡Bienvenido a Monaco!</h1>
           <p className="celebration-message">
-            Revisa tu correo electrónico para confirmar tu cuenta y luego inicia sesión.
+            Revisa tu correo electrónico para confirmar tu cuenta.
+          </p>
+          <p className="celebration-message" style={{ marginTop: '0.5rem', fontWeight: 600 }}>
+            Dejemos tu negocio listo en menos de 2 minutos
           </p>
           <button className="login-button" onClick={() => navigate('/login')}>
-            Ir a iniciar sesión
+            Iniciar
           </button>
         </div>
       </div>
@@ -183,6 +186,11 @@ export default function Register() {
           <span>¿Ya tienes cuenta? </span>
           <a href="/login" onClick={(e) => { e.preventDefault(); navigate('/login') }}>
             Inicia sesión
+          </a>
+        </div>
+        <div className="login-back-link">
+          <a href="/" onClick={(e) => { e.preventDefault(); navigate('/') }}>
+            ← Volver
           </a>
         </div>
       </div>

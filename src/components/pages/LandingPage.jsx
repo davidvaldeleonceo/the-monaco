@@ -189,7 +189,7 @@ export default function LandingPage() {
     <div className="landing-page">
       {/* Nav */}
       <nav className="landing-nav">
-        <div className="landing-nav-logo">
+        <div className="landing-nav-logo" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} role="button" style={{ cursor: 'pointer' }}>
           <span className="landing-logo-text">monaco</span>
           <span className="landing-logo-badge">PRO</span>
         </div>
@@ -201,10 +201,9 @@ export default function LandingPage() {
         </div>
         <div className="landing-nav-links">
           <Link to="/login" className="landing-nav-link">Ingresar</Link>
-          <a href="https://wa.me/573144016349?text=Hola%2C%20quiero%20información%20sobre%20Monaco%20PRO"
-             target="_blank" rel="noopener noreferrer" className="landing-nav-btn">
-            <MessageCircle size={14} /> WhatsApp
-          </a>
+          <Link to="/registro" className="landing-nav-btn">
+            Comienza gratis
+          </Link>
         </div>
       </nav>
 
@@ -225,15 +224,14 @@ export default function LandingPage() {
           <p className="landing-hero-desc">Controla turnos, pagos y clientes desde el celular. Deja de ser el único que sabe cómo funciona tu negocio.</p>
           <img src="/img/hero-phone-mobile.png" alt="Monaco PRO en acción" className="landing-hero-img-mobile" />
           <div className="landing-hero-buttons">
-            <a href="https://wa.me/573144016349?text=Hola%2C%20quiero%20información%20sobre%20Monaco%20PRO"
-               target="_blank" rel="noopener noreferrer" className="landing-cta-primary">
-              <MessageCircle size={18} /> Escríbenos por WhatsApp
-            </a>
+            <Link to="/registro" className="landing-cta-primary">
+              Comienza gratis
+            </Link>
             <a href="#precios" className="landing-cta-secondary" onClick={(e) => { e.preventDefault(); scrollTo('precios') }}>
               Comprar ahora
             </a>
           </div>
-          <span className="landing-hero-note">Te respondemos en menos de 5 minutos</span>
+          <span className="landing-hero-note">Sin tarjeta de crédito</span>
         </div>
         <div className="landing-hero-visual">
           <img src="/img/hero-phone.png" alt="Monaco PRO - App en acción" className="landing-hero-img" />
@@ -361,10 +359,9 @@ export default function LandingPage() {
             <button className="landing-cta-primary landing-cta-primary-alt" onClick={() => setCheckoutPeriod('yearly')}>Comprar anual</button>
           </div>
         </div>
-        <a href="https://wa.me/573144016349?text=Hola%2C%20tengo%20dudas%20sobre%20los%20planes%20de%20Monaco%20PRO"
-           target="_blank" rel="noopener noreferrer" className="landing-pricing-free">
-          ¿Tienes dudas? Escríbenos por WhatsApp
-        </a>
+        <Link to="/registro" className="landing-pricing-free">
+          Comienza con el plan gratuito →
+        </Link>
       </section>
 
       {/* Testimonials */}
@@ -389,14 +386,13 @@ export default function LandingPage() {
       {/* CTA Final */}
       <section className="landing-cta-final">
         <h2>Empieza a controlar tu lavadero hoy</h2>
-        <p>Escríbenos y te ayudamos a configurar tu cuenta.</p>
+        <p>Registra tu negocio en menos de 2 minutos. Sin tarjeta de crédito.</p>
         <div className="landing-hero-buttons">
-          <a href="https://wa.me/573144016349?text=Hola%2C%20quiero%20empezar%20con%20Monaco%20PRO"
-             target="_blank" rel="noopener noreferrer" className="landing-cta-primary">
-            <MessageCircle size={18} /> Escríbenos por WhatsApp
-          </a>
+          <Link to="/registro" className="landing-cta-primary">
+            Comienza gratis
+          </Link>
           <a href="#precios" className="landing-cta-secondary" onClick={(e) => { e.preventDefault(); scrollTo('precios') }}>
-            Comprar ahora
+            Ver planes PRO
           </a>
         </div>
       </section>

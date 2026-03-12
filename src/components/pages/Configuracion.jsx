@@ -368,7 +368,7 @@ export default function Configuracion() {
     setShowModal(false)
     setEditando(null)
     fetchData()
-    refreshConfig()
+    await refreshConfig()
   }
 
   const handleBulkSubmit = async (e) => {

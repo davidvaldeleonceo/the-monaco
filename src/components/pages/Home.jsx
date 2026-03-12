@@ -24,7 +24,7 @@ import { fechaToBogotaDate, nowBogota } from '../../utils/date'
 export default function Home() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal, refreshClientes } = useData()
+  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal, refreshClientes, categoriasTransaccion } = useData()
   const { negocioNombre, userEmail } = useTenant()
   const { showMoney, toggleMoney, displayMoney, displayMoneyShort } = useMoneyVisibility()
   const toast = useToast()
@@ -123,6 +123,7 @@ export default function Home() {
 
   // Expandable product cards
   const [expandedProductCard, setExpandedProductCard] = useState(null)
+  const [pendingDeleteMovimientoId, setPendingDeleteMovimientoId] = useState(null)
   const [editProductId, setEditProductId] = useState(null)
   const [editProductData, setEditProductData] = useState(null)
 
@@ -152,9 +153,15 @@ export default function Home() {
   const [movimientoDragY, setMovimientoDragY] = useState(0)
   const movimientoDragStartY = useRef(null)
 
-  const categoriasMovimiento = {
+  const defaultCatMov = {
     INGRESO: ['SERVICIO', 'ADICIONAL', 'OTRO'],
     EGRESO: ['INSUMOS', 'SERVICIOS', 'ABONO A SUELDO', 'ARRIENDO', 'PAGO TRABAJADOR', 'OTRO']
+  }
+  const catIngresosCustom = categoriasTransaccion.filter(c => c.tipo === 'INGRESO').map(c => c.nombre)
+  const catEgresosCustom = categoriasTransaccion.filter(c => c.tipo === 'EGRESO').map(c => c.nombre)
+  const categoriasMovimiento = {
+    INGRESO: [...new Set([...defaultCatMov.INGRESO, ...catIngresosCustom])],
+    EGRESO: [...new Set([...defaultCatMov.EGRESO, ...catEgresosCustom])],
   }
 
   const handleWhatsApp = (lavada, opts = {}) => {
@@ -1303,6 +1310,23 @@ export default function Home() {
     const d = fecha.getDate()
     const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
     return `${d} de ${meses[fecha.getMonth()]}`
+  }
+
+  // Delete transaccion (producto/movimiento)
+  const executeEliminarMovimiento = async () => {
+    const id = pendingDeleteMovimientoId
+    if (!id) return
+    try {
+      const { error } = await supabase.from('transacciones').delete().eq('id', id).eq('negocio_id', negocioId)
+      if (error) throw error
+      await fetchTransacciones()
+      toast.success('Movimiento eliminado')
+      setExpandedProductCard(null)
+    } catch (err) {
+      toast.error('Error al eliminar movimiento')
+    } finally {
+      setPendingDeleteMovimientoId(null)
+    }
   }
 
   // Product card edit handlers
@@ -2813,6 +2837,9 @@ export default function Home() {
                             <button className="btn-secondary" onClick={() => iniciarEdicionProducto(item)}>
                               <Pencil size={16} /> Editar
                             </button>
+                            <button className="btn-danger" onClick={() => setPendingDeleteMovimientoId(item.id)}>
+                              <Trash2 size={16} /> Eliminar
+                            </button>
                           </div>
                         </>
                       )}
@@ -2957,6 +2984,9 @@ export default function Home() {
                             <button className="btn-secondary" onClick={() => iniciarEdicionProducto(item)}>
                               <Pencil size={16} /> Editar
                             </button>
+                            <button className="btn-danger" onClick={() => setPendingDeleteMovimientoId(item.id)}>
+                              <Trash2 size={16} /> Eliminar
+                            </button>
                           </div>
                         </>
                       )}
@@ -3020,6 +3050,13 @@ export default function Home() {
         onClose={() => setPendingDeleteLavadaId(null)}
         onConfirm={executeEliminarLavada}
         message="Se eliminará este servicio permanentemente. Ingresa tu contraseña para confirmar."
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!pendingDeleteMovimientoId}
+        onClose={() => setPendingDeleteMovimientoId(null)}
+        onConfirm={executeEliminarMovimiento}
+        message="Se eliminará este movimiento permanentemente. Ingresa tu contraseña para confirmar."
       />
 
       {/* Cliente Info Modal */}

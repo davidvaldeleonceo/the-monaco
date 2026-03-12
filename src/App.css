@@ -254,6 +254,23 @@ body {
   font-size: 0.9rem;
 }
 
+.login-forgot-link {
+  text-align: right;
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.login-forgot-link a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+.login-forgot-link a:hover {
+  color: var(--accent-green);
+  text-decoration: underline;
+}
+
 .login-register-link {
   text-align: center;
   margin-top: 1.5rem;
@@ -353,7 +370,11 @@ body {
 }
 
 .sidebar.collapsed {
-  width: 260px;
+  width: 68px;
+}
+
+.sidebar.collapsed .sidebar-theme-area {
+  display: none;
 }
 
 .sidebar-header {
@@ -679,6 +700,7 @@ body {
 
 .main-content {
   flex: 1;
+  min-width: 0;
   margin-left: 0;
   padding: 60px 0.75rem 5.5rem;
   background: var(--bg-primary);
@@ -2296,11 +2318,11 @@ body {
   flex: 1; min-height: 300px; display: flex; align-items: center; justify-content: center;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1180px) {
   .resumen-card { cursor: default; }
   .balance-popover { display: none; }
 }
-@media (max-width: 768px) {
+@media (max-width: 1179px) {
   .resumen-card { cursor: pointer; }
 }
 
@@ -4414,7 +4436,7 @@ body {
 
 .lavada-card-valor-mini {
   font-weight: 700;
-  font-size: 1.5rem;
+  font-size: 1.1rem;
   white-space: nowrap;
 }
 .lavada-card-valor-mini.valor-ok { color: oklch(0.5 0.18 160); }
@@ -7411,8 +7433,8 @@ input:checked + .slider:before {
   display: none;
 }
 
-/* ===== Tablet/Desktop: 769px+ ===== */
-@media (min-width: 769px) {
+/* ===== Desktop: 1180px+ ===== */
+@media (min-width: 1180px) {
   /* Home page desktop */
   .home-page { padding: 2rem; }
   .home-balance-inline { display: none; }
@@ -7866,8 +7888,8 @@ input:checked + .slider:before {
 
   .main-content {
     margin-left: 260px;
-    padding: 2rem;
-    overflow-x: visible;
+    padding: 2rem 2.5rem;
+    overflow-x: hidden;
   }
 
   .sidebar.collapsed ~ .main-content {
@@ -7995,7 +8017,7 @@ input:checked + .slider:before {
   }
 
   .lavada-card-valor-mini {
-    font-size: 1.5rem;
+    font-size: 1.35rem;
   }
 
   .estado-badge-mini {
@@ -8742,7 +8764,7 @@ input:checked + .slider:before {
   }
 
   .lavada-card-valor-mini {
-    font-size: 1.5rem;
+    font-size: 1rem;
   }
 
   /* Card body compact */
@@ -8867,19 +8889,17 @@ input:checked + .slider:before {
   .pago-popover-input { width: 75px; }
 }
 
-/* ===== Tablet: 481–768px ===== */
-@media (min-width: 481px) and (max-width: 768px) {
+/* ===== Tablet: 481–1179px ===== */
+@media (min-width: 481px) and (max-width: 1179px) {
   .main-content {
-    padding: 56px 1rem 5.5rem;
+    padding: 56px 1.5rem 5.5rem;
   }
 
   .page-title {
     font-size: 1.25rem;
   }
 
-  .lavadas-cards,
-  .clientes-grid,
-  .home-recent-list {
+  .clientes-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 0.75rem;
@@ -8907,10 +8927,6 @@ input:checked + .slider:before {
 
   .lavada-card-header {
     padding: 0.875rem 1.25rem;
-  }
-
-  .main-content {
-    padding: 2rem 2.5rem;
   }
 
   .filters {
@@ -9368,7 +9384,7 @@ input:checked + .slider:before {
   z-index: -1;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1180px) {
   .floating-bottom-bar {
     display: none;
   }
@@ -9513,7 +9529,7 @@ input:checked + .slider:before {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 4rem 1.5rem 2rem;
+  padding: 2rem 1.5rem 2rem;
   max-width: 1400px;
   margin: 0 auto;
   gap: 2.5rem;
@@ -10438,6 +10454,7 @@ input:checked + .slider:before {
   opacity: 0;
   transition: opacity 0.4s ease;
   pointer-events: none;
+  box-shadow: none;
 }
 
 .landing-ia-mockup-img.active {
@@ -13270,7 +13287,7 @@ input:checked + .slider:before {
   display: none;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1180px) {
   .ai-mic-btn { display: none; }
   .ai-fab { display: none; }
 
@@ -13279,8 +13296,8 @@ input:checked + .slider:before {
     flex-direction: column;
     position: sticky;
     top: 0;
-    width: 380px;
-    min-width: 380px;
+    width: 320px;
+    min-width: 320px;
     height: 100vh;
     background: var(--bg-card);
     border-left: 1px solid var(--border-color);
@@ -13381,6 +13398,14 @@ input:checked + .slider:before {
 
   .ai-chat-fullscreen {
     display: none;
+  }
+}
+
+/* AI panel wider on large desktops */
+@media (min-width: 1280px) {
+  .ai-side-panel {
+    width: 380px;
+    min-width: 380px;
   }
 }
 

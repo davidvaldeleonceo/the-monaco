@@ -253,7 +253,7 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
     }
   }, [viewMode])
 
-  const isDesktop = () => window.innerWidth >= 769
+  const isDesktop = () => window.innerWidth >= 1180
 
   const handleOpen = () => {
     if (!isPro) {

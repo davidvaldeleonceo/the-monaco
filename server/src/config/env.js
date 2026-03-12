@@ -22,4 +22,5 @@ export default {
   wompiIntegritySecret: process.env.WOMPI_INTEGRITY_SECRET || '',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   openaiModel: process.env.OPENAI_MODEL || 'gpt-5.3-chat-latest',
+  resendApiKey: process.env.RESEND_API_KEY || '',
 }

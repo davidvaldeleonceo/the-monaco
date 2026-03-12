@@ -25,6 +25,8 @@ const AdminDashboard = lazy(() => import('./components/Admin/AdminDashboard'))
 const LandingPage = lazy(() => import('./components/pages/LandingPage'))
 const Login = lazy(() => import('./components/auth/Login'))
 const Register = lazy(() => import('./components/auth/Register'))
+const ForgotPassword = lazy(() => import('./components/auth/ForgotPassword'))
+const ResetPassword = lazy(() => import('./components/auth/ResetPassword'))
 const Onboarding = lazy(() => import('./components/auth/Onboarding'))
 const SetupWizard = lazy(() => import('./components/auth/SetupWizard'))
 
@@ -100,6 +102,8 @@ function App() {
               <Route path="/" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><LandingPage /></Suspense>} />
               <Route path="/login" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><Login /></Suspense>} />
               <Route path="/registro" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><Register /></Suspense>} />
+              <Route path="/forgot-password" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><ForgotPassword /></Suspense>} />
+              <Route path="/reset-password" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><ResetPassword /></Suspense>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           ) : (

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useTenant } from '../context/TenantContext'
 import { useTheme } from '../context/ThemeContext'
@@ -34,9 +34,24 @@ export default function Layout({ user }) {
   const appTitle = truncName(negocioNombre)
   const { theme, toggleTheme } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1280)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [aiPanelOpen, setAiPanelOpen] = useState(true)
+  const [aiPanelOpen, setAiPanelOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1400)
+
+  // Sync sidebar/AI panel state on resize
+  useEffect(() => {
+    const onResize = () => {
+      const w = window.innerWidth
+      if (w < 1180) {
+        setSidebarCollapsed(true)
+        setAiPanelOpen(false)
+      } else if (w < 1280) {
+        setSidebarCollapsed(true)
+      }
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const rol = userProfile?.rol || 'admin'
   const isAdmin = rol === 'admin'

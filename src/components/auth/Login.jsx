@@ -59,6 +59,12 @@ export default function Login() {
 
           {error && <div className="error-message">{error}</div>}
 
+          <div className="login-forgot-link">
+            <a href="/forgot-password" onClick={(e) => { e.preventDefault(); navigate('/forgot-password') }}>
+              ¿Olvidaste tu contraseña?
+            </a>
+          </div>
+
           <button type="submit" disabled={loading} className="login-button">
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
@@ -66,7 +72,7 @@ export default function Login() {
 
         <div className="login-register-link">
           <span>¿No tienes cuenta? </span>
-          <a href="/" onClick={(e) => { e.preventDefault(); navigate('/') }}>
+          <a href="/registro" onClick={(e) => { e.preventDefault(); navigate('/registro') }}>
             Registra tu negocio
           </a>
         </div>

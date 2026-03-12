@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import crypto from 'crypto'
 import {
   createUser,
   findUserByEmail,
@@ -6,10 +7,16 @@ import {
   buildSession,
   hashPassword,
 } from '../services/authService.js'
+import { sendPasswordResetEmail } from '../services/emailService.js'
 import pool from '../config/database.js'
+import env from '../config/env.js'
 import auth from '../middleware/auth.js'
+import logger from '../config/logger.js'
 
 const router = Router()
+
+// Rate limit map for forgot-password (email → [timestamps])
+const resetRateLimit = new Map()
 
 // POST /api/auth/signup
 router.post('/signup', async (req, res, next) => {
@@ -186,6 +193,110 @@ router.delete('/account', auth, async (req, res, next) => {
     }
 
     res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password', async (req, res, next) => {
+  try {
+    const { email } = req.body
+    if (!email) {
+      return res.status(400).json({ error: 'El correo es requerido' })
+    }
+
+    const normalizedEmail = email.toLowerCase().trim()
+
+    // Rate limit: max 3 requests per email per hour
+    const now = Date.now()
+    const attempts = resetRateLimit.get(normalizedEmail) || []
+    const recentAttempts = attempts.filter(t => now - t < 3600000)
+    if (recentAttempts.length >= 3) {
+      return res.json({ message: 'Si el correo existe, recibirás un enlace de recuperación.' })
+    }
+    recentAttempts.push(now)
+    resetRateLimit.set(normalizedEmail, recentAttempts)
+
+    // Always return same response (don't reveal if email exists)
+    const successMsg = { message: 'Si el correo existe, recibirás un enlace de recuperación.' }
+
+    const user = await findUserByEmail(normalizedEmail)
+    if (!user) {
+      return res.json(successMsg)
+    }
+
+    // Invalidate previous tokens for this user
+    await pool.query(
+      'UPDATE password_resets SET used = true WHERE user_id = $1 AND used = false',
+      [user.id]
+    )
+
+    // Generate token
+    const rawToken = crypto.randomBytes(32).toString('hex')
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex')
+    const expiresAt = new Date(Date.now() + 3600000) // 1 hour
+
+    await pool.query(
+      'INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [user.id, tokenHash, expiresAt]
+    )
+
+    // Send email
+    const frontendUrl = env.frontendUrl
+    const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`
+
+    try {
+      await sendPasswordResetEmail(normalizedEmail, resetUrl)
+    } catch (err) {
+      logger.error('Failed to send reset email:', err.message)
+      return res.status(500).json({ error: 'Error al enviar el correo. Intenta más tarde.' })
+    }
+
+    res.json(successMsg)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /api/auth/reset-password
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { token, password } = req.body
+    if (!token || !password) {
+      return res.status(400).json({ error: 'Token y contraseña son requeridos' })
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' })
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+
+    const { rows } = await pool.query(
+      `SELECT pr.*, u.email FROM password_resets pr
+       JOIN users u ON u.id = pr.user_id
+       WHERE pr.token_hash = $1 AND pr.used = false AND pr.expires_at > now()`,
+      [tokenHash]
+    )
+
+    if (rows.length === 0) {
+      return res.status(400).json({ error: 'El enlace es inválido o ya expiró. Solicita uno nuevo.' })
+    }
+
+    const resetRecord = rows[0]
+
+    // Update password
+    const newHash = await hashPassword(password)
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, resetRecord.user_id])
+
+    // Mark all tokens as used for this user
+    await pool.query(
+      'UPDATE password_resets SET used = true WHERE user_id = $1',
+      [resetRecord.user_id]
+    )
+
+    logger.info(`Password reset completed for ${resetRecord.email}`)
+    res.json({ message: 'Contraseña actualizada correctamente' })
   } catch (err) {
     next(err)
   }

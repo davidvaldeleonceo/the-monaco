@@ -83,8 +83,8 @@ export default function Balance() {
   const catEgresos = categoriasTransaccion.filter(c => c.tipo === 'EGRESO').map(c => c.nombre)
 
   const categorias = {
-    INGRESO: catIngresos.length > 0 ? catIngresos : defaultCategorias.INGRESO,
-    EGRESO: catEgresos.length > 0 ? catEgresos : defaultCategorias.EGRESO,
+    INGRESO: [...new Set([...defaultCategorias.INGRESO, ...catIngresos])],
+    EGRESO: [...new Set([...defaultCategorias.EGRESO, ...catEgresos])],
   }
 
   const todasCategorias = [...new Set([...categorias.INGRESO, ...categorias.EGRESO])]
