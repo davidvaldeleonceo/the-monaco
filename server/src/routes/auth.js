@@ -172,18 +172,27 @@ router.delete('/account', auth, async (req, res, next) => {
 
     // Verify user is admin
     const { rows: profileRows } = await pool.query(
-      'SELECT role FROM user_profiles WHERE id = $1',
+      'SELECT rol FROM user_profiles WHERE id = $1',
       [userId]
     )
-    if (!profileRows.length || profileRows[0].role !== 'admin') {
+    if (!profileRows.length || profileRows[0].rol !== 'admin') {
       return res.status(403).json({ error: 'Solo el administrador puede eliminar la cuenta' })
     }
 
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      // Get all user IDs in this business before cascade deletes their profiles
+      const { rows: userIds } = await client.query(
+        'SELECT id FROM user_profiles WHERE negocio_id = $1',
+        [negocioId]
+      )
       await client.query('DELETE FROM negocios WHERE id = $1', [negocioId])
-      await client.query('DELETE FROM users WHERE id = $1', [userId])
+      // Delete all users (not just admin) to avoid orphaned records
+      if (userIds.length > 0) {
+        const ids = userIds.map(r => r.id)
+        await client.query('DELETE FROM users WHERE id = ANY($1)', [ids])
+      }
       await client.query('COMMIT')
     } catch (err) {
       await client.query('ROLLBACK')

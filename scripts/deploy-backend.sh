@@ -31,6 +31,17 @@ ssh root@187.77.15.68 << 'EOF'
         exit 1
     fi
 
+    RECOMMENDED_VARS="FRONTEND_URL RESEND_API_KEY"
+    MISSING_REC=""
+    for var in $RECOMMENDED_VARS; do
+        if ! grep -q "^${var}=" .env; then
+            MISSING_REC="$MISSING_REC $var"
+        fi
+    done
+    if [ -n "$MISSING_REC" ]; then
+        echo "WARNING: Missing recommended vars:$MISSING_REC (password recovery email won't work without RESEND_API_KEY)"
+    fi
+
     npm install --production
 
     # Run database migrations

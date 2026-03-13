@@ -7,23 +7,25 @@ import { chat } from '../services/aiService.js'
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } })
 
-// In-memory rate limit: 30 msgs/hour per negocio
-const rateLimits = new Map()
+// In-memory daily limit: 3 AI queries/day per negocio (PRO only, free has no access)
+const dailyUsage = new Map()
 
-function checkRateLimit(negocioId) {
-  const now = Date.now()
-  const window = 60 * 60 * 1000 // 1 hour
+function checkDailyLimit(negocioId) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+  const key = `${negocioId}:${today}`
 
-  if (!rateLimits.has(negocioId)) {
-    rateLimits.set(negocioId, [])
+  if (!dailyUsage.has(key)) {
+    dailyUsage.set(key, 0)
+    // Clean old entries
+    for (const k of dailyUsage.keys()) {
+      if (!k.endsWith(today)) dailyUsage.delete(k)
+    }
   }
 
-  const timestamps = rateLimits.get(negocioId).filter(t => now - t < window)
-  rateLimits.set(negocioId, timestamps)
-
-  if (timestamps.length >= 30) return false
-  timestamps.push(now)
-  return true
+  const count = dailyUsage.get(key)
+  if (count >= 3) return { allowed: false, remaining: 0 }
+  dailyUsage.set(key, count + 1)
+  return { allowed: true, remaining: 2 - count }
 }
 
 function computeIsPro(negocio) {
@@ -59,12 +61,14 @@ router.post('/chat', async (req, res) => {
       return res.status(403).json({ error: 'PRO_REQUIRED' })
     }
 
-    if (!checkRateLimit(negocioId)) {
-      return res.status(429).json({ error: 'Rate limit exceeded (30 messages/hour)' })
+    const unlimited = req.user.email === 'principal@themonaco.com.co'
+    const { allowed, remaining } = unlimited ? { allowed: true, remaining: 999 } : checkDailyLimit(negocioId)
+    if (!allowed) {
+      return res.status(429).json({ error: 'DAILY_LIMIT', message: 'Has alcanzado el límite de 3 consultas diarias de IA.' })
     }
 
     const result = await chat(message.trim(), sessionId || null, negocioId, negocio.nombre, req.io)
-    res.json(result)
+    res.json({ ...result, remaining })
   } catch (err) {
     console.error('AI chat error:', err.message)
     res.status(500).json({ error: 'Error procesando tu mensaje. Intenta de nuevo.' })
@@ -97,9 +101,7 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
       return res.status(403).json({ error: 'PRO_REQUIRED' })
     }
 
-    if (!checkRateLimit(negocioId)) {
-      return res.status(429).json({ error: 'Rate limit exceeded' })
-    }
+    // Transcription doesn't count toward the daily limit (it feeds into /chat which does)
 
     if (!req.file) {
       return res.status(400).json({ error: 'Audio file required' })

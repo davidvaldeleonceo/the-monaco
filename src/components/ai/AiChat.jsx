@@ -34,6 +34,7 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [listenError, setListenError] = useState(false)
   const [feedback, setFeedback] = useState({})
+  const [remaining, setRemaining] = useState(null)
 
   const handleFeedback = (index, type) => {
     const wasActive = feedback[index] === type
@@ -109,11 +110,15 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
 
       if (res.ok) {
         setSessionId(data.sessionId)
+        if (data.remaining != null) setRemaining(data.remaining)
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
         if (data.lavadaCreated) {
           refreshLavadas()
           refreshClientes()
         }
+      } else if (res.status === 429 && data.error === 'DAILY_LIMIT') {
+        setRemaining(0)
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Has alcanzado el limite de 3 consultas diarias. Vuelve manana o mejora tu plan para mas consultas.' }])
       } else {
         setMessages(prev => [...prev, { role: 'assistant', content: data.error || 'Error al procesar tu mensaje.' }])
       }
@@ -324,9 +329,12 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
       <div className="ai-chat-header">
         <button className="ai-chat-back" onClick={handleClose}><ArrowLeft size={22} /></button>
         <span className="ai-chat-title">AI {negocioNombre}</span>
-        <button className="ai-chat-clear" onClick={() => { setMessages([{ role: 'assistant', content: 'Hola, soy tu agente de AI. Dime que quieres saber hoy?' }]); setSessionId(null); setFeedback({}) }}>
-          Limpiar chat
-        </button>
+        <div className="ai-chat-header-right">
+          {remaining != null && <span className="ai-daily-counter">{remaining + 1}/3</span>}
+          <button className="ai-chat-clear" onClick={() => { setMessages([{ role: 'assistant', content: 'Hola, soy tu agente de AI. Dime que quieres saber hoy?' }]); setSessionId(null); setFeedback({}) }}>
+            Limpiar chat
+          </button>
+        </div>
       </div>
 
       <div className="ai-chat-messages">
@@ -368,21 +376,22 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
       </div>
 
       <div className="ai-input-area">
+        {remaining === 0 && <div className="ai-limit-banner">Limite diario alcanzado (3/3)</div>}
         <form className="ai-input-form" onSubmit={handleTextSubmit}>
           <input
             type="text"
             className="ai-text-input"
-            placeholder={getPlaceholder()}
+            placeholder={remaining === 0 ? 'Limite alcanzado. Vuelve manana.' : getPlaceholder()}
             value={textInput}
             onChange={e => setTextInput(e.target.value)}
-            disabled={isRecording || isTranscribing}
+            disabled={isRecording || isTranscribing || remaining === 0}
             autoFocus
           />
           <button
             type="button"
             className={`ai-mic-btn ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
             onClick={() => toggleMic()}
-            disabled={isTranscribing || loading}
+            disabled={isTranscribing || loading || remaining === 0}
           >
             <Mic size={20} />
             {isRecording && <span className="ai-mic-pulse" />}
@@ -391,7 +400,7 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
             <button
               type="submit"
               className="ai-send-btn"
-              disabled={loading || isRecording || isTranscribing}
+              disabled={loading || isRecording || isTranscribing || remaining === 0}
             >
               <Send size={18} />
             </button>
@@ -466,9 +475,12 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
               <ChevronRight size={22} />
             </button>
             <span className="ai-chat-title">AI {negocioNombre}</span>
-            <button className="ai-chat-clear" onClick={() => { setMessages([{ role: 'assistant', content: 'Hola, soy tu agente de AI. Dime que quieres saber hoy?' }]); setSessionId(null); setFeedback({}) }}>
-              Limpiar chat
-            </button>
+            <div className="ai-chat-header-right">
+              {remaining != null && <span className="ai-daily-counter">{remaining + 1}/3</span>}
+              <button className="ai-chat-clear" onClick={() => { setMessages([{ role: 'assistant', content: 'Hola, soy tu agente de AI. Dime que quieres saber hoy?' }]); setSessionId(null); setFeedback({}) }}>
+                Limpiar chat
+              </button>
+            </div>
           </div>
 
           <div className="ai-chat-messages">
@@ -510,21 +522,22 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
           </div>
 
           <div className="ai-input-area">
+            {remaining === 0 && <div className="ai-limit-banner">Limite diario alcanzado (3/3)</div>}
             <form className="ai-input-form" onSubmit={handleTextSubmit}>
               <input
                 type="text"
                 className="ai-text-input"
-                placeholder={getPlaceholder()}
+                placeholder={remaining === 0 ? 'Limite alcanzado. Vuelve manana.' : getPlaceholder()}
                 value={textInput}
                 onChange={e => setTextInput(e.target.value)}
-                disabled={isRecording || isTranscribing}
+                disabled={isRecording || isTranscribing || remaining === 0}
                 autoFocus
               />
               <button
                 type="button"
                 className={`ai-mic-btn ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
                 onClick={() => toggleMic()}
-                disabled={isTranscribing || loading}
+                disabled={isTranscribing || loading || remaining === 0}
               >
                 <Mic size={20} />
                 {isRecording && <span className="ai-mic-pulse" />}
@@ -533,7 +546,7 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
                 <button
                   type="submit"
                   className="ai-send-btn"
-                  disabled={loading || isRecording || isTranscribing}
+                  disabled={loading || isRecording || isTranscribing || remaining === 0}
                 >
                   <Send size={18} />
                 </button>
