@@ -55,6 +55,7 @@ router.get('/negocios', async (_req, res) => {
         n.trial_ends_at,
         n.subscription_expires_at,
         n.created_at,
+        n.telefono,
         u.email,
         up.nombre AS user_nombre,
         (SELECT COUNT(*) FROM lavadas l WHERE l.negocio_id = n.id) AS lavadas_total,

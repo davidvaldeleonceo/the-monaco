@@ -342,6 +342,10 @@ CREATE INDEX IF NOT EXISTS idx_mensajes_enviados_cliente ON mensajes_enviados(cl
 CREATE INDEX IF NOT EXISTS idx_checkout_payments_estado ON checkout_payments(estado);
 CREATE INDEX IF NOT EXISTS idx_checkout_payments_reference ON checkout_payments(wompi_reference);
 
+-- Composite indexes for bootstrap queries (negocio + date ordering)
+CREATE INDEX IF NOT EXISTS idx_lavadas_negocio_fecha ON lavadas(negocio_id, fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_transacciones_negocio_fecha ON transacciones(negocio_id, fecha DESC);
+
 -- Unique constraint for placa per negocio
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_placa_negocio ON clientes(placa, negocio_id);
 
@@ -371,6 +375,8 @@ DO $$ BEGIN
   ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS descripcion TEXT;
   ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS placa_o_persona TEXT;
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS telefono TEXT;
+  ALTER TABLE negocios ADD COLUMN IF NOT EXISTS moneda TEXT DEFAULT 'COP';
+  ALTER TABLE negocios ADD COLUMN IF NOT EXISTS pais TEXT DEFAULT 'CO';
 END $$;
 
 -- Ensure nombre/placa are NOT NULL (idempotent — safe to re-run)

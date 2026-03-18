@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { supabase } from '../../apiClient'
 import { useTenant } from '../context/TenantContext'
+import { COUNTRIES } from '../../config/currencies'
 
 export default function Onboarding() {
   const { refresh, userEmail, userId } = useTenant()
   const [nombreNegocio, setNombreNegocio] = useState('')
+  const [pais, setPais] = useState('CO')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -16,6 +18,7 @@ export default function Onboarding() {
     const { data, error: rpcError } = await supabase.rpc('crear_negocio_y_perfil', {
       p_nombre: nombreNegocio,
       p_email: userEmail,
+      p_pais: pais,
     })
 
     if (rpcError) {
@@ -43,6 +46,23 @@ export default function Onboarding() {
         <p className="login-subtitle">Configura tu negocio</p>
 
         <form onSubmit={handleSubmit}>
+          <div className="input-group">
+            <label>País</label>
+            <div className="country-selector-grid">
+              {COUNTRIES.map(c => (
+                <button
+                  key={c.code}
+                  type="button"
+                  className={`country-chip ${pais === c.code ? 'active' : ''}`}
+                  onClick={() => setPais(c.code)}
+                >
+                  <span className="country-flag">{c.flag}</span>
+                  <span className="country-name">{c.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="input-group">
             <label>Nombre de tu negocio</label>
             <input

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import Timer from './Timer'
-import { formatMoney } from '../../utils/money'
+import { formatMoney, getCurrencySymbol, formatPriceLocale } from '../../utils/money'
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../../config/constants'
 import { MessageCircle, Trash2, CheckCircle2, Plus, X, Clock, Droplets, CircleCheck, HandCoins, Sparkles } from 'lucide-react'
 
@@ -13,6 +14,7 @@ export default function ServiceCard({
   onAdicionalChange,
   onLavadorChange,
   onPagosChange,
+  onNotasChange,
   onEliminar,
   onWhatsApp,
   // UI state
@@ -53,9 +55,41 @@ export default function ServiceCard({
   onPopoverOpen,
 }) {
   const navigate = useNavigate()
+  // Prevent entry animation replay on re-renders / remounts while expanded
+  const mountedExpandedRef = useRef(isExpanded)
+  const popupRef = useRef(null)
+
+  useEffect(() => {
+    const el = popupRef.current
+    if (!el || !isExpanded) return
+
+    if (mountedExpandedRef.current) {
+      // Remount while already expanded — skip animation
+      el.style.animation = 'none'
+    } else {
+      // Fresh expansion — let animation play, then disable to prevent retrigger
+      const handler = () => { el.style.animation = 'none' }
+      el.addEventListener('animationend', handler, { once: true })
+      return () => el.removeEventListener('animationend', handler)
+    }
+  }, [isExpanded])
+
+  // When closing starts, clear inline animation so exit class can take over
+  useEffect(() => {
+    if (isCollapsing && popupRef.current) {
+      popupRef.current.style.animation = ''
+    }
+  }, [isCollapsing])
+
+  useEffect(() => {
+    if (!isExpanded) mountedExpandedRef.current = false
+    else mountedExpandedRef.current = true
+  }, [isExpanded])
+
   const [waMenu, setWaMenu] = useState(false)
   const [estadoPopover, setEstadoPopoverLocal] = useState(false)
   const [pagoPopover, setPagoPopoverLocal] = useState(false)
+  const [pendingEstado, setPendingEstado] = useState(null)
 
   const setEstadoPopover = (val) => {
     setEstadoPopoverLocal(val)
@@ -74,6 +108,7 @@ export default function ServiceCard({
   }, [activePopoverId, lavada.id])
   const [waMenuPos, setWaMenuPos] = useState({ top: 0, right: 0 })
   const waButtonRef = useRef(null)
+  const lavadorSelectRef = useRef(null)
   const pagos = lavada.pagos || []
   const [localPagos, setLocalPagos] = useState([])
   const debounceRef = useRef(null)
@@ -105,6 +140,24 @@ export default function ServiceCard({
 
   // Cleanup debounce on unmount
   useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
+
+  // Notas local state + debounce
+  const [localNotas, setLocalNotas] = useState('')
+  const notasDebounceRef = useRef(null)
+  const lastLocalNotasRef = useRef(null)
+
+  useEffect(() => {
+    if (isExpanded) {
+      setLocalNotas(lavada.notas || '')
+      lastLocalNotasRef.current = null
+    } else if (lastLocalNotasRef.current !== null) {
+      if (notasDebounceRef.current) clearTimeout(notasDebounceRef.current)
+      onNotasChange?.(lavada.id, lastLocalNotasRef.current)
+      lastLocalNotasRef.current = null
+    }
+  }, [isExpanded])
+
+  useEffect(() => () => { if (notasDebounceRef.current) clearTimeout(notasDebounceRef.current) }, [])
 
   const total = Math.round(lavada.valor || 0)
   // Use localPagos when editing (popover or expanded card), pagos otherwise
@@ -204,7 +257,7 @@ export default function ServiceCard({
               <input
                 type="text"
                 inputMode="numeric"
-                value={p.valor === 0 ? '' : Number(p.valor).toLocaleString('es-CO')}
+                value={p.valor === 0 ? '' : formatPriceLocale(p.valor)}
                 onChange={(e) => {
                   const val = e.target.value.replace(/\D/g, '')
                   updateLocalPagos(localPagos.map((pg, i) =>
@@ -212,7 +265,7 @@ export default function ServiceCard({
                   ))
                 }}
                 className="pago-popover-input"
-                placeholder="$0"
+                placeholder={getCurrencySymbol() + '0'}
               />
               <button
                 className="pago-popover-delete"
@@ -271,12 +324,22 @@ export default function ServiceCard({
         {estadosConfig.map(({ key: est, timer }) => (
           <button
             key={est}
-            className={`estado-popover-option ${lavada.estado === est ? 'active' : ''} ${est === 'ENTREGADO' && !canComplete && !yaEntregado ? 'disabled-look' : ''}`}
+            className={`estado-popover-option ${lavada.estado === est ? 'active' : ''} ${(est === 'ENTREGADO' || est === 'TERMINADO') && !lavadorOk ? 'disabled-look' : ''} ${est === 'ENTREGADO' && !canComplete && !yaEntregado ? 'disabled-look' : ''}`}
             onClick={(e) => {
               e.stopPropagation()
+              if ((est === 'TERMINADO' || est === 'ENTREGADO') && !lavadorOk) {
+                if (onValidationToast) onValidationToast('Falta asignar un lavador')
+                setEstadoPopover(false)
+                return
+              }
               if (est === 'ENTREGADO' && !canComplete) {
                 triggerValidationErrors()
                 setEstadoPopover(false)
+                return
+              }
+              if (est === 'EN LAVADO' && !lavadorOk) {
+                setEstadoPopover(false)
+                setPendingEstado(est)
                 return
               }
               onEstadoChange(lavada.id, est)
@@ -312,6 +375,7 @@ export default function ServiceCard({
               className={`lavada-card-valor-mini ${(pagosOk && allMetodosSet) ? 'valor-ok' : total > 0 ? 'valor-pendiente' : ''}`}
               onClick={(e) => {
                 e.stopPropagation()
+                if (selectionMode) { onToggleSelect?.(lavada.id); return }
                 setEstadoPopover(false)
                 setPagoPopover(true)
               }}
@@ -326,7 +390,7 @@ export default function ServiceCard({
               <span className="estado-badge-wrapper">
                 <span
                   className={`estado-badge-mini ${getEstadoClass(lavada.estado)} estado-badge-clickable`}
-                  onClick={(e) => { e.stopPropagation(); setPagoPopover(false); setEstadoPopover(!estadoPopover) }}
+                  onClick={(e) => { e.stopPropagation(); if (selectionMode) { onToggleSelect?.(lavada.id); return } setPagoPopover(false); setEstadoPopover(!estadoPopover) }}
                 >
                   {ESTADO_LABELS[lavada.estado] || lavada.estado}
                 </span>
@@ -338,10 +402,43 @@ export default function ServiceCard({
         </div>
       </div>
 
+      {pendingEstado && createPortal(
+        <div className="lavador-picker-overlay" onClick={() => setPendingEstado(null)}>
+          <div className="lavador-picker" onClick={(e) => e.stopPropagation()}>
+            <div className="lavador-picker-header">
+              <span className="lavador-picker-title">Asignar lavador</span>
+              <button className="pago-popover-close" onClick={() => setPendingEstado(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="lavador-picker-info">
+              <span>{lavada.cliente?.nombre || 'Sin cliente'}</span>
+              <span className="lavador-picker-placa">{lavada.placa}</span>
+            </div>
+            <div className="lavador-picker-list">
+              {lavadores.map(l => (
+                <button
+                  key={l.id}
+                  className="lavador-picker-btn"
+                  onClick={() => {
+                    onLavadorChange(lavada.id, l.id)
+                    onEstadoChange(lavada.id, pendingEstado)
+                    setPendingEstado(null)
+                  }}
+                >
+                  {l.nombre}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {isExpanded && (
         <>
-          <div className="pago-popover-overlay" onClick={() => onSmoothCollapse(lavada.id)} />
-          <div className="servicio-popup" onClick={(e) => e.stopPropagation()}>
+          <div className={`pago-popover-overlay${isCollapsing ? ' overlay-exit' : ''}`} onClick={() => onSmoothCollapse(lavada.id)} />
+          <div ref={popupRef} className={`servicio-popup${isCollapsing ? ' servicio-popup-exit' : ''}`} onClick={(e) => e.stopPropagation()}>
             <div className="servicio-popup-header">
               <div className="servicio-popup-header-info">
                 <span className="servicio-popup-cliente">{lavada.cliente?.nombre || 'Sin cliente'}</span>
@@ -360,18 +457,29 @@ export default function ServiceCard({
                 return (
                   <button
                     key={est}
-                    className={`estado-step-btn ${bgClass} ${isActive ? 'active' : ''} ${isEntregado && !canComplete && !yaEntregado ? 'disabled-look' : ''}`}
-                    title={isEntregado && !canComplete && !yaEntregado ? (
-                      !tipoOk ? 'Falta tipo de lavado' :
-                        !lavadorOk ? 'Falta asignar lavador' :
+                    className={`estado-step-btn ${bgClass} ${isActive ? 'active' : ''} ${(isEntregado || est === 'TERMINADO') && !lavadorOk ? 'disabled-look' : ''} ${isEntregado && !canComplete && !yaEntregado ? 'disabled-look' : ''}`}
+                    title={
+                      (est === 'TERMINADO' || isEntregado) && !lavadorOk ? 'Falta asignar lavador' :
+                      isEntregado && !canComplete && !yaEntregado ? (
+                        !tipoOk ? 'Falta tipo de lavado' :
                           activePagos.length === 0 ? 'Agrega al menos un pago' :
                             !allMetodosSet ? 'Todos los pagos necesitan método' :
                               !pagosOk ? (diff > 0 ? `Pagos exceden ${formatMoney(diff)}` : `Faltan ${formatMoney(Math.abs(diff))}`) : ''
-                    ) : undefined}
+                      ) : undefined
+                    }
                     onClick={(e) => {
                       e.stopPropagation()
+                      if ((est === 'TERMINADO' || isEntregado) && !lavadorOk) {
+                        if (onValidationToast) onValidationToast('Falta asignar un lavador')
+                        lavadorSelectRef.current?.focus()
+                        return
+                      }
                       if (isEntregado && !canComplete) {
                         triggerValidationErrors()
+                        return
+                      }
+                      if (est === 'EN LAVADO' && !lavadorOk) {
+                        setPendingEstado(est)
                         return
                       }
                       onEstadoChange(lavada.id, est)
@@ -431,6 +539,7 @@ export default function ServiceCard({
               <div className="lavada-card-field full">
                 <label style={{ margin: '0.5rem 1rem' }}>Lavador</label>
                 <select
+                  ref={lavadorSelectRef}
                   value={lavada.lavador_id || ''}
                   onChange={(e) => onLavadorChange(lavada.id, e.target.value)}
                   className={`lavador-select ${vErrs.lavador ? 'field-error' : ''}`}
@@ -443,9 +552,36 @@ export default function ServiceCard({
               </div>
             </div>
 
+            <div className="lavada-card-notas">
+              <label style={{ margin: '0.5rem 1rem' }}>Notas</label>
+              <textarea
+                className="notas-textarea"
+                value={localNotas}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setLocalNotas(val)
+                  lastLocalNotasRef.current = val
+                  if (notasDebounceRef.current) clearTimeout(notasDebounceRef.current)
+                  notasDebounceRef.current = setTimeout(() => {
+                    onNotasChange?.(lavada.id, val)
+                  }, 600)
+                }}
+                placeholder="Agregar notas del servicio..."
+                rows={Math.max(2, Math.min(5, (localNotas || '').split('\n').length))}
+              />
+            </div>
+
             <div className="lavada-card-footer">
-              <div className={`lavada-card-valor ${(pagosOk && allMetodosSet) ? 'pago-ok' : total > 0 ? 'pago-error' : ''}`}>
-                {formatMoney(total)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div className={`lavada-card-valor ${(pagosOk && allMetodosSet) ? 'pago-ok' : total > 0 ? 'pago-error' : ''}`}>
+                  {formatMoney(total)}
+                </div>
+                <button
+                  className="pago-pill-add"
+                  onClick={() => setPagoPopover(true)}
+                >
+                  <Plus size={14} />
+                </button>
               </div>
               <div className={`lavada-card-pagos-pills ${vErrs.pagos ? 'field-error' : ''}`}>
                 {activePagos.length === 0 && lavada.metodo_pago?.nombre && (
@@ -479,7 +615,7 @@ export default function ServiceCard({
                         <input
                           type="text"
                           inputMode="numeric"
-                          value={p.valor === 0 ? '' : Number(p.valor).toLocaleString('es-CO')}
+                          value={p.valor === 0 ? '' : formatPriceLocale(p.valor)}
                           onChange={(e) => {
                             const val = e.target.value.replace(/\D/g, '')
                             const nuevosPagos = activePagos.map((pg, i) =>
@@ -489,7 +625,7 @@ export default function ServiceCard({
                           }}
                           onKeyDown={(e) => { if (e.key === 'Enter' && p.metodo_pago_id) onSetEditingPago(null) }}
                           className="pago-pill-input"
-                          placeholder="$0"
+                          placeholder={getCurrencySymbol() + '0'}
                         />
                         <button
                           className="pago-pill-x"
@@ -526,13 +662,6 @@ export default function ServiceCard({
                     </div>
                   )
                 })}
-                <button
-                  className="pago-pill-add"
-                  style={{ margin: '0 1rem' }}
-                  onClick={() => setPagoPopover(true)}
-                >
-                  <Plus size={14} />
-                </button>
                 {pagoPopover && renderPagoPopover()}
                 {activePagos.length > 0 && !pagosOk && (
                   <span className="pago-diff-msg">
@@ -550,7 +679,7 @@ export default function ServiceCard({
                     onClick={() => {
                       if (!waMenu && waButtonRef.current) {
                         const rect = waButtonRef.current.getBoundingClientRect()
-                        setWaMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+                        setWaMenuPos({ bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right })
                       }
                       setWaMenu(!waMenu)
                     }}
@@ -561,7 +690,7 @@ export default function ServiceCard({
                   {waMenu && (
                     <>
                       <div className="wa-menu-overlay" onClick={() => setWaMenu(false)} />
-                      <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
+                      <div className="wa-menu-dropdown" style={{ bottom: waMenuPos.bottom, right: waMenuPos.right }}>
                         {plantillasMensaje.length > 0 ? plantillasMensaje.map(p => (
                           <button key={p.id} onClick={() => { setWaMenu(false); onWhatsApp(lavada, { plantillaId: p.id }) }}>
                             {p.nombre}

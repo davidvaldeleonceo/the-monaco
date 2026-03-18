@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../apiClient'
 import { useData } from '../context/DataContext'
@@ -119,6 +120,7 @@ export default function Lavadas() {
     handleLavadorChange,
     handleTipoLavadoChangeInline,
     handlePagosChange,
+    handleNotasChange,
     handleAdicionalChange,
     pendingDeleteLavadaId, setPendingDeleteLavadaId,
     requestEliminarLavada, executeEliminarLavada,
@@ -736,6 +738,7 @@ export default function Lavadas() {
             onAdicionalChange={handleAdicionalChange}
             onLavadorChange={handleLavadorChange}
             onPagosChange={handlePagosChange}
+            onNotasChange={handleNotasChange}
             onEliminar={requestEliminarLavada}
             onWhatsApp={enviarWhatsApp}
             isExpanded={expandedCards[lavada.id]}
@@ -978,16 +981,16 @@ export default function Lavadas() {
         </div>
       )}
 
-      {/* FAB for mobile */}
-      {!modoSeleccion && (
-        <button
-          className="fab-nuevo-servicio"
-          onClick={() => setShowModal(true)}
-          title="Nuevo Servicio"
-        >
-          <Plus size={24} />
-        </button>
-      )}
+      {/* Mobile FAB for nuevo servicio — portal to shared fab row (right side) */}
+      {(() => {
+        const slot = document.getElementById('fab-slot-left')
+        return slot ? createPortal(
+          <button className="fab-nuevo-servicio" onClick={() => setShowModal(true)} title="Nuevo Servicio">
+            <Plus size={24} />
+          </button>,
+          slot
+        ) : null
+      })()}
 
       <NuevoServicioSheet
         isOpen={showModal}

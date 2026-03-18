@@ -2,6 +2,7 @@ import { Router } from 'express'
 import pool from '../config/database.js'
 import { seedNegocio } from '../db/seed.js'
 import { signToken } from '../services/authService.js'
+import { COUNTRY_CURRENCY } from '../config/currencies.js'
 
 const router = Router()
 
@@ -24,14 +25,16 @@ function issueNewSession(userId, email, negocioId) {
 router.post('/register_negocio', async (req, res, next) => {
   const client = await pool.connect()
   try {
-    const { p_nombre_negocio, p_nombre_usuario, p_email, p_user_id, p_telefono } = req.body
+    const { p_nombre_negocio, p_nombre_usuario, p_email, p_user_id, p_telefono, p_pais } = req.body
+    const pais = p_pais || 'CO'
+    const moneda = COUNTRY_CURRENCY[pais] || 'COP'
 
     await client.query('BEGIN')
 
     // Create negocio on free plan (no trial)
     const { rows: [negocio] } = await client.query(
-      "INSERT INTO negocios (nombre, plan, telefono) VALUES ($1, 'free', $2) RETURNING id",
-      [p_nombre_negocio, p_telefono || null]
+      "INSERT INTO negocios (nombre, plan, telefono, moneda, pais) VALUES ($1, 'free', $2, $3, $4) RETURNING id",
+      [p_nombre_negocio, p_telefono || null, moneda, pais]
     )
 
     // Create user_profile linking user to negocio
@@ -41,7 +44,7 @@ router.post('/register_negocio', async (req, res, next) => {
     )
 
     // Seed default data (inside transaction)
-    await seedNegocio(negocio.id, client)
+    await seedNegocio(negocio.id, client, moneda)
 
     await client.query('COMMIT')
 
@@ -65,8 +68,10 @@ router.post('/register_negocio', async (req, res, next) => {
 router.post('/crear_negocio_y_perfil', async (req, res, next) => {
   const client = await pool.connect()
   try {
-    const { p_nombre, p_email, p_telefono } = req.body
+    const { p_nombre, p_email, p_telefono, p_pais } = req.body
     const userId = req.user?.id
+    const pais = p_pais || 'CO'
+    const moneda = COUNTRY_CURRENCY[pais] || 'COP'
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' })
@@ -76,8 +81,8 @@ router.post('/crear_negocio_y_perfil', async (req, res, next) => {
 
     // Create negocio on free plan (no trial)
     const { rows: [negocio] } = await client.query(
-      "INSERT INTO negocios (nombre, plan, telefono) VALUES ($1, 'free', $2) RETURNING id",
-      [p_nombre, p_telefono || null]
+      "INSERT INTO negocios (nombre, plan, telefono, moneda, pais) VALUES ($1, 'free', $2, $3, $4) RETURNING id",
+      [p_nombre, p_telefono || null, moneda, pais]
     )
 
     // Create user_profile
@@ -87,7 +92,7 @@ router.post('/crear_negocio_y_perfil', async (req, res, next) => {
     )
 
     // Seed default data (inside transaction)
-    await seedNegocio(negocio.id, client)
+    await seedNegocio(negocio.id, client, moneda)
 
     await client.query('COMMIT')
 

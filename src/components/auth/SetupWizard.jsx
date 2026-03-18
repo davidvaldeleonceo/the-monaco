@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../apiClient'
+import { capitalizeWords } from '../../utils/string'
+import { formatPriceLocale, parsePriceLocale, getCurrencySymbol } from '../../utils/money'
+import { MEMBERSHIP_DEFAULTS } from '../../config/currencies'
 import { useTenant } from '../context/TenantContext'
 import { Sparkles, CircleCheck, Plus, X, ChevronLeft, Droplets, CreditCard, Users, Wrench, Crown, Check } from 'lucide-react'
 
@@ -9,33 +12,21 @@ const STEP_ICONS = [Sparkles, Droplets, CreditCard, Users, Wrench, Crown, Circle
 const LAVADO_COMPONENTS = ['Lavado básico', 'Kit de arrastre', 'Cera', 'Restaurador de partes negras']
 const MEMBRESIA_BENEFITS = ['Lavado gratis', 'Descuento en servicios', 'Descuento en adicionales']
 const DEFAULT_LAVADOS = [
-  { nombre: 'BÁSICO', precio: 0, incluye: ['Lavado básico'], _status: 'new', _tempId: 'def-1' },
-  { nombre: 'LAVADO CON KIT DE ARRASTRE', precio: 0, incluye: ['Lavado básico', 'Kit de arrastre'], _status: 'new', _tempId: 'def-2' },
-  { nombre: 'LAVADO FULL', precio: 0, incluye: ['Lavado básico', 'Kit de arrastre', 'Cera', 'Restaurador de partes negras'], _status: 'new', _tempId: 'def-3' },
+  { nombre: 'Básico', precio: 0, incluye: ['Lavado básico'], _status: 'new', _tempId: 'def-1' },
+  { nombre: 'Lavado Con Kit De Arrastre', precio: 0, incluye: ['Lavado básico', 'Kit de arrastre'], _status: 'new', _tempId: 'def-2' },
+  { nombre: 'Lavado Full', precio: 0, incluye: ['Lavado básico', 'Kit de arrastre', 'Cera', 'Restaurador de partes negras'], _status: 'new', _tempId: 'def-3' },
 ]
 
-// Format number with dot thousands separator (es-CO)
-function formatPriceCO(val) {
-  if (!val) return ''
-  return Number(val).toLocaleString('es-CO')
-}
-
-// Parse formatted price string back to number
-function parsePriceInput(str) {
-  const raw = str.replace(/\./g, '').replace(/[^0-9]/g, '')
-  return raw === '' ? 0 : parseInt(raw, 10)
-}
-
 function PriceInput({ value, onChange, placeholder = "0", onKeyDown }) {
-  const display = value ? formatPriceCO(value) : ''
+  const display = value ? formatPriceLocale(value) : ''
   return (
     <div className="setup-price-input">
-      <span>$</span>
+      <span>{getCurrencySymbol()}</span>
       <input
         type="text"
         inputMode="numeric"
         value={display}
-        onChange={(e) => onChange(parsePriceInput(e.target.value))}
+        onChange={(e) => onChange(parsePriceLocale(e.target.value))}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
       />
@@ -78,7 +69,7 @@ function StepHeader({ step, title, subtitle }) {
 }
 
 export default function SetupWizard() {
-  const { negocioNombre, negocioId, markSetupDone } = useTenant()
+  const { negocioNombre, negocioId, markSetupDone, currencyCode } = useTenant()
   const [step, setStep] = useState(0)
   const [direction, setDirection] = useState('forward')
   const [saving, setSaving] = useState(false)
@@ -154,7 +145,7 @@ export default function SetupWizard() {
         _status: 'new',
         _tempId: 'default-mensual',
         nombre: 'MENSUAL',
-        precio: 50000,
+        precio: MEMBERSHIP_DEFAULTS[currencyCode] || 50000,
         duracion_dias: 1,
         beneficios: ['Lavado gratis'],
       }
@@ -280,7 +271,7 @@ export default function SetupWizard() {
         setLocalLavados(prev => [...prev, {
           _status: 'new',
           _tempId: Date.now(),
-          nombre: newLavadoNombre.trim().toUpperCase(),
+          nombre: capitalizeWords(newLavadoNombre),
           precio: 0,
           incluye: [],
         }])
@@ -403,7 +394,7 @@ export default function SetupWizard() {
         setLocalMetodos(prev => [...prev, {
           _status: 'new',
           _tempId: Date.now(),
-          nombre: newMetodo.trim().toUpperCase(),
+          nombre: capitalizeWords(newMetodo),
           _active: true,
         }])
         setNewMetodo('')
@@ -604,7 +595,7 @@ export default function SetupWizard() {
         setLocalMembresias(prev => [...prev, {
           _status: 'new',
           _tempId: Date.now(),
-          nombre: newMembresiaNombre.trim().toUpperCase(),
+          nombre: capitalizeWords(newMembresiaNombre),
           precio: newMembresiaPrecio,
           duracion_dias: Number(newMembresiaDuracion) || 1,
           beneficios: [],

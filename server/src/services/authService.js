@@ -40,12 +40,22 @@ export async function findUserByEmail(email) {
 }
 
 export async function buildSession(user) {
-  // Fetch negocio_id from user_profiles
+  // Fetch profile + negocio in one query (eliminates redundant TenantContext fetch)
   const { rows } = await pool.query(
-    'SELECT negocio_id FROM user_profiles WHERE id = $1',
+    `SELECT up.*, json_build_object(
+      'id', n.id, 'nombre', n.nombre, 'setup_complete', n.setup_complete,
+      'plan', n.plan, 'trial_ends_at', n.trial_ends_at,
+      'subscription_expires_at', n.subscription_expires_at,
+      'subscription_period', n.subscription_period,
+      'moneda', n.moneda, 'pais', n.pais
+    ) AS negocio
+    FROM user_profiles up
+    LEFT JOIN negocios n ON n.id = up.negocio_id
+    WHERE up.id = $1`,
     [user.id]
   )
-  const negocioId = rows[0]?.negocio_id || null
+  const profile = rows[0] || null
+  const negocioId = profile?.negocio_id || null
 
   const token = signToken({
     sub: user.id,
@@ -59,5 +69,6 @@ export async function buildSession(user) {
       id: user.id,
       email: user.email,
     },
+    profile,
   }
 }

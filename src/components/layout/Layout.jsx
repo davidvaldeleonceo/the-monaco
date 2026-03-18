@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useState, useEffect, lazy, Suspense } from 'react'
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useTenant } from '../context/TenantContext'
 import { useTheme } from '../context/ThemeContext'
 import { canAccess } from '../guards/RoleGuard'
-import UpgradeModal from '../payment/UpgradeModal'
-import AiChat from '../ai/AiChat'
+const UpgradeModal = lazy(() => import('../payment/UpgradeModal'))
+// const AiChat = lazy(() => import('../ai/AiChat')) // AI hidden — cost too high
+import useIsMobile from '../../hooks/useIsMobile'
 import {
   Home,
   LayoutDashboard,
@@ -17,8 +18,10 @@ import {
   ChevronRight,
   Sun,
   Moon,
-  Sparkles,
+  ArrowLeft,
 } from 'lucide-react'
+
+const MobileSettings = lazy(() => import('./MobileSettings'))
 
 const PRO_ROUTES = ['/pagos']
 
@@ -30,22 +33,22 @@ const truncName = (name) => {
 
 export default function Layout({ user }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { negocioNombre, userProfile, isPro, planStatus, daysLeftInTrial } = useTenant()
   const appTitle = truncName(negocioNombre)
   const { theme, toggleTheme } = useTheme()
+  const isMobile = useIsMobile()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1280)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1180)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [aiPanelOpen, setAiPanelOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1400)
+  const [aiPanelOpen] = useState(false) // AI hidden — cost too high
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // Sync sidebar/AI panel state on resize
+  // Sync sidebar state on resize
   useEffect(() => {
     const onResize = () => {
       const w = window.innerWidth
       if (w < 1180) {
-        setSidebarCollapsed(true)
-        setAiPanelOpen(false)
-      } else if (w < 1280) {
         setSidebarCollapsed(true)
       }
     }
@@ -77,12 +80,26 @@ export default function Layout({ user }) {
     <div className="layout">
       {/* Mobile Header */}
       <header className="mobile-header">
-        <span className={`badge ${isPro ? '' : 'badge-free'} badge-clickable`} onClick={() => navigate('/cuenta?tab=plan')}>{isPro ? 'PRO' : 'FREE'}</span>
-        <button onClick={toggleTheme} className="theme-switch" title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
-          <Sun size={14} className={`theme-switch-icon ${theme === 'light' ? 'active' : ''}`} />
-          <Moon size={14} className={`theme-switch-icon ${theme === 'dark' ? 'active' : ''}`} />
-        </button>
+        <div className="mobile-header-left">
+          {isMobile && location.pathname !== '/home' && (
+            <button className="mobile-back-btn" onClick={() => navigate('/home')}>
+              <ArrowLeft size={18} />
+            </button>
+          )}
+        </div>
+        <div className="mobile-header-actions">
+          <button className="settings-gear-btn" onClick={() => setSettingsOpen(true)} title="Opciones">
+            <Settings size={24} />
+          </button>
+        </div>
       </header>
+
+      {/* MobileSettings — rendered outside header for correct z-index stacking over FABs */}
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <MobileSettings onClose={() => setSettingsOpen(false)} />
+        </Suspense>
+      )}
 
       {/* Overlay */}
       {menuOpen && <div className="sidebar-overlay" onClick={() => setMenuOpen(false)} />}
@@ -137,11 +154,6 @@ export default function Layout({ user }) {
             </NavLink>
           ))}
         </nav>
-
-        <button className={`ai-sparkle-btn ${aiPanelOpen ? 'active' : ''}`} onClick={() => { if (!isPro) return; setAiPanelOpen(prev => !prev) }} title="Asistente IA">
-          <Sparkles size={18} />
-          {!sidebarCollapsed && <span className="ai-sparkle-label">AI {appTitle}</span>}
-        </button>
 
         <div className="sidebar-theme-area">
           <span className="sidebar-theme-label">Apariencia</span>
@@ -201,9 +213,16 @@ export default function Layout({ user }) {
           </div>
         )}
         <Outlet />
-        {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
+        {showUpgradeModal && <Suspense fallback={null}><UpgradeModal onClose={() => setShowUpgradeModal(false)} /></Suspense>}
       </main>
-      <AiChat panelOpen={aiPanelOpen} onTogglePanel={() => setAiPanelOpen(prev => !prev)} />
+
+      {/* Single fixed container for mobile FABs — guarantees alignment */}
+      <div className="mobile-fab-row">
+        <div id="fab-slot-left" />
+        <div id="fab-slot-right" />
+      </div>
+
+      {/* AI hidden — cost too high */}
 
       <nav className="floating-bottom-bar">
         {[

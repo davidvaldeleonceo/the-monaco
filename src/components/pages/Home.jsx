@@ -1,31 +1,86 @@
-import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment, lazy, Suspense } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../apiClient'
 import { useData } from '../context/DataContext'
 import { useTenant } from '../context/TenantContext'
 import { useServiceHandlers } from '../../hooks/useServiceHandlers'
 import ServiceCard from '../shared/ServiceCard'
+import SwipeableCard from '../shared/SwipeableCard'
 import NuevoServicioSheet from '../shared/NuevoServicioSheet'
-import { formatMoney, formatMoneyShort } from '../../utils/money'
+import NumberTicker from '../shared/NumberTicker'
+import { formatMoney, formatMoneyShort, getCurrencySymbol, formatPriceLocale } from '../../utils/money'
 import { useMoneyVisibility } from '../context/MoneyVisibilityContext'
 import { useToast } from '../layout/Toast'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell, LabelList, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell, LabelList } from 'recharts'
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../../config/constants'
-import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download, ChevronDown, Pencil, Check, Eye, EyeOff, TrendingUp, TrendingDown, UserPlus, Calendar, Flag, CreditCard, User, ArrowUpDown, Wallet, Tag, ShoppingBag, ArrowLeftRight, ArrowLeft } from 'lucide-react'
+import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download, ChevronDown, Pencil, Check, Eye, EyeOff, TrendingUp, TrendingDown, UserPlus, Calendar, Flag, CreditCard, User, ArrowUpDown, Wallet, Tag, ShoppingBag, ArrowLeftRight, ArrowLeft, Users, Wrench } from 'lucide-react'
+import useIsMobile from '../../hooks/useIsMobile'
+import PlanGuard from '../guards/PlanGuard'
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
 import UpgradeModal from '../payment/UpgradeModal'
 import DatePicker, { registerLocale } from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import es from 'date-fns/locale/es'
-registerLocale('es', es)
 import * as XLSX from 'xlsx'
 import { fechaToBogotaDate, nowBogota } from '../../utils/date'
+
+registerLocale('es', es)
+
+const Clientes = lazy(() => import('./Clientes'))
+const PagoTrabajadores = lazy(() => import('./PagoTrabajadores'))
+
+function SearchPillMobile({ searchQuery, setSearchQuery, searchInputRef, onClose }) {
+  const [bottomOffset, setBottomOffset] = useState(0)
+
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () => {
+      setBottomOffset(window.innerHeight - vv.height - vv.offsetTop)
+    }
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
+
+  return (
+    <>
+      <div className="home-search-pill-overlay" onClick={onClose} />
+      <div className="home-search-pill">
+        <Search size={18} className="home-search-pill-icon" />
+        <input
+          ref={searchInputRef}
+          type="text"
+          placeholder="Buscar placa, cliente, producto..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          autoFocus
+        />
+        {searchQuery && (
+          <button className="home-search-pill-clear" onClick={() => { setSearchQuery(''); searchInputRef.current?.focus() }}>
+            <X size={16} />
+          </button>
+        )}
+        <button className="home-search-pill-close" onClick={onClose}>
+          <X size={18} />
+        </button>
+      </div>
+    </>
+  )
+}
 
 export default function Home() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal, refreshClientes, categoriasTransaccion } = useData()
-  const { negocioNombre, userEmail } = useTenant()
+  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal, refreshClientes, categoriasTransaccion, initialTransacciones, clearInitialTransacciones } = useData()
+  const { negocioNombre, userEmail, userProfile, isPro } = useTenant()
+  const isMobile = useIsMobile()
+  const rol = userProfile?.rol || 'admin'
   const { showMoney, toggleMoney, displayMoney, displayMoneyShort } = useMoneyVisibility()
   const toast = useToast()
 
@@ -44,6 +99,7 @@ export default function Home() {
     handleLavadorChange,
     handleTipoLavadoChangeInline,
     handlePagosChange,
+    handleNotasChange,
     handleAdicionalChange,
     pendingDeleteLavadaId, setPendingDeleteLavadaId,
     requestEliminarLavada, executeEliminarLavada,
@@ -55,14 +111,18 @@ export default function Home() {
     metodosPago: _mp,
   } = useServiceHandlers()
 
-  const anyCardExpanded = Object.values(expandedCards).some(Boolean)
   const [activePopoverId, setActivePopoverId] = useState(null)
 
   const [periodo, setPeriodo] = useState(() => {
     return localStorage.getItem('home-periodo') || 'm'
   })
-  const [tab, setTab] = useState('servicios')
+  const validTabs = ['servicios', 'productos', 'movimientos', 'clientes', 'trabajadores']
+  const [tab, setTab] = useState(() => {
+    const urlTab = searchParams.get('tab')
+    return urlTab && validTabs.includes(urlTab) ? urlTab : 'servicios'
+  })
   const [transacciones, setTransacciones] = useState([])
+  const [transaccionesReady, setTransaccionesReady] = useState(false)
   const [prevTransacciones, setPrevTransacciones] = useState([])
   const [showFabMenu, setShowFabMenu] = useState(false)
   const [showServicioModal, setShowServicioModal] = useState(false)
@@ -108,8 +168,13 @@ export default function Home() {
   const [filtroFechaHasta, setFiltroFechaHasta] = useState(null)
   const [filtroCategoria, setFiltroCategoria] = useState('')
   const searchInputRef = useRef(null)
+  const [showPeriodDropdown, setShowPeriodDropdown] = useState(false)
+  const [showDesdeCalendar, setShowDesdeCalendar] = useState(false)
+  const [showHastaCalendar, setShowHastaCalendar] = useState(false)
   const [modoSeleccion, setModoSeleccion] = useState(false)
   const [selectedItems, setSelectedItems] = useState(new Set())
+  const [openSwipeId, setOpenSwipeId] = useState(null)
+  const [swipeWaLavada, setSwipeWaLavada] = useState(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [highlightId, setHighlightId] = useState(null)
@@ -175,16 +240,27 @@ export default function Home() {
 
   // Auto-open UpgradeModal when coming from "Comprar ahora" flow
   const [showBalanceSheet, setShowBalanceSheet] = useState(false)
+  const [closingBalanceSheet, setClosingBalanceSheet] = useState(false)
   const [activeBalancePanel, setActiveBalancePanel] = useState(null)
   const [showPeriodOptions, setShowPeriodOptions] = useState(false)
+  const [showBSDesde, setShowBSDesde] = useState(false)
+  const [showBSHasta, setShowBSHasta] = useState(false)
   const [balanceSheetPill, setBalanceSheetPill] = useState('balance')
   const [balanceSheetView, setBalanceSheetView] = useState('metodo')
   const [balancePillDropdown, setBalancePillDropdown] = useState(false)
   const [balanceViewDropdown, setBalanceViewDropdown] = useState(false)
   const [showPeriodOptionsDesktop, setShowPeriodOptionsDesktop] = useState(false)
+
+  const closeBalanceSheet = () => {
+    setClosingBalanceSheet(true)
+    setTimeout(() => { setShowBalanceSheet(false); setClosingBalanceSheet(false) }, 250)
+  }
   const [selectedBarIndex, setSelectedBarIndex] = useState(null)
   const [chartAnimKey, setChartAnimKey] = useState(0)
   const [showSearchBar, setShowSearchBar] = useState(false)
+  const [showFullSearch, setShowFullSearch] = useState(false)
+  const [fullSearchQuery, setFullSearchQuery] = useState('')
+  const fullSearchInputRef = useRef(null)
   const periodWheelRef = useRef(null)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [upgradePeriod, setUpgradePeriod] = useState(null)
@@ -315,6 +391,7 @@ export default function Home() {
   // Fetch transacciones
   const fetchTransacciones = async () => {
     if (!negocioId) return
+    setTransaccionesReady(false)
     let query = supabase
       .from('transacciones')
       .select('*, metodo_pago:metodos_pago(nombre)')
@@ -333,10 +410,21 @@ export default function Home() {
 
     const { data } = await query
     setTransacciones(data || [])
+    setTransaccionesReady(true)
   }
 
+  // Consume bootstrap transacciones on first mount if available and period is 'm' (default)
+  const bootstrapConsumedRef = useRef(false)
+
   useEffect(() => {
-    fetchTransacciones()
+    if (!bootstrapConsumedRef.current && initialTransacciones && periodo === 'm' && !filtroFechaDesde && !filtroFechaHasta) {
+      setTransacciones(initialTransacciones)
+      setTransaccionesReady(true)
+      clearInitialTransacciones()
+      bootstrapConsumedRef.current = true
+    } else {
+      fetchTransacciones()
+    }
     // Fetch previous period transacciones for comparison
     const fetchPrevTransacciones = async () => {
       const { desde: d, hasta: h } = getPreviousPeriodRange(periodo)
@@ -913,6 +1001,15 @@ export default function Home() {
   const egresos = entradasParaBalance.filter(t => t.tipo === 'EGRESO').reduce((sum, t) => sum + Number(t.valor), 0)
   const balance = ingresos - egresos
 
+  // Stable values for NumberTicker — only update when transacciones are fully loaded
+  const stableRef = useRef({ balance: 0, ingresos: 0, egresos: 0 })
+  if (transaccionesReady) {
+    stableRef.current = { balance, ingresos, egresos }
+  }
+  const stableBalance = stableRef.current.balance
+  const stableIngresos = stableRef.current.ingresos
+  const stableEgresos = stableRef.current.egresos
+
   // Previous period comparison
   const { prevIngresos, prevEgresos } = useMemo(() => {
     const { desde: prevDesde, hasta: prevHasta } = getPreviousPeriodRange(periodo)
@@ -951,6 +1048,7 @@ export default function Home() {
 
   const balancePorMetodo = useMemo(() => {
     const grouped = {}
+    metodosPago.forEach(m => { grouped[m.nombre] = { ingresos: 0, egresos: 0 } })
     entradasParaBalance.forEach(t => {
       const metodo = t.metodo_pago?.nombre || 'Sin método'
       if (!grouped[metodo]) grouped[metodo] = { ingresos: 0, egresos: 0 }
@@ -959,11 +1057,13 @@ export default function Home() {
     })
     return Object.entries(grouped)
       .map(([metodo, v]) => ({ metodo, ingresos: v.ingresos, egresos: v.egresos, balance: v.ingresos - v.egresos }))
-      .sort((a, b) => b.balance - a.balance)
-  }, [entradasParaBalance])
+      .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
+  }, [entradasParaBalance, metodosPago])
 
   const balancePorCategoria = useMemo(() => {
     const grouped = {}
+    const allCats = [...categoriasMovimiento.INGRESO, ...categoriasMovimiento.EGRESO]
+    allCats.forEach(c => { if (!grouped[c]) grouped[c] = { ingresos: 0, egresos: 0 } })
     entradasParaBalance.forEach(t => {
       const cat = t.categoria || 'Sin categoría'
       if (!grouped[cat]) grouped[cat] = { ingresos: 0, egresos: 0 }
@@ -972,8 +1072,8 @@ export default function Home() {
     })
     return Object.entries(grouped)
       .map(([categoria, v]) => ({ categoria, ingresos: v.ingresos, egresos: v.egresos, balance: v.ingresos - v.egresos }))
-      .sort((a, b) => b.balance - a.balance)
-  }, [entradasParaBalance])
+      .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
+  }, [entradasParaBalance, categoriasMovimiento.INGRESO, categoriasMovimiento.EGRESO])
 
   const balanceChartData = useMemo(() => {
     const hoy = nowBogota()
@@ -1338,7 +1438,7 @@ export default function Home() {
       placa_o_persona: t.placa_o_persona || '',
       metodo_pago_id: t.metodo_pago_id || '',
       valor: String(t.valor),
-      valorDisplay: Number(t.valor).toLocaleString('es-CO'),
+      valorDisplay: formatPriceLocale(t.valor),
     })
   }
 
@@ -1354,7 +1454,7 @@ export default function Home() {
       return
     }
     const num = Number(limpio)
-    setEditProductData(prev => ({ ...prev, valor: String(num), valorDisplay: num.toLocaleString('es-CO') }))
+    setEditProductData(prev => ({ ...prev, valor: String(num), valorDisplay: formatPriceLocale(num) }))
   }
 
   const guardarEdicionProducto = async (id) => {
@@ -1682,7 +1782,7 @@ export default function Home() {
       return
     }
     const num = Number(limpio)
-    setVentaForm(prev => ({ ...prev, valor: num.toLocaleString('es-CO') }))
+    setVentaForm(prev => ({ ...prev, valor: formatPriceLocale(num) }))
   }
 
   // === Import functions ===
@@ -1969,7 +2069,7 @@ export default function Home() {
       return
     }
     const num = Number(limpio)
-    setMovimientoForm(prev => ({ ...prev, valor: num.toLocaleString('es-CO') }))
+    setMovimientoForm(prev => ({ ...prev, valor: formatPriceLocale(num) }))
   }
 
   const handleMovimientoSubmit = async () => {
@@ -2042,56 +2142,229 @@ export default function Home() {
       {/* Balance Inline (mobile) */}
       <div className="home-balance-inline" onClick={() => setShowBalanceSheet(true)}>
         <div>
-          <span className="home-balance-inline-label">Balance {displayPeriodoLabel.toLowerCase()}</span>
-          <span className={`home-balance-inline-amount ${balance >= 0 ? 'positivo' : 'negativo'}`}>
-            {displayMoney(balance)}
+          <span className="home-balance-inline-label">
+            Balance {displayPeriodoLabel.toLowerCase()}
+            <button className="money-toggle-btn" onClick={e => { e.stopPropagation(); toggleMoney() }} title={showMoney ? 'Ocultar valores' : 'Mostrar valores'}>
+              {showMoney ? <Eye size={14} /> : <EyeOff size={14} />}
+            </button>
+          </span>
+          <span className={`home-balance-inline-amount ${stableBalance >= 0 ? 'positivo' : 'negativo'}`}>
+            <NumberTicker value={stableBalance} masked={!showMoney} />
+            <ChevronDown size={18} className="home-balance-inline-chevron" />
           </span>
         </div>
-        <button className="money-toggle-btn" onClick={e => { e.stopPropagation(); toggleMoney() }} title={showMoney ? 'Ocultar valores' : 'Mostrar valores'}>
-          {showMoney ? <Eye size={20} /> : <EyeOff size={20} />}
-        </button>
       </div>
+
+      {/* Mobile Glass Filters (period + desde/hasta) */}
+      {isMobile && (
+        <div className="home-mobile-filters">
+          <div className="glass-filter-wrapper">
+            <button
+              className={`glass-filter glass-filter-periodo ${showPeriodDropdown ? 'active' : ''}`}
+              onClick={() => { setShowPeriodDropdown(prev => !prev); setShowDesdeCalendar(false); setShowHastaCalendar(false) }}
+            >
+              <span className="glass-filter-text">{displayPeriodoLabel}</span>
+              <ChevronDown
+                size={14}
+                className={`glass-filter-chevron ${showPeriodDropdown ? 'rotated' : ''}`}
+              />
+            </button>
+            {showPeriodDropdown && (
+              <>
+                <div className="glass-dropdown-backdrop" onClick={() => setShowPeriodDropdown(false)} />
+                <div className="glass-dropdown">
+                  {periodWheelItems.map(item => (
+                    <button
+                      key={item.key}
+                      className={`glass-dropdown-item ${getActiveQuickPill() === item.key ? 'active' : ''}`}
+                      onClick={() => {
+                        handleQuickDatePill(item.key)
+                        setShowPeriodDropdown(false)
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="glass-filter-wrapper">
+            <button
+              className={`glass-filter ${filtroFechaDesde ? 'active' : ''}`}
+              onClick={() => { setShowDesdeCalendar(prev => !prev); setShowHastaCalendar(false) }}
+            >
+              <Calendar size={14} className="glass-filter-icon" />
+              <span className="glass-filter-text">
+                {filtroFechaDesde
+                  ? filtroFechaDesde.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+                  : 'Desde'}
+              </span>
+              {filtroFechaDesde && (
+                <X size={12} className="glass-filter-clear" onClick={(e) => { e.stopPropagation(); setFiltroFechaDesde(null) }} />
+              )}
+            </button>
+            {showDesdeCalendar && (
+              <>
+                <div className="glass-dropdown-backdrop" onClick={() => setShowDesdeCalendar(false)} />
+                <div className="glass-calendar-dropdown">
+                  <DatePicker
+                    selected={filtroFechaDesde}
+                    onChange={(date) => { setFiltroFechaDesde(date); setShowDesdeCalendar(false) }}
+                    locale="es"
+                    inline
+                    maxDate={filtroFechaHasta || undefined}
+                    calendarClassName="glass-calendar"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="glass-filter-wrapper">
+            <button
+              className={`glass-filter ${filtroFechaHasta ? 'active' : ''}`}
+              onClick={() => { setShowHastaCalendar(prev => !prev); setShowDesdeCalendar(false) }}
+            >
+              <Calendar size={14} className="glass-filter-icon" />
+              <span className="glass-filter-text">
+                {filtroFechaHasta
+                  ? filtroFechaHasta.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+                  : 'Hasta'}
+              </span>
+              {filtroFechaHasta && (
+                <X size={12} className="glass-filter-clear" onClick={(e) => { e.stopPropagation(); setFiltroFechaHasta(null) }} />
+              )}
+            </button>
+            {showHastaCalendar && (
+              <>
+                <div className="glass-dropdown-backdrop" onClick={() => setShowHastaCalendar(false)} />
+                <div className="glass-calendar-dropdown">
+                  <DatePicker
+                    selected={filtroFechaHasta}
+                    onChange={(date) => { setFiltroFechaHasta(date); setShowHastaCalendar(false) }}
+                    locale="es"
+                    inline
+                    minDate={filtroFechaDesde || undefined}
+                    calendarClassName="glass-calendar"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Balance Sheet (mobile) */}
       {showBalanceSheet && (
         <>
-          <div className="pago-popover-overlay" onClick={() => setShowBalanceSheet(false)} />
-          <div className="home-balance-sheet" onClick={e => e.stopPropagation()}>
+          <div className="pago-popover-overlay" onClick={closeBalanceSheet} />
+          <div className={`home-balance-sheet ${closingBalanceSheet ? 'home-balance-sheet-closing' : ''}`} onClick={e => e.stopPropagation()}>
             <div className="home-balance-sheet-header">
-              <span className="home-balance-sheet-title">
-                Resumen de{' '}
-                <span className="home-balance-sheet-period-wrapper">
-                  <button className="home-balance-sheet-period-trigger" onClick={() => setShowPeriodOptions(p => !p)}>
-                    {displayPeriodoLabel.toLowerCase()}
-                  </button>
-                  {showPeriodOptions && (
-                    <>
-                      <div className="period-dropdown-overlay" onClick={() => setShowPeriodOptions(false)} />
-                      <div className="period-dropdown">
-                        {periodWheelItems.map(item => (
-                          <button
-                            key={item.key}
-                            className={`period-dropdown-item ${getActiveQuickPill() === item.key ? 'active' : ''}`}
-                            onClick={() => { handleQuickDatePill(item.key); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); setShowPeriodOptions(false) }}
-                          >
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </span>
-              </span>
-              <button className="home-balance-sheet-close" onClick={() => setShowBalanceSheet(false)}>
+              <span className="home-balance-sheet-title">Resumen de {displayPeriodoLabel.toLowerCase()}</span>
+              <button className="home-balance-sheet-close" onClick={closeBalanceSheet}>
                 <X size={20} />
               </button>
             </div>
 
-            <span key={balanceSheetPill} className={`home-balance-sheet-big-value ${
-              balanceSheetPill === 'balance' ? (balance >= 0 ? 'positivo' : 'negativo')
+            <div className="balance-sheet-filters">
+              <div className="glass-filter-wrapper">
+                <button
+                  className={`glass-filter glass-filter-periodo ${showPeriodOptions ? 'active' : ''}`}
+                  onClick={() => { setShowPeriodOptions(p => !p); setShowBSDesde(false); setShowBSHasta(false) }}
+                >
+                  <span className="glass-filter-text">{displayPeriodoLabel}</span>
+                  <ChevronDown size={14} className={`glass-filter-chevron ${showPeriodOptions ? 'rotated' : ''}`} />
+                </button>
+                {showPeriodOptions && (
+                  <>
+                    <div className="glass-dropdown-backdrop" onClick={() => setShowPeriodOptions(false)} />
+                    <div className="glass-dropdown">
+                      {periodWheelItems.map(item => (
+                        <button
+                          key={item.key}
+                          className={`glass-dropdown-item ${getActiveQuickPill() === item.key ? 'active' : ''}`}
+                          onClick={() => { handleQuickDatePill(item.key); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); setShowPeriodOptions(false) }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="glass-filter-wrapper">
+                <button
+                  className={`glass-filter ${filtroFechaDesde ? 'active' : ''}`}
+                  onClick={() => { setShowBSDesde(p => !p); setShowBSHasta(false); setShowPeriodOptions(false) }}
+                >
+                  <Calendar size={14} className="glass-filter-icon" />
+                  <span className="glass-filter-text">
+                    {filtroFechaDesde
+                      ? filtroFechaDesde.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+                      : 'Desde'}
+                  </span>
+                  {filtroFechaDesde && (
+                    <X size={12} className="glass-filter-clear" onClick={(e) => { e.stopPropagation(); setFiltroFechaDesde(null); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }} />
+                  )}
+                </button>
+                {showBSDesde && (
+                  <>
+                    <div className="glass-dropdown-backdrop" onClick={() => setShowBSDesde(false)} />
+                    <div className="glass-calendar-dropdown">
+                      <DatePicker
+                        selected={filtroFechaDesde}
+                        onChange={(date) => { setFiltroFechaDesde(date); setShowBSDesde(false); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}
+                        locale="es"
+                        inline
+                        maxDate={filtroFechaHasta || undefined}
+                        calendarClassName="glass-calendar"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="glass-filter-wrapper">
+                <button
+                  className={`glass-filter ${filtroFechaHasta ? 'active' : ''}`}
+                  onClick={() => { setShowBSHasta(p => !p); setShowBSDesde(false); setShowPeriodOptions(false) }}
+                >
+                  <Calendar size={14} className="glass-filter-icon" />
+                  <span className="glass-filter-text">
+                    {filtroFechaHasta
+                      ? filtroFechaHasta.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+                      : 'Hasta'}
+                  </span>
+                  {filtroFechaHasta && (
+                    <X size={12} className="glass-filter-clear" onClick={(e) => { e.stopPropagation(); setFiltroFechaHasta(null); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }} />
+                  )}
+                </button>
+                {showBSHasta && (
+                  <>
+                    <div className="glass-dropdown-backdrop" onClick={() => setShowBSHasta(false)} />
+                    <div className="glass-calendar-dropdown">
+                      <DatePicker
+                        selected={filtroFechaHasta}
+                        onChange={(date) => { setFiltroFechaHasta(date); setShowBSHasta(false); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}
+                        locale="es"
+                        inline
+                        minDate={filtroFechaDesde || undefined}
+                        calendarClassName="glass-calendar"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <span className={`home-balance-sheet-big-value ${
+              balanceSheetPill === 'balance' ? (stableBalance >= 0 ? 'positivo' : 'negativo')
               : balanceSheetPill === 'ingresos' ? 'positivo' : 'negativo'
             }`}>
-              {displayMoney(balanceSheetPill === 'balance' ? balance : balanceSheetPill === 'ingresos' ? ingresos : egresos)}
+              <NumberTicker value={balanceSheetPill === 'balance' ? stableBalance : balanceSheetPill === 'ingresos' ? stableIngresos : -stableEgresos} masked={!showMoney} />
             </span>
 
             <div className="home-balance-sheet-pills">
@@ -2113,7 +2386,7 @@ export default function Home() {
                   : balanceSheetPill === 'egresos' ? m.egresos
                   : m.balance
                 return { nombre: balanceSheetView === 'metodo' ? m.metodo : m.categoria, valor: Math.abs(raw), negativo: raw < 0 }
-              }).filter(m => m.valor !== 0)
+              })
               const barColor = balanceSheetPill === 'ingresos' ? 'var(--accent-green)'
                 : balanceSheetPill === 'egresos' ? 'var(--accent-red)'
                 : 'var(--accent-blue)'
@@ -2131,11 +2404,11 @@ export default function Home() {
 
               return chartData.length > 0 ? (
                 <div className="home-balance-sheet-chart animate" key={chartAnimKey}>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={chartData} margin={{ top: 30, right: 0, left: 0, bottom: 20 }}>
+                  <div className="chart-scroll-wrapper">
+                    <BarChart data={chartData} width={Math.max(chartData.length * 90, 300)} height={340} margin={{ top: 30, right: 0, left: 0, bottom: 20 }} barCategoryGap={20}>
                       <XAxis dataKey="nombre" tick={<CustomXTick />} axisLine={false} tickLine={false} interval={0} />
                       <YAxis hide />
-                      <Bar dataKey="valor" radius={[16, 16, 16, 16]} barSize={80} isAnimationActive={false} onClick={(_, index) => setSelectedBarIndex(selectedBarIndex === index ? null : index)}>
+                      <Bar dataKey="valor" radius={[16, 16, 16, 16]} barSize={72} minPointSize={32} isAnimationActive={false} onClick={(_, index) => setSelectedBarIndex(selectedBarIndex === index ? null : index)}>
                         {chartData.map((entry, index) => {
                           const isSelected = selectedBarIndex === index
                           const baseColor = entry.negativo ? 'var(--accent-red)' : barColor
@@ -2171,7 +2444,7 @@ export default function Home() {
                         />
                       </Bar>
                     </BarChart>
-                  </ResponsiveContainer>
+                  </div>
                 </div>
               ) : <div className="chart-empty">Sin datos para mostrar</div>
             })()}
@@ -2199,8 +2472,8 @@ export default function Home() {
                 {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
               </button>
               <span className="home-balance-label balance-title">Balance - {displayPeriodoLabel}</span>
-              <span className={`home-balance-amount ${balance >= 0 ? 'positivo' : 'negativo'}`}>
-                {displayMoney(balance)}
+              <span className={`home-balance-amount ${stableBalance >= 0 ? 'positivo' : 'negativo'}`}>
+                <NumberTicker value={stableBalance} masked={!showMoney} />
               </span>
             </div>
             <div className="home-balance-card ingresos home-balance-clickable" onClick={() => { setActiveBalancePanel('ingresos'); setBalanceSheetPill('ingresos'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); window.scrollTo(0, 0) }}>
@@ -2208,14 +2481,14 @@ export default function Home() {
                 {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
               </button>
               <span className="home-balance-label ingresos-title">Ingresos - {displayPeriodoLabel}</span>
-              <span className="home-balance-amount positivo">{displayMoney(ingresos)}</span>
+              <span className="home-balance-amount positivo"><NumberTicker value={stableIngresos} masked={!showMoney} /></span>
             </div>
             <div className="home-balance-card egresos home-balance-clickable" onClick={() => { setActiveBalancePanel('egresos'); setBalanceSheetPill('egresos'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); window.scrollTo(0, 0) }}>
               <button className="money-toggle-btn money-toggle-card" onClick={e => { e.stopPropagation(); toggleMoney() }} title={showMoney ? 'Ocultar valores' : 'Mostrar valores'}>
                 {showMoney ? <Eye size={18} /> : <EyeOff size={18} />}
               </button>
               <span className="home-balance-label egresos-title">Egresos - {displayPeriodoLabel}</span>
-              <span className="home-balance-amount negativo">{displayMoney(egresos)}</span>
+              <span className="home-balance-amount negativo"><NumberTicker value={-stableEgresos} masked={!showMoney} /></span>
             </div>
           </div>
         </div>
@@ -2255,15 +2528,23 @@ export default function Home() {
             </span>
           </span>
 
-          <span key={balanceSheetPill} className={`balance-detail-panel-amount ${balanceSheetPill === 'balance' ? (balance >= 0 ? 'positivo' : 'negativo') : balanceSheetPill === 'ingresos' ? 'positivo' : 'negativo'}`}>
-            {displayMoney(balanceSheetPill === 'balance' ? balance : balanceSheetPill === 'ingresos' ? ingresos : egresos)}
+          <span className={`balance-detail-panel-amount ${balanceSheetPill === 'balance' ? (stableBalance >= 0 ? 'positivo' : 'negativo') : balanceSheetPill === 'ingresos' ? 'positivo' : 'negativo'}`}>
+            <NumberTicker value={balanceSheetPill === 'balance' ? stableBalance : balanceSheetPill === 'ingresos' ? stableIngresos : -stableEgresos} masked={!showMoney} />
           </span>
 
           {/* Pill + View switch row */}
           <div className="balance-panel-controls-row">
-            <button className="balance-pill-dropdown-trigger" onClick={() => { const pills = ['balance', 'ingresos', 'egresos']; const next = pills[(pills.indexOf(balanceSheetPill) + 1) % 3]; setBalanceSheetPill(next); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}>
-              👉 {balanceSheetPill.charAt(0).toUpperCase() + balanceSheetPill.slice(1)}
-            </button>
+            <div className="balance-panel-pills">
+              {['balance', 'ingresos', 'egresos'].map(pill => (
+                <button
+                  key={pill}
+                  className={`balance-panel-pill ${balanceSheetPill === pill ? 'active' : ''}`}
+                  onClick={() => { setBalanceSheetPill(pill); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}
+                >
+                  {pill.charAt(0).toUpperCase() + pill.slice(1)}
+                </button>
+              ))}
+            </div>
             <button className="balance-view-pill-trigger" onClick={() => { setBalanceSheetView(balanceSheetView === 'metodo' ? 'categoria' : 'metodo'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}>
               {balanceSheetView === 'metodo' ? 'Métodos de pago' : 'Categorías'}
             </button>
@@ -2277,7 +2558,7 @@ export default function Home() {
                 : balanceSheetPill === 'egresos' ? m.egresos
                 : m.balance
               return { nombre: balanceSheetView === 'metodo' ? m.metodo : m.categoria, valor: Math.abs(raw), negativo: raw < 0 }
-            }).filter(m => m.valor !== 0)
+            })
             const barColor = balanceSheetPill === 'ingresos' ? 'var(--accent-green)'
               : balanceSheetPill === 'egresos' ? 'var(--accent-red)'
               : 'var(--accent-blue)'
@@ -2295,11 +2576,11 @@ export default function Home() {
 
             return chartData.length > 0 ? (
               <div className="home-balance-sheet-chart animate" key={chartAnimKey}>
-                <ResponsiveContainer width="100%" height={350}>
-                  <BarChart data={chartData} margin={{ top: 30, right: 0, left: 0, bottom: 20 }}>
+                <div className="chart-scroll-wrapper">
+                  <BarChart data={chartData} width={Math.max(chartData.length * 90, 400)} height={300} margin={{ top: 30, right: 0, left: 0, bottom: 20 }} barCategoryGap={20}>
                     <XAxis dataKey="nombre" tick={<CustomXTick />} axisLine={false} tickLine={false} interval={0} />
                     <YAxis hide />
-                    <Bar dataKey="valor" radius={[16, 16, 16, 16]} barSize={100} isAnimationActive={false} onClick={(_, index) => setSelectedBarIndex(selectedBarIndex === index ? null : index)}>
+                    <Bar dataKey="valor" radius={[16, 16, 16, 16]} barSize={72} minPointSize={32} isAnimationActive={false} onClick={(_, index) => setSelectedBarIndex(selectedBarIndex === index ? null : index)}>
                       {chartData.map((entry, index) => {
                         const isSelected = selectedBarIndex === index
                         const baseColor = entry.negativo ? 'var(--accent-red)' : barColor
@@ -2335,7 +2616,7 @@ export default function Home() {
                       />
                     </Bar>
                   </BarChart>
-                </ResponsiveContainer>
+                </div>
               </div>
             ) : <div className="chart-empty">Sin datos para mostrar</div>
           })()}
@@ -2343,13 +2624,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* Search + Period Row (mobile: icon + wheel + filter icon) */}
+      {/* Search + Period Row (mobile: wheel + filter icon; desktop: inline search replaces wheel) */}
       <div className="home-search-period-row">
-        {showSearchBar ? (
+        {showSearchBar && (
           <div className="home-search-inline-desktop">
             <Search size={16} />
             <input
-              ref={searchInputRef}
               type="text"
               placeholder="Buscar..."
               value={searchQuery}
@@ -2361,63 +2641,61 @@ export default function Home() {
             )}
             <button onClick={() => { setShowSearchBar(false); setSearchQuery('') }}><X size={16} /></button>
           </div>
-        ) : (
+        )}
+        {!showSearchBar && (
           <button
-            className={`home-search-icon-btn ${showSearchBar ? 'active' : ''}`}
+            className="home-search-icon-btn"
             onClick={() => { setShowSearchBar(true); setTimeout(() => searchInputRef.current?.focus(), 100) }}
           >
             <Search size={18} />
           </button>
         )}
-        <div className="home-period-wheel" ref={periodWheelRef} onTouchStart={onWheelTouchStart} onTouchEnd={onWheelTouchEnd}>
-          {periodWheelItems.map((item, i) => {
-            const offset = circularOffset(wheelIndex, i)
-            const absOffset = Math.abs(offset)
-            const opacity = absOffset === 0 ? 1 : absOffset === 1 ? 0.4 : 0.15
-            const scale = absOffset === 0 ? 1 : absOffset === 1 ? 0.85 : 0.7
-            return (
-              <button
-                key={item.key}
-                className={`home-period-wheel-item ${offset === 0 ? 'active' : ''}`}
-                style={{
-                  transform: `translateX(calc(${offset} * var(--period-wheel-gap, 64px))) scale(${scale})`,
-                  opacity,
-                }}
-                onClick={() => {
-                  if (offset === 0) return
-                  handleWheelNav(offset > 0 ? 1 : -1)
-                }}
-              >
-                {item.label}
-              </button>
-            )
-          })}
-        </div>
-        <button
-          className={`home-filtros-icon-btn ${showFilterCards ? 'active' : ''}`}
-          onClick={() => setShowFilterCards(prev => !prev)}
-          style={{ position: 'relative' }}
-        >
-          <SlidersHorizontal size={18} />
-          <span className="home-filtros-label-desktop">Más filtros</span>
-          {activeFilterCount > 0 && <span className="home-filter-badge">{activeFilterCount}</span>}
-        </button>
+        {!isMobile && (
+          <div className="home-period-wheel" ref={periodWheelRef} onTouchStart={onWheelTouchStart} onTouchEnd={onWheelTouchEnd}>
+            {periodWheelItems.map((item, i) => {
+              const offset = circularOffset(wheelIndex, i)
+              const absOffset = Math.abs(offset)
+              const opacity = absOffset === 0 ? 1 : absOffset === 1 ? 0.4 : 0.15
+              const scale = absOffset === 0 ? 1 : absOffset === 1 ? 0.85 : 0.7
+              return (
+                <button
+                  key={item.key}
+                  className={`home-period-wheel-item ${offset === 0 ? 'active' : ''}`}
+                  style={{
+                    transform: `translateX(calc(${offset} * var(--period-wheel-gap, 64px))) scale(${scale})`,
+                    opacity,
+                  }}
+                  onClick={() => {
+                    if (offset === 0) return
+                    handleWheelNav(offset > 0 ? 1 : -1)
+                  }}
+                >
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {!isMobile && (
+          <button
+            className={`home-filtros-icon-btn ${showFilterCards ? 'active' : ''}`}
+            onClick={() => setShowFilterCards(prev => !prev)}
+            style={{ position: 'relative' }}
+          >
+            <SlidersHorizontal size={18} />
+            <span className="home-filtros-label-desktop">Más filtros</span>
+            {activeFilterCount > 0 && <span className="home-filter-badge">{activeFilterCount}</span>}
+          </button>
+        )}
       </div>
-      {/* Mobile-only expanded search bar (below the row) */}
+      {/* Mobile search pill (floating overlay) */}
       {showSearchBar && (
-        <div className="home-search-bar-expanded">
-          <Search size={16} />
-          <input
-            type="text"
-            placeholder="Buscar..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')}><X size={14} /></button>
-          )}
-          <button onClick={() => { setShowSearchBar(false); setSearchQuery('') }}><X size={16} /></button>
-        </div>
+        <SearchPillMobile
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          searchInputRef={searchInputRef}
+          onClose={() => { setShowSearchBar(false); if (!searchQuery) setSearchQuery('') }}
+        />
       )}
 
       {/* Desktop search + filtros (hidden on mobile) */}
@@ -2506,7 +2784,7 @@ export default function Home() {
             onClick={() => setTab('productos')}
           >
             <span className="home-tab-pill-icon"><ShoppingBag size={22} /></span>
-            <span className="home-tab-pill-label">Prod/Memb</span>
+            <span className="home-tab-pill-label">{isMobile ? 'Productos' : 'Prod/Memb'}</span>
           </button>
           <button
             className={`home-tab-pill ${tab === 'movimientos' ? 'active' : ''}`}
@@ -2515,9 +2793,22 @@ export default function Home() {
             <span className="home-tab-pill-icon"><ArrowLeftRight size={22} /></span>
             <span className="home-tab-pill-label">Movimientos</span>
           </button>
+          {isMobile && rol !== 'viewer' && (
+            <button className={`home-tab-pill ${tab === 'clientes' ? 'active' : ''}`} onClick={() => setTab('clientes')}>
+              <span className="home-tab-pill-icon"><Users size={22} /></span>
+              <span className="home-tab-pill-label">Clientes</span>
+            </button>
+          )}
+          {isMobile && rol === 'admin' && (
+            <button className={`home-tab-pill ${tab === 'trabajadores' ? 'active' : ''}`} onClick={() => setTab('trabajadores')}>
+              <span className="home-tab-pill-icon"><Wallet size={22} /></span>
+              <span className="home-tab-pill-label">Trabajadores</span>
+            </button>
+          )}
         </div>
+        {['servicios', 'productos', 'movimientos'].includes(tab) && (<>
         <span className={`home-tab-total-inline${totalTab < 0 ? ' negative' : ''}`}>
-          {showMoney ? (<>{formatMoney(totalTab)}<span className="home-tab-total-cobrado"> / {formatMoney(cobradoTab)}</span></>) : '•••'}
+          {showMoney ? (<>{formatMoney(totalTab)}<span className="home-tab-total-cobrado"> / {formatMoney(cobradoTab)}</span></>) : <>{displayMoney(totalTab)}<span className="home-tab-total-cobrado"> / {displayMoney(cobradoTab)}</span></>}
         </span>
         <div className="home-tab-actions">
           <div className="quick-filter-wrapper">
@@ -2528,7 +2819,7 @@ export default function Home() {
               tabIndex={0}
             >
               <div className="quick-filter-circle">{(tab === 'servicios' ? allServicios : tab === 'productos' ? allProductos : allMovimientos).length}</div>
-              <span className="quick-filter-text">{filtroEstado.length === 0 && !filtroPago ? 'Todas' : filtroEstado.length === 1 ? ESTADO_LABELS[filtroEstado[0]] : filtroEstado.length > 1 ? `${filtroEstado.length} estados` : filtroPago === 'pagado' ? 'Pagado' : 'No pagado'} ({(tab === 'servicios' ? allServicios : tab === 'productos' ? allProductos : allMovimientos).length})</span>
+              <span className="quick-filter-text">{filtroEstado.length === 0 && !filtroPago ? 'Lavadas' : filtroEstado.length === 1 ? ESTADO_LABELS[filtroEstado[0]] : filtroEstado.length > 1 ? `${filtroEstado.length} estados` : filtroPago === 'pagado' ? 'Pagado' : 'No pagado'} ({(tab === 'servicios' ? allServicios : tab === 'productos' ? allProductos : allMovimientos).length})</span>
             </div>
             {showQuickFilter && (
               <>
@@ -2627,78 +2918,128 @@ export default function Home() {
             )}
           </div>
         </div>
+        </>)}
       </div>
 
+      {/* Embedded mobile tabs */}
+      {tab === 'clientes' && isMobile && (
+        <Suspense fallback={<div className="loading-screen">Cargando...</div>}>
+          <div className="embedded-tab-content">
+            <Clientes externalSearch={searchQuery} />
+          </div>
+        </Suspense>
+      )}
+      {tab === 'trabajadores' && isMobile && (
+        <Suspense fallback={<div className="loading-screen">Cargando...</div>}>
+          <div className="embedded-tab-content">
+            <PlanGuard feature="Pago de Trabajadores">
+              <PagoTrabajadores externalSearch={searchQuery} />
+            </PlanGuard>
+          </div>
+        </Suspense>
+      )}
+
       {/* Recent Cards */}
+      {['servicios', 'productos', 'movimientos'].includes(tab) && (
       <div className="home-recent-list">
         {tab === 'servicios' && (
           recentServicios.length > 0 ? (
             <div className="lavadas-cards">
               {(() => {
-                const hasMultipleDates = new Set(recentServicios.map(s => s.fecha?.split('T')[0])).size > 1
-                return recentServicios.map((item, idx) => {
-                  const fechaKey = item.fecha?.split('T')[0]
-                  const prevFechaKey = idx > 0 ? recentServicios[idx - 1].fecha?.split('T')[0] : null
-                  const showSep = hasMultipleDates && (idx === 0 || fechaKey !== prevFechaKey)
-                  const fechaLabel = new Date(item.fecha).toLocaleDateString('es-CO', {
-                    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Bogota'
-                  })
-                  return (
-                    <Fragment key={item.id}>
-                      {showSep && (
-                        <div className="date-separator">
-                          <span className="date-separator-text">{fechaLabel}</span>
-                        </div>
-                      )}
-                      <ServiceCard
-                        lavada={item}
-                        onEstadoChange={handleEstadoChange}
-                        onTipoLavadoChange={handleTipoLavadoChangeInline}
-                        onAdicionalChange={handleAdicionalChange}
-                        onLavadorChange={handleLavadorChange}
-                        onPagosChange={handlePagosChange}
-                        onEliminar={requestEliminarLavada}
-                        onWhatsApp={handleWhatsApp}
-                        plantillasMensaje={plantillasMensaje}
-                        isExpanded={expandedCards[item.id]}
-                        isCollapsing={collapsingCards[item.id]}
-                        isUpdating={updatingCards.has(item.id)}
-                        editingPago={editingPago}
-                        validationErrors={validationErrors[item.id]}
-                        onToggleExpand={() => {
-                          if (expandedCards[item.id]) {
-                            smoothCollapse(item.id)
-                          } else {
-                            setShowFabMenu(false)
-                            collapseAllExcept(item.id)
-                          }
-                        }}
-                        onSetEditingPago={setEditingPago}
-                        onSetValidationErrors={(errs) => errs ? setValidationErrors(prev => ({ ...prev, [item.id]: errs })) : setValidationErrors(prev => { const n = { ...prev }; delete n[item.id]; return n })}
-                        onSmoothCollapse={smoothCollapse}
-                        tiposLavado={tiposLavado}
-                        serviciosAdicionales={serviciosAdicionales}
-                        lavadores={lavadores}
-                        metodosPago={metodosPago}
-                        getTimerProps={getTimerProps}
-                        hasActiveTimer={hasActiveTimer}
-                        getEstadoClass={getEstadoClass}
-                        selectionMode={modoSeleccion}
-                        isSelected={selectedItems.has(item.id)}
-                        onToggleSelect={toggleSelectItem}
-                        isHighlighted={highlightId === item.id}
-                        onValidationToast={(msg) => toast.error(msg)}
-                        activePopoverId={activePopoverId}
-                        onPopoverOpen={setActivePopoverId}
-                        clienteCategoria={(() => { const c = clientes.find(c => c.id == item.cliente_id); return c ? getClienteCategoria(c) : null })()}
-                        onPlacaClick={(lavada) => {
-                          const cliente = clientes.find(c => c.id == lavada.cliente_id)
-                          if (cliente) setClienteInfoModal(cliente)
-                        }}
-                      />
-                    </Fragment>
-                  )
+                const estadoOrder = ['EN ESPERA', 'EN LAVADO', 'TERMINADO', 'ENTREGADO']
+                const estadoGroupColors = {
+                  'EN ESPERA': 'var(--accent-yellow)',
+                  'EN LAVADO': 'var(--accent-green)',
+                  'TERMINADO': 'oklch(0.7 0.05 259)',
+                  'ENTREGADO': 'oklch(0.5 0.18 160)',
+                }
+                const grouped = {}
+                recentServicios.forEach(item => {
+                  const est = item.estado || 'EN ESPERA'
+                  if (!grouped[est]) grouped[est] = []
+                  grouped[est].push(item)
                 })
+                // Flat sibling list so React preserves ServiceCard DOM when cards move between estado groups
+                const elements = []
+                estadoOrder.forEach(est => {
+                  if (!grouped[est]?.length) return
+                  elements.push(
+                    <div key={`header-${est}`} className="estado-category-header">
+                      <span className="estado-category-title" style={{ color: estadoGroupColors[est] }}>
+                        {ESTADO_LABELS[est] || est}
+                      </span>
+                      <span className="estado-category-count" style={{ color: estadoGroupColors[est] }}>
+                        {grouped[est].length}
+                      </span>
+                      <div className="estado-category-line" style={{ background: estadoGroupColors[est] }} />
+                    </div>
+                  )
+                  grouped[est].forEach(item => {
+                    elements.push(
+                      <SwipeableCard
+                        key={item.id}
+                        id={item.id}
+                        isMobile={isMobile}
+                        onDelete={() => requestEliminarLavada(item.id)}
+                        onSelect={() => { if (!modoSeleccion) setModoSeleccion(true); toggleSelectItem(item.id) }}
+                        onWhatsApp={() => setSwipeWaLavada(item)}
+                        selectionMode={modoSeleccion}
+                        isExpanded={expandedCards[item.id]}
+                        openSwipeId={openSwipeId}
+                        onSwipeOpen={setOpenSwipeId}
+                      >
+                        <ServiceCard
+                          lavada={item}
+                          onEstadoChange={handleEstadoChange}
+                          onTipoLavadoChange={handleTipoLavadoChangeInline}
+                          onAdicionalChange={handleAdicionalChange}
+                          onLavadorChange={handleLavadorChange}
+                          onPagosChange={handlePagosChange}
+                          onNotasChange={handleNotasChange}
+                          onEliminar={requestEliminarLavada}
+                          onWhatsApp={handleWhatsApp}
+                          plantillasMensaje={plantillasMensaje}
+                          isExpanded={expandedCards[item.id]}
+                          isCollapsing={collapsingCards[item.id]}
+                          isUpdating={updatingCards.has(item.id)}
+                          editingPago={editingPago}
+                          validationErrors={validationErrors[item.id]}
+                          onToggleExpand={() => {
+                            if (expandedCards[item.id]) {
+                              smoothCollapse(item.id)
+                            } else {
+                              setShowFabMenu(false)
+                              collapseAllExcept(item.id)
+                            }
+                          }}
+                          onSetEditingPago={setEditingPago}
+                          onSetValidationErrors={(errs) => errs ? setValidationErrors(prev => ({ ...prev, [item.id]: errs })) : setValidationErrors(prev => { const n = { ...prev }; delete n[item.id]; return n })}
+                          onSmoothCollapse={smoothCollapse}
+                          tiposLavado={tiposLavado}
+                          serviciosAdicionales={serviciosAdicionales}
+                          lavadores={lavadores}
+                          metodosPago={metodosPago}
+                          getTimerProps={getTimerProps}
+                          hasActiveTimer={hasActiveTimer}
+                          getEstadoClass={getEstadoClass}
+                          selectionMode={modoSeleccion}
+                          isSelected={selectedItems.has(item.id)}
+                          onToggleSelect={toggleSelectItem}
+                          isHighlighted={highlightId === item.id}
+                          onValidationToast={(msg) => toast.error(msg)}
+                          activePopoverId={activePopoverId}
+                          onPopoverOpen={setActivePopoverId}
+                          clienteCategoria={(() => { const c = clientes.find(c => c.id == item.cliente_id); return c ? getClienteCategoria(c) : null })()}
+                          onPlacaClick={(lavada) => {
+                            const cliente = clientes.find(c => c.id == lavada.cliente_id)
+                            if (cliente) setClienteInfoModal(cliente)
+                          }}
+                        />
+                      </SwipeableCard>
+                    )
+                  })
+                })
+                return elements
               })()}
             </div>
           ) : (
@@ -2760,7 +3101,7 @@ export default function Home() {
                               inputMode="numeric"
                               value={editProductData.valorDisplay}
                               onChange={(e) => handleEditProductoValorChange(e.target.value)}
-                              placeholder="$0"
+                              placeholder={getCurrencySymbol() + '0'}
                               autoFocus
                             />
                           </div>
@@ -2907,7 +3248,7 @@ export default function Home() {
                               inputMode="numeric"
                               value={editProductData.valorDisplay}
                               onChange={(e) => handleEditProductoValorChange(e.target.value)}
-                              placeholder="$0"
+                              placeholder={getCurrencySymbol() + '0'}
                               autoFocus
                             />
                           </div>
@@ -3017,6 +3358,7 @@ export default function Home() {
           </button>
         )}
       </div>
+      )}
       </>)}
 
       {/* Bulk Action Bar */}
@@ -3028,10 +3370,10 @@ export default function Home() {
               {selectedItems.size === currentList.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
             </button>
             <button className="btn-secondary" onClick={() => { setSelectedItems(new Set()); setModoSeleccion(false) }}>
-              <X size={16} /> Cancelar
+              Cancelar
             </button>
             <button className="btn-danger" onClick={() => setShowDeleteModal(true)}>
-              <Trash2 size={16} /> Eliminar
+              Eliminar
             </button>
           </div>
         </div>
@@ -3051,6 +3393,24 @@ export default function Home() {
         onConfirm={executeEliminarLavada}
         message="Se eliminará este servicio permanentemente. Ingresa tu contraseña para confirmar."
       />
+
+      {swipeWaLavada && (
+        <>
+          <div className="pago-popover-overlay" onClick={() => setSwipeWaLavada(null)} />
+          <div className="swipe-wa-menu">
+            {plantillasMensaje.length > 0 ? plantillasMensaje.map(p => (
+              <button key={p.id} className="swipe-wa-menu-item" onClick={() => { handleWhatsApp(swipeWaLavada, { plantillaId: p.id }); setSwipeWaLavada(null) }}>
+                {p.nombre}
+              </button>
+            )) : (
+              <span className="swipe-wa-menu-empty">No hay plantillas</span>
+            )}
+            <button className="swipe-wa-menu-item" onClick={() => { handleWhatsApp(swipeWaLavada, {}); setSwipeWaLavada(null) }}>
+              Ir al contacto
+            </button>
+          </div>
+        </>
+      )}
 
       <ConfirmDeleteModal
         isOpen={!!pendingDeleteMovimientoId}
@@ -3425,30 +3785,48 @@ export default function Home() {
         </div>
       )}
 
-      {/* FAB */}
-      {!modoSeleccion && !anyCardExpanded && (
-        <button
-          className={`home-fab ${showFabMenu ? 'open' : ''}`}
-          onClick={() => setShowFabMenu(!showFabMenu)}
-        >
-          <Plus size={24} />
-        </button>
-      )}
-      {showFabMenu && !anyCardExpanded && (
-        <>
-          <div className="home-fab-overlay" onClick={() => setShowFabMenu(false)} />
-          <div className="home-fab-menu">
-            <button onClick={() => { setShowFabMenu(false); openMovimientoModal('INGRESO') }}>
-              <TrendingUp size={18} /> Registrar Ing/Egr
+
+      {/* FAB pill for mobile (left side) — "+" and search */}
+      {!modoSeleccion && (() => {
+        const slot = document.getElementById('fab-slot-left')
+        return slot ? createPortal(
+          <div className="fab-pill-container">
+            <button
+              className={`fab-pill-btn fab-pill-plus ${showFabMenu ? 'open' : ''}`}
+              onClick={() => setShowFabMenu(prev => !prev)}
+              title="Nuevo"
+            >
+              <Plus size={22} />
             </button>
+            <button
+              className="fab-pill-btn fab-pill-search"
+              onClick={() => {
+                setShowSearchBar(true)
+                setTimeout(() => searchInputRef.current?.focus(), 100)
+              }}
+              title="Buscar"
+            >
+              <Search size={20} />
+            </button>
+          </div>,
+          slot
+        ) : null
+      })()}
+      {showFabMenu && (
+        <>
+          <div className="mobile-fab-overlay" onClick={() => setShowFabMenu(false)} />
+          <div className="mobile-fab-menu">
             <button onClick={() => { setShowFabMenu(false); setShowServicioModal(true) }}>
               <Droplets size={18} /> Nuevo Servicio
             </button>
+            <button onClick={() => { setShowFabMenu(false); setShowVentaModal(true) }}>
+              <ShoppingBag size={18} /> Nueva Venta
+            </button>
+            <button onClick={() => { setShowFabMenu(false); openMovimientoModal('INGRESO') }}>
+              <TrendingUp size={18} /> Registrar Ing/Egr
+            </button>
             <button onClick={() => { setShowFabMenu(false); setShowNuevoClienteModal(true) }}>
               <UserPlus size={18} /> Nuevo Cliente
-            </button>
-            <button onClick={() => { setShowFabMenu(false); setShowVentaModal(true) }}>
-              <DollarSign size={18} /> Nueva Venta
             </button>
             <button onClick={() => {
               setShowFabMenu(false)
@@ -3459,7 +3837,7 @@ export default function Home() {
                 setShowImportModal(true)
               }
             }}>
-              <Upload size={18} /> Importar {{ servicios: 'Servicios', productos: 'Productos', movimientos: 'Movimientos' }[tab]}
+              <Upload size={18} /> Importar
             </button>
           </div>
         </>
@@ -3522,7 +3900,7 @@ export default function Home() {
                   inputMode="numeric"
                   value={movimientoForm.valor ? `$ ${movimientoForm.valor}` : ''}
                   onChange={(e) => handleMovimientoValorChange(e.target.value)}
-                  placeholder="$ 0"
+                  placeholder={getCurrencySymbol() + ' 0'}
                   autoFocus
                 />
               </div>
@@ -3803,7 +4181,7 @@ export default function Home() {
                           const prod = productos.find(p => p.id === prodId)
                           if (prod) {
                             const precioTotal = Number(prod.precio) * ventaForm.cantidad
-                            setVentaForm(prev => ({ ...prev, producto_id: prodId, valor: precioTotal.toLocaleString('es-CO') }))
+                            setVentaForm(prev => ({ ...prev, producto_id: prodId, valor: formatPriceLocale(precioTotal) }))
                           }
                         } else {
                           setVentaForm(prev => ({ ...prev, producto_id: '', valor: '' }))
@@ -3828,7 +4206,7 @@ export default function Home() {
                         const prod = productos.find(p => p.id === ventaForm.producto_id)
                         const maxStock = prod ? prod.cantidad : 999
                         const cantFinal = Math.min(cant, maxStock)
-                        const newValor = prod ? (Number(prod.precio) * cantFinal).toLocaleString('es-CO') : ventaForm.valor
+                        const newValor = prod ? formatPriceLocale(Number(prod.precio) * cantFinal) : ventaForm.valor
                         setVentaForm(prev => ({ ...prev, cantidad: cantFinal, valor: newValor }))
                       }}
                     />
@@ -3847,7 +4225,7 @@ export default function Home() {
                         const membId = e.target.value
                         const memb = tiposMembresia.find(m => m.id === membId)
                         const precio = memb?.precio || 0
-                        setVentaForm(prev => ({ ...prev, membresia_id: membId, valor: precio ? Number(precio).toLocaleString('es-CO') : '' }))
+                        setVentaForm(prev => ({ ...prev, membresia_id: membId, valor: precio ? formatPriceLocale(precio) : '' }))
                       }}
                     >
                       <option value="">Seleccionar membresía</option>
@@ -3895,7 +4273,7 @@ export default function Home() {
                   inputMode="numeric"
                   value={ventaForm.valor}
                   onChange={(e) => handleValorChange(e.target.value)}
-                  placeholder="$0"
+                  placeholder={getCurrencySymbol() + '0'}
                   required
                 />
               </div>
@@ -3929,12 +4307,12 @@ export default function Home() {
                           value={pago.valor}
                           onChange={(e) => {
                             const limpio = e.target.value.replace(/[^\d]/g, '')
-                            const formatted = limpio ? Number(limpio).toLocaleString('es-CO') : ''
+                            const formatted = limpio ? formatPriceLocale(Number(limpio)) : ''
                             const newPagos = [...ventaForm.pagos]
                             newPagos[idx] = { ...newPagos[idx], valor: formatted }
                             setVentaForm(prev => ({ ...prev, pagos: newPagos }))
                           }}
-                          placeholder="$0"
+                          placeholder={getCurrencySymbol() + '0'}
                         />
                         <button type="button" className="pago-pill-x" onClick={() => setVentaEditingPago(null)}>
                           <X size={12} />
@@ -3965,7 +4343,7 @@ export default function Home() {
                       const totalValor = Number(ventaForm.valor.replace(/[^\d]/g, '') || 0)
                       const sumaExistente = ventaForm.pagos.reduce((acc, p) => acc + Number(p.valor.replace(/[^\d]/g, '') || 0), 0)
                       const restante = Math.max(0, totalValor - sumaExistente)
-                      const newPagos = [...ventaForm.pagos, { metodo_pago_id: '', valor: restante ? restante.toLocaleString('es-CO') : '' }]
+                      const newPagos = [...ventaForm.pagos, { metodo_pago_id: '', valor: restante ? formatPriceLocale(restante) : '' }]
                       setVentaForm(prev => ({ ...prev, pagos: newPagos }))
                       setVentaEditingPago(newPagos.length - 1)
                     }}
@@ -3994,6 +4372,143 @@ export default function Home() {
       />
 
       {showUpgradeModal && <UpgradeModal onClose={() => { setShowUpgradeModal(false); setUpgradePeriod(null) }} initialPeriod={upgradePeriod} />}
+
+      {/* Active search chip — fixed at bottom on mobile */}
+      {searchQuery && (
+        <div className="home-search-chip">
+          <Search size={14} />
+          <span>Buscando: {searchQuery}</span>
+          <button onClick={() => setSearchQuery('')}><X size={14} /></button>
+        </div>
+      )}
+
+      {/* Fullscreen Search */}
+      {showFullSearch && (() => {
+        const q = fullSearchQuery.trim().toLowerCase()
+        const results = []
+
+        if (q.length >= 1) {
+          // Servicios (lavadas)
+          lavadas.filter(l =>
+            (l.placa || '').toLowerCase().includes(q) ||
+            (l.cliente?.nombre || '').toLowerCase().includes(q)
+          ).slice(0, 5).forEach(l => results.push({
+            type: 'servicios',
+            label: `${l.cliente?.nombre || 'Sin nombre'} — ${l.placa}`,
+            sub: `${l.estado} · ${formatMoney(l.valor || 0)}`,
+            searchValue: l.placa,
+          }))
+
+          // Productos
+          transacciones.filter(t =>
+            (t.categoria === 'PRODUCTO' || t.categoria === 'MEMBRESIA') &&
+            ((t.descripcion || '').toLowerCase().includes(q) || (t.placa_o_persona || '').toLowerCase().includes(q))
+          ).slice(0, 5).forEach(t => results.push({
+            type: 'productos',
+            label: t.descripcion || 'Sin descripcion',
+            sub: `${t.tipo} · ${formatMoney(t.valor || 0)}`,
+            searchValue: t.descripcion || t.placa_o_persona,
+          }))
+
+          // Movimientos
+          transacciones.filter(t =>
+            t.categoria !== 'PRODUCTO' && t.categoria !== 'MEMBRESIA' &&
+            ((t.descripcion || '').toLowerCase().includes(q) || (t.placa_o_persona || '').toLowerCase().includes(q) || (t.categoria || '').toLowerCase().includes(q))
+          ).slice(0, 5).forEach(t => results.push({
+            type: 'movimientos',
+            label: t.descripcion || t.categoria || 'Movimiento',
+            sub: `${t.tipo} · ${formatMoney(t.valor || 0)}`,
+            searchValue: t.descripcion || t.placa_o_persona,
+          }))
+
+          // Clientes
+          clientes.filter(c =>
+            (c.nombre || '').toLowerCase().includes(q) ||
+            (c.placa || '').toLowerCase().includes(q) ||
+            (c.telefono || '').toLowerCase().includes(q)
+          ).slice(0, 5).forEach(c => results.push({
+            type: 'clientes',
+            label: `${c.nombre || 'Sin nombre'} — ${c.placa || ''}`,
+            sub: c.telefono || 'Sin telefono',
+            searchValue: c.nombre || c.placa,
+          }))
+
+          // Trabajadores (lavadores)
+          lavadores.filter(l =>
+            (l.nombre || '').toLowerCase().includes(q)
+          ).slice(0, 5).forEach(l => results.push({
+            type: 'trabajadores',
+            label: l.nombre,
+            sub: l.activo !== false ? 'Activo' : 'Inactivo',
+            searchValue: l.nombre,
+          }))
+        }
+
+        const typeLabels = { servicios: 'Servicios', productos: 'Productos', movimientos: 'Movimientos', clientes: 'Clientes', trabajadores: 'Trabajadores' }
+        const typeIcons = { servicios: Droplets, productos: ShoppingBag, movimientos: ArrowLeftRight, clientes: User, trabajadores: Wrench }
+        const grouped = {}
+        results.forEach(r => {
+          if (!grouped[r.type]) grouped[r.type] = []
+          grouped[r.type].push(r)
+        })
+
+        return (
+          <div className="fullsearch-overlay">
+            <div className="fullsearch-header">
+              <button className="fullsearch-back" onClick={() => setShowFullSearch(false)}>
+                <ArrowLeft size={22} />
+              </button>
+              <input
+                ref={fullSearchInputRef}
+                type="text"
+                className="fullsearch-input"
+                placeholder="Buscar servicios, productos, clientes..."
+                value={fullSearchQuery}
+                onChange={(e) => setFullSearchQuery(e.target.value)}
+                autoFocus
+              />
+              {fullSearchQuery && (
+                <button className="fullsearch-clear" onClick={() => { setFullSearchQuery(''); fullSearchInputRef.current?.focus() }}>
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+            <div className="fullsearch-results">
+              {q.length === 0 && (
+                <div className="fullsearch-empty">Escribe para buscar</div>
+              )}
+              {q.length >= 1 && results.length === 0 && (
+                <div className="fullsearch-empty">Sin resultados para "{fullSearchQuery}"</div>
+              )}
+              {Object.entries(grouped).map(([type, items]) => {
+                const Icon = typeIcons[type] || Search
+                return (
+                <div key={type} className="fullsearch-group">
+                  <div className="fullsearch-group-title">{typeLabels[type]}</div>
+                  {items.map((item, i) => (
+                    <button
+                      key={i}
+                      className="fullsearch-item"
+                      onClick={() => {
+                        setShowFullSearch(false)
+                        setSearchQuery(item.searchValue)
+                        setTab(item.type)
+                        setPeriodo('a')
+                      }}
+                    >
+                      <span className={`fullsearch-item-icon fullsearch-icon--${type}`}><Icon size={18} /></span>
+                      <span className="fullsearch-item-text">
+                        <div className="fullsearch-item-label">{item.label}</div>
+                        <div className="fullsearch-item-sub">{item.sub}</div>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )})}
+            </div>
+          </div>
+        )
+      })()}
 
     </div>
   )

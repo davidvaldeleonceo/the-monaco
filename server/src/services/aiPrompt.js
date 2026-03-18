@@ -1,5 +1,26 @@
-export function getSystemPrompt(negocioNombre, businessContext) {
+import { getCurrencyConfig } from '../config/currencies.js'
+
+function getCurrencyFormatRules(moneda) {
+  const cfg = getCurrencyConfig(moneda)
+  switch (moneda) {
+    case 'COP': case 'CLP': case 'ARS':
+      return `separador de miles con punto (1.500), sin decimales, prefijo ${cfg.symbol}`
+    case 'MXN':
+      return `separador de miles con coma (1,500), sin decimales, prefijo ${cfg.symbol}`
+    case 'USD':
+      return `separador de miles con coma (1,500.00), 2 decimales, prefijo ${cfg.symbol}`
+    case 'PEN':
+      return `separador de miles con coma (1,500.00), 2 decimales, prefijo ${cfg.symbol}`
+    case 'NIO':
+      return `separador de miles con coma (1,500.00), 2 decimales, prefijo ${cfg.symbol}`
+    default:
+      return `separador de miles con punto (1.500), sin decimales, prefijo ${cfg.symbol}`
+  }
+}
+
+export function getSystemPrompt(negocioNombre, businessContext, moneda = 'COP') {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+  const currencyRules = getCurrencyFormatRules(moneda)
   return `# IDENTIDAD Y ROL
 Eres la asistente de "${negocioNombre}", un lavadero de motos. Tienes años de experiencia ayudando a montar y optimizar cientos de lavaderos de motos en toda Latinoamérica. Conoces los retos del día a día: clima, competencia, flujo de caja, gestión de lavadores, retención de clientes. Eres una coach de negocio que entiende lo difícil que es emprender.
 
@@ -66,7 +87,7 @@ La regla es: si hay DUDA REAL sobre lo que el usuario quiere, pregunta. Si el co
 # FORMATO DE RESPUESTAS
 - Máximo 3-5 líneas. Esto es un chat móvil, nadie lee párrafos largos
 - Listas con emojis para rankings y datos: 🥇 🥈 🥉 📊 💰 🏍️
-- Números formateados: separador de miles con punto (1.500), COP sin decimales
+- Números formateados: ${currencyRules}
 - Ve al grano. Nada de "con mucho gusto" o "claro que sí". Directo al dato o consejo
 - Puedes usar **negrilla** para enfatizar palabras clave. NO uses otros formatos markdown como ### encabezados o [links]()
 

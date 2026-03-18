@@ -8,7 +8,7 @@ import {
 import CheckoutModal from '../payment/CheckoutModal'
 import EstadoMockup from './EstadoMockup'
 import PagoMockup from './PagoMockup'
-import IaMockup from './IaMockup'
+// import IaMockup from './IaMockup' // AI hidden — cost too high
 import BalanceMockup from './BalanceMockup'
 import VideoWidget from './VideoWidget'
 import { API_URL } from '../../config/constants'
@@ -40,13 +40,6 @@ const steps = [
 
 const features = [
   {
-    icon: Bot,
-    title: 'IA que entiende tu negocio',
-    desc: 'Pregúntale a Monaco: ¿cómo voy hoy? ¿cuál es mi mejor lavador? ¿cuánto llevo esta semana?',
-    details: ['Respuestas instantáneas sobre tu negocio', 'Entrada por voz o texto', 'Análisis y recomendaciones'],
-    placeholder: 'Screenshot del chat de IA Monaco con una conversación preguntando "cómo voy hoy" y la respuesta con resumen del día',
-  },
-  {
     icon: Timer,
     title: 'Turnos en tiempo real',
     desc: 'Ve qué motos están en espera, lavándose o listas para entregar. Desde tu celular, donde estés.',
@@ -74,7 +67,6 @@ const planFeatures = [
   'Clientes y membresías',
   'Pagos a trabajadores',
   'Reportes y balance',
-  'IA Monaco incluida',
   'Múltiples usuarios y roles',
   'Acceso desde cualquier dispositivo',
   'Soporte por WhatsApp',
@@ -179,11 +171,6 @@ export default function LandingPage() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const prev = document.documentElement.dataset.theme
-    document.documentElement.dataset.theme = 'light'
-    return () => { document.documentElement.dataset.theme = prev || 'dark' }
-  }, [])
 
   return (
     <div className="landing-page">
@@ -311,10 +298,8 @@ export default function LandingPage() {
             </div>
             <div className="landing-showcase-visual">
               {i === 0 ? (
-                <IaMockup />
-              ) : i === 1 ? (
                 <EstadoMockup />
-              ) : i === 2 ? (
+              ) : i === 1 ? (
                 <PagoMockup />
               ) : (
                 <BalanceMockup />

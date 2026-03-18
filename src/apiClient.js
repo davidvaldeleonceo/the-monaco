@@ -12,6 +12,8 @@
 import { io } from 'socket.io-client'
 import { API_URL, TOKEN_KEY, SESSION_KEY } from './config/constants'
 
+const PROFILE_CACHE_KEY = 'monaco_profile_cache'
+
 // ─── Token helpers ─────────────────────────────────────────────────
 function getToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -34,6 +36,39 @@ function getStoredSession() {
   } catch {
     return null
   }
+}
+
+// ─── Bootstrap promise (pre-fetch all data during login) ────────────
+let _bootstrapPromise = null
+
+export function getBootstrapPromise() {
+  const p = _bootstrapPromise
+  _bootstrapPromise = null // consume once
+  return p
+}
+
+function startBootstrapFetch() {
+  _bootstrapPromise = apiFetch('/api/bootstrap').catch(() => null)
+}
+
+// ─── Profile cache (for instant TenantContext on page refresh) ──────
+export function getCachedProfile() {
+  try {
+    const raw = sessionStorage.getItem(PROFILE_CACHE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function cacheProfile(profile) {
+  if (profile) {
+    sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile))
+  }
+}
+
+export function clearProfileCache() {
+  sessionStorage.removeItem(PROFILE_CACHE_KEY)
 }
 
 // ─── HTTP helper ───────────────────────────────────────────────────
@@ -260,6 +295,9 @@ const authModule = {
     setSession(session)
 
     if (session) {
+      if (session.profile) {
+        cacheProfile(session.profile)
+      }
       notifyAuthListeners('SIGNED_IN', session)
     }
 
@@ -286,6 +324,15 @@ const authModule = {
     setSession(session)
 
     if (session) {
+      // Cache profile from login response (avoids redundant TenantContext fetch)
+      if (session.profile) {
+        cacheProfile(session.profile)
+      }
+
+      // Start bootstrap fetch BEFORE notifying listeners (React re-render)
+      // DataContext will consume this promise instead of making 10+ individual requests
+      startBootstrapFetch()
+
       notifyAuthListeners('SIGNED_IN', session)
     }
 
@@ -294,6 +341,7 @@ const authModule = {
 
   async signOut() {
     setSession(null)
+    clearProfileCache()
     disconnectSocket()
     notifyAuthListeners('SIGNED_OUT', null)
     return { error: null }
@@ -305,16 +353,16 @@ const authModule = {
       return { data: { session: null }, error: null }
     }
 
-    // Validate token with server
-    const result = await apiFetch('/api/auth/session')
+    // Return stored session immediately, validate in background
+    apiFetch('/api/auth/session').then(result => {
+      if (!result.data?.session) {
+        // Token invalid — clear and notify
+        setSession(null)
+        notifyAuthListeners('SIGNED_OUT', null)
+      }
+    }).catch(() => {})
 
-    if (result.data?.session) {
-      return { data: { session: result.data.session }, error: null }
-    }
-
-    // Token invalid — clear
-    setSession(null)
-    return { data: { session: null }, error: null }
+    return { data: { session }, error: null }
   },
 
   onAuthStateChange(callback) {

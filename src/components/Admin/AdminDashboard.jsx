@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { Users, Building2, Droplets, DollarSign, TrendingUp, Clock, AlertTriangle, CheckCircle, Pencil, Trash2, X, Check } from 'lucide-react'
+import { Users, Building2, Droplets, DollarSign, TrendingUp, Clock, AlertTriangle, CheckCircle, Pencil, Trash2, X, Check, CreditCard } from 'lucide-react'
 import { API_URL, TOKEN_KEY } from '../../config/constants'
 
 async function adminFetch(path, options = {}) {
@@ -18,7 +18,7 @@ async function adminFetch(path, options = {}) {
 }
 
 function formatMoney(n) {
-  return '$ ' + Math.round(n).toLocaleString('es-CO')
+  return '$ ' + Math.round(n).toLocaleString()
 }
 
 function daysUntil(dateStr) {
@@ -173,17 +173,24 @@ export default function AdminDashboard() {
           </div>
         </div>
         <div className="admin-kpi-card">
+          <div className="admin-kpi-icon"><CreditCard size={20} /></div>
+          <div className="admin-kpi-info">
+            <span className="admin-kpi-value">{overview?.revenue?.pagos || 0}</span>
+            <span className="admin-kpi-label">Planes vendidos</span>
+          </div>
+        </div>
+        <div className="admin-kpi-card">
           <div className="admin-kpi-icon"><DollarSign size={20} /></div>
           <div className="admin-kpi-info">
-            <span className="admin-kpi-value">{formatMoney(overview?.revenue?.total || 0)}</span>
-            <span className="admin-kpi-label">Revenue total</span>
+            <span className="admin-kpi-value">{formatMoney((overview?.revenue?.total || 0) / 100)}</span>
+            <span className="admin-kpi-label">Recaudado</span>
           </div>
         </div>
         <div className="admin-kpi-card">
           <div className="admin-kpi-icon"><CheckCircle size={20} /></div>
           <div className="admin-kpi-info">
             <span className="admin-kpi-value">{parseInt(neg.pro_pagado)}</span>
-            <span className="admin-kpi-label">PRO pagado</span>
+            <span className="admin-kpi-label">PRO activo</span>
           </div>
         </div>
         <div className="admin-kpi-card">
@@ -242,6 +249,7 @@ export default function AdminDashboard() {
               <tr>
                 <th>Negocio</th>
                 <th>Email</th>
+                <th>Telefono</th>
                 <th>Plan</th>
                 <th>Trial hasta</th>
                 <th>Suscripcion hasta</th>
@@ -265,6 +273,7 @@ export default function AdminDashboard() {
                       }
                     </td>
                     <td className="admin-td-email">{n.email || '—'}</td>
+                    <td>{n.telefono ? <a href={`tel:${n.telefono}`} style={{ color: 'var(--accent-blue)', textDecoration: 'none' }}>{n.telefono}</a> : '—'}</td>
                     <td>
                       {isEditing
                         ? <select className="admin-edit-select" value={editForm.plan} onChange={e => setEditForm(f => ({ ...f, plan: e.target.value }))}>

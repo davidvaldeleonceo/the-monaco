@@ -6,7 +6,7 @@ import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
-import { formatMoney } from '../../utils/money'
+import { formatMoney, getCurrencySymbol, formatPriceLocale } from '../../utils/money'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 import { useMoneyVisibility } from '../context/MoneyVisibilityContext'
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
@@ -309,7 +309,7 @@ export default function Balance() {
       descripcion: t.descripcion || '',
       metodo_pago_id: t.metodo_pago_id || '',
       valor: String(t.valor),
-      valorDisplay: Number(t.valor).toLocaleString('es-CO'),
+      valorDisplay: formatPriceLocale(t.valor),
     })
   }
 
@@ -325,7 +325,7 @@ export default function Balance() {
       return
     }
     const num = Number(limpio)
-    setEditData(prev => ({ ...prev, valor: String(num), valorDisplay: num.toLocaleString('es-CO') }))
+    setEditData(prev => ({ ...prev, valor: String(num), valorDisplay: formatPriceLocale(num) }))
   }
 
   const guardarEdicion = async (id) => {
@@ -451,7 +451,7 @@ export default function Balance() {
                         formatter={(value) => [formatMoney(value), balancePill === 'ingresos' ? 'Ingresos' : balancePill === 'egresos' ? 'Egresos' : 'Balance']}
                         contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, fontSize: '0.85rem' }}
                       />
-                      <Bar dataKey="valor" fill={color} radius={[6, 6, 0, 0]} barSize={50} />
+                      <Bar dataKey="valor" fill={color} radius={[6, 6, 0, 0]} barSize={80} />
                     </BarChart>
                   </ResponsiveContainer>
                 )
@@ -658,7 +658,7 @@ export default function Balance() {
                         onChange={(e) => handleEditValorChange(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter') guardarEdicion(t.id); if (e.key === 'Escape') cancelarEdicion() }}
                         className="edit-inline-input edit-inline-valor"
-                        placeholder="$0"
+                        placeholder={getCurrencySymbol() + '0'}
                         autoFocus
                       />
                     </td>

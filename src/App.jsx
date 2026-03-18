@@ -1,5 +1,6 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import useIsMobile from './hooks/useIsMobile'
 import { supabase } from './apiClient'
 import Layout from './components/layout/Layout'
 import { DataProvider } from './components/context/DataContext'
@@ -30,6 +31,21 @@ const ResetPassword = lazy(() => import('./components/auth/ResetPassword'))
 const Onboarding = lazy(() => import('./components/auth/Onboarding'))
 const SetupWizard = lazy(() => import('./components/auth/SetupWizard'))
 
+function ForceLightMode({ children }) {
+  useLayoutEffect(() => {
+    const prev = document.documentElement.dataset.theme
+    document.documentElement.dataset.theme = 'light'
+    return () => { document.documentElement.dataset.theme = prev || 'light' }
+  }, [])
+  return children
+}
+
+function MobileRedirect({ to, children }) {
+  const isMobile = useIsMobile()
+  if (isMobile) return <Navigate to={to} replace />
+  return children
+}
+
 function AuthenticatedApp({ session }) {
   const { loading, needsOnboarding, needsSetup } = useTenant()
 
@@ -57,8 +73,8 @@ function AuthenticatedApp({ session }) {
           <Route path="/dashboard" element={<RoleGuard path="/dashboard"><Reportes /></RoleGuard>} />
           <Route path="/reportes" element={<Navigate to="/dashboard" replace />} />
           <Route path="/lavadas" element={<RoleGuard path="/lavadas"><Lavadas /></RoleGuard>} />
-          <Route path="/clientes" element={<RoleGuard path="/clientes"><Clientes /></RoleGuard>} />
-          <Route path="/pagos" element={<RoleGuard path="/pagos"><PlanGuard feature="Pago de Trabajadores"><PagoTrabajadores /></PlanGuard></RoleGuard>} />
+          <Route path="/clientes" element={<RoleGuard path="/clientes"><MobileRedirect to="/home?tab=clientes"><Clientes /></MobileRedirect></RoleGuard>} />
+          <Route path="/pagos" element={<RoleGuard path="/pagos"><PlanGuard feature="Pago de Trabajadores"><MobileRedirect to="/home?tab=trabajadores"><PagoTrabajadores /></MobileRedirect></PlanGuard></RoleGuard>} />
           <Route path="/cuenta" element={<RoleGuard path="/cuenta"><Configuracion /></RoleGuard>} />
           <Route path="/admin" element={<RoleGuard path="/admin"><AdminDashboard /></RoleGuard>} />
         </Route>
@@ -82,6 +98,10 @@ function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
+      // Prefetch Home chunk while React re-renders the authenticated app
+      if (session) {
+        import('./components/pages/Home')
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -99,11 +119,11 @@ function App() {
         <Routes>
           {!session ? (
             <>
-              <Route path="/" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><LandingPage /></Suspense>} />
-              <Route path="/login" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><Login /></Suspense>} />
-              <Route path="/registro" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><Register /></Suspense>} />
-              <Route path="/forgot-password" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><ForgotPassword /></Suspense>} />
-              <Route path="/reset-password" element={<Suspense fallback={<div className="loading-screen">Cargando...</div>}><ResetPassword /></Suspense>} />
+              <Route path="/" element={<ForceLightMode><Suspense fallback={<div className="loading-screen">Cargando...</div>}><LandingPage /></Suspense></ForceLightMode>} />
+              <Route path="/login" element={<ForceLightMode><Suspense fallback={<div className="loading-screen">Cargando...</div>}><Login /></Suspense></ForceLightMode>} />
+              <Route path="/registro" element={<ForceLightMode><Suspense fallback={<div className="loading-screen">Cargando...</div>}><Register /></Suspense></ForceLightMode>} />
+              <Route path="/forgot-password" element={<ForceLightMode><Suspense fallback={<div className="loading-screen">Cargando...</div>}><ForgotPassword /></Suspense></ForceLightMode>} />
+              <Route path="/reset-password" element={<ForceLightMode><Suspense fallback={<div className="loading-screen">Cargando...</div>}><ResetPassword /></Suspense></ForceLightMode>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
           ) : (

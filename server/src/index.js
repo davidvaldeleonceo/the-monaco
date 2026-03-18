@@ -16,6 +16,7 @@ import aiRoutes from './routes/ai.js'
 import planLimits from './middleware/planLimits.js'
 import superadmin from './middleware/superadmin.js'
 import adminRoutes from './routes/admin.js'
+import bootstrapRoutes from './routes/bootstrap.js'
 import { initRealtime } from './services/realtimeService.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -51,6 +52,9 @@ app.use('/api/auth', authRoutes)
 
 // RPC routes (auth required)
 app.use('/api/rpc', auth, rpcRoutes)
+
+// Bootstrap endpoint (auth required, returns all data in one round-trip)
+app.use('/api/bootstrap', auth, bootstrapRoutes)
 
 // AI assistant routes (auth required, PRO check inside)
 app.use('/api/ai', auth, aiRoutes)

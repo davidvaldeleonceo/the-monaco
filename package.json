@@ -14,6 +14,7 @@
     "deploy:api": "sh scripts/deploy-backend.sh"
   },
   "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.76",
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "jspdf": "^4.1.0",

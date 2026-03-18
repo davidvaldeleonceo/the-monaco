@@ -4,8 +4,9 @@ import { supabase } from '../../apiClient'
 import { useData } from '../context/DataContext'
 import { useTenant } from '../context/TenantContext'
 import { useToast } from '../layout/Toast'
-import { Plus, X, Edit, Trash2, Settings, ChevronDown, Crown, Shield, MessageCircle, Mail, User, Check, LogOut, HelpCircle, Loader } from 'lucide-react'
-import { formatMoney } from '../../utils/money'
+import { Plus, X, Edit, Trash2, Settings, ChevronDown, Crown, Shield, MessageCircle, Mail, User, Check, LogOut, HelpCircle, Loader, Globe } from 'lucide-react'
+import { formatMoney, getCurrencySymbol, setCurrency } from '../../utils/money'
+import { COUNTRIES, COUNTRY_CURRENCY } from '../../config/currencies'
 import { API_URL, TOKEN_KEY, SESSION_KEY } from '../../config/constants'
 import { useTour } from '../layout/AppTour'
 import UpgradeModal from '../payment/UpgradeModal'
@@ -15,7 +16,7 @@ import PasswordInput from '../shared/PasswordInput'
 export default function Configuracion() {
   const navigate = useNavigate()
   const { refreshConfig, serviciosAdicionales, productos, negocioId, tiposLavado, categoriasTransaccion } = useData()
-  const { userProfile, isPro, planStatus, planCancelled, daysLeftInTrial, refresh, userEmail, negocioNombre, subscriptionPeriod } = useTenant()
+  const { userProfile, isPro, planStatus, planCancelled, daysLeftInTrial, refresh, userEmail, negocioNombre, subscriptionPeriod, pais, currencyCode } = useTenant()
   const toast = useToast()
   const { startTour } = useTour()
   const isAdmin = userProfile?.rol === 'admin'
@@ -48,6 +49,7 @@ export default function Configuracion() {
   const [showTypeConfirm, setShowTypeConfirm] = useState(false)
   const [typeConfirmText, setTypeConfirmText] = useState('')
   const [showPlanFeatures, setShowPlanFeatures] = useState(false)
+  const [paisEdit, setPaisEdit] = useState(pais)
   const [pseStatus, setPseStatus] = useState(null) // 'polling' | 'approved' | 'failed' | 'timeout' | null
   const [bulkForm, setBulkForm] = useState({
     tipo_pago: null,
@@ -1170,7 +1172,7 @@ export default function Configuracion() {
                         style={{ width: '100px' }}
                         value={numVal(formObj.pago_adicionales_detalle[id])}
                         onChange={(e) => handleDetalleAdicionalChange(setFn, id, e.target.value)}
-                        placeholder="$0"
+                        placeholder={getCurrencySymbol() + '0'}
                       />
                       <button
                         type="button"
@@ -1430,6 +1432,24 @@ export default function Configuracion() {
     }
   }
 
+  const handleSavePais = async () => {
+    if (paisEdit === pais) { cancelEdit(); return }
+    setDatosSaving(true)
+    const moneda = COUNTRY_CURRENCY[paisEdit] || 'COP'
+    const { error } = await supabase
+      .from('negocios')
+      .update({ pais: paisEdit, moneda })
+      .eq('id', negocioId)
+    setDatosSaving(false)
+    if (error) {
+      setDatosError('Error al guardar: ' + error.message)
+    } else {
+      setCurrency(moneda)
+      refresh()
+      cancelEdit()
+    }
+  }
+
   const handleSaveEmail = async () => {
     if (!emailEdit.trim() || !currentPassword) return
     setDatosError('')
@@ -1578,6 +1598,45 @@ export default function Configuracion() {
           )
         )}
       </div>
+
+      {/* País y moneda */}
+      {isAdmin && (
+        <div className="cuenta-datos-row">
+          <div className="cuenta-datos-left">
+            <span className="cuenta-datos-label">País / Moneda</span>
+            {editingField === 'pais' ? (
+              <div className="cuenta-datos-edit-fields">
+                <div className="country-selector-grid">
+                  {COUNTRIES.map(c => (
+                    <button
+                      key={c.code}
+                      type="button"
+                      className={`country-chip ${paisEdit === c.code ? 'active' : ''}`}
+                      onClick={() => setPaisEdit(c.code)}
+                    >
+                      <span className="country-flag">{c.flag}</span>
+                      <span className="country-name">{c.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="country-save-row">
+                  <button className="country-save-btn" onClick={handleSavePais} disabled={datosSaving}>Guardar</button>
+                  <button className="btn-icon-plain" onClick={cancelEdit} title="Cancelar"><X size={18} /></button>
+                </div>
+              </div>
+            ) : (
+              <span className="cuenta-datos-value">
+                {COUNTRIES.find(c => c.code === pais)?.flag} {COUNTRIES.find(c => c.code === pais)?.name || pais} — {currencyCode}
+              </span>
+            )}
+          </div>
+          {editingField === 'pais' ? null : (
+            editingField === null && (
+              <button className="btn-icon" onClick={() => { setPaisEdit(pais); setEditingField('pais') }} title="Editar"><Edit size={16} /></button>
+            )
+          )}
+        </div>
+      )}
 
       {/* Cerrar sesión */}
       <div className="cuenta-datos-row cuenta-datos-logout" onClick={handleLogout}>

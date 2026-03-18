@@ -1,4 +1,5 @@
 import pool from '../config/database.js'
+import { getFormatter } from '../config/currencies.js'
 
 const businessContextCache = new Map()
 const CONTEXT_TTL = 5 * 60 * 1000
@@ -7,18 +8,21 @@ export async function getBusinessContext(negocioId) {
   const cached = businessContextCache.get(negocioId)
   if (cached && Date.now() - cached.fetchedAt < CONTEXT_TTL) return cached.data
 
-  const [tiposRes, lavadoresRes, metodosRes] = await Promise.all([
+  const [tiposRes, lavadoresRes, metodosRes, negocioRes] = await Promise.all([
     pool.query('SELECT nombre, precio FROM tipos_lavado WHERE negocio_id = $1 AND activo = true ORDER BY nombre', [negocioId]),
     pool.query('SELECT nombre FROM lavadores WHERE negocio_id = $1 AND activo = true ORDER BY nombre', [negocioId]),
     pool.query('SELECT nombre FROM metodos_pago WHERE negocio_id = $1 AND activo = true ORDER BY nombre', [negocioId]),
+    pool.query('SELECT moneda FROM negocios WHERE id = $1', [negocioId]),
   ])
 
-  const fmt = n => Number(n).toLocaleString('es-CO')
-  const servicios = tiposRes.rows.map(t => `${t.nombre} ($${fmt(t.precio)})`).join(', ') || 'Sin servicios'
+  const moneda = negocioRes.rows[0]?.moneda || 'COP'
+  const fmt = getFormatter(moneda)
+  const servicios = tiposRes.rows.map(t => `${t.nombre} (${fmt(t.precio)})`).join(', ') || 'Sin servicios'
   const lavadores = lavadoresRes.rows.map(l => l.nombre).join(', ') || 'Sin lavadores'
   const metodos = metodosRes.rows.map(m => m.nombre).join(', ') || 'Sin métodos'
 
-  const data = `SERVICIOS: ${servicios}\nLAVADORES: ${lavadores}\nMÉTODOS DE PAGO: ${metodos}`
+  const contextText = `SERVICIOS: ${servicios}\nLAVADORES: ${lavadores}\nMÉTODOS DE PAGO: ${metodos}`
+  const data = { contextText, moneda }
   businessContextCache.set(negocioId, { data, fetchedAt: Date.now() })
   return data
 }
@@ -215,38 +219,39 @@ export const toolDefinitions = [
   },
 ]
 
-export async function executeTool(name, args, negocioId, io) {
+export async function executeTool(name, args, negocioId, io, moneda = 'COP') {
+  const fmt = getFormatter(moneda)
   switch (name) {
     case 'query_lavadas':
-      return await queryLavadas(args, negocioId)
+      return await queryLavadas(args, negocioId, fmt)
     case 'query_clientes':
       return await queryClientes(args, negocioId)
     case 'query_trabajadores':
       return await queryTrabajadores(args, negocioId)
     case 'get_business_summary':
-      return await getBusinessSummary(args, negocioId)
+      return await getBusinessSummary(args, negocioId, fmt)
     case 'ranking_lavadores':
-      return await rankingLavadores(args, negocioId)
+      return await rankingLavadores(args, negocioId, fmt)
     case 'query_transacciones':
-      return await queryTransacciones(args, negocioId)
+      return await queryTransacciones(args, negocioId, fmt)
     case 'resumen_financiero':
-      return await resumenFinanciero(args, negocioId)
+      return await resumenFinanciero(args, negocioId, fmt)
     case 'query_productos_servicios':
-      return await queryProductosServicios(negocioId)
+      return await queryProductosServicios(negocioId, fmt)
     case 'crear_lavada':
-      return await crearLavada(args, negocioId, io)
+      return await crearLavada(args, negocioId, io, fmt)
     case 'analisis_metodos_pago':
-      return await analisisMetodosPago(args, negocioId)
+      return await analisisMetodosPago(args, negocioId, fmt)
     case 'query_tiempos':
       return await queryTiempos(args, negocioId)
     case 'top_clientes':
-      return await topClientes(args, negocioId)
+      return await topClientes(args, negocioId, fmt)
     default:
       return { error: `Tool desconocida: ${name}` }
   }
 }
 
-async function queryLavadas(args, negocioId) {
+async function queryLavadas(args, negocioId, fmt) {
   const conditions = ['l.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
@@ -292,10 +297,9 @@ async function queryLavadas(args, negocioId) {
   `
 
   const { rows } = await pool.query(sql, params)
-  const fmt = n => Number(n).toLocaleString('es-CO')
   const resumen = rows.length === 0
     ? 'No se encontraron lavadas con esos filtros.'
-    : rows.map((l, i) => `${i+1}. ${l.placa} — ${l.tipo_lavado || 'Sin tipo'} — ${l.estado} — $${fmt(l.valor)} — ${l.lavador_nombre || 'Sin lavador'}`).join('\n')
+    : rows.map((l, i) => `${i+1}. ${l.placa} — ${l.tipo_lavado || 'Sin tipo'} — ${l.estado} — ${fmt(l.valor)} — ${l.lavador_nombre || 'Sin lavador'}`).join('\n')
   return {
     _instruccion: 'USA EXACTAMENTE ESTOS DATOS. NO INVENTES OTROS.',
     total: rows.length,
@@ -372,7 +376,7 @@ async function queryTrabajadores(args, negocioId) {
   }
 }
 
-async function getBusinessSummary(args, negocioId) {
+async function getBusinessSummary(args, negocioId, fmt) {
   let dateFilter
   switch (args.periodo) {
     case 'hoy':
@@ -437,7 +441,6 @@ async function getBusinessSummary(args, negocioId) {
   const valorLavadas = Number(s.valor_lavadas)
   const totalIngresos = cobradoLavadas + ingresosTrans
   const balance = totalIngresos - egresosTrans
-  const fmt = n => Number(n).toLocaleString('es-CO')
   return {
     _instruccion: 'USA EXACTAMENTE ESTOS NÚMEROS EN TU RESPUESTA. NO INVENTES OTROS.',
     periodo: args.periodo,
@@ -454,11 +457,11 @@ async function getBusinessSummary(args, negocioId) {
     ingresos_totales: fmt(totalIngresos),
     balance: fmt(balance),
     total_clientes: parseInt(clienteStats.rows[0].total_clientes),
-    resumen_texto: `Periodo: ${args.periodo}. Total lavadas: ${s.total_lavadas} (EN ESPERA: ${s.en_espera}, EN LAVADO: ${s.en_lavado}, TERMINADO: ${s.terminados}, ENTREGADO: ${s.entregados}). Lavadas completadas: ${parseInt(s.terminados) + parseInt(s.entregados)}. Valor servicios: $${fmt(valorLavadas)}. Cobrado servicios: $${fmt(cobradoLavadas)}. Otros ingresos (productos/membresías): $${fmt(ingresosTrans)}. Egresos: $${fmt(egresosTrans)}. Total ingresos: $${fmt(totalIngresos)}. Balance: $${fmt(balance)}.`,
+    resumen_texto: `Periodo: ${args.periodo}. Total lavadas: ${s.total_lavadas} (EN ESPERA: ${s.en_espera}, EN LAVADO: ${s.en_lavado}, TERMINADO: ${s.terminados}, ENTREGADO: ${s.entregados}). Lavadas completadas: ${parseInt(s.terminados) + parseInt(s.entregados)}. Valor servicios: ${fmt(valorLavadas)}. Cobrado servicios: ${fmt(cobradoLavadas)}. Otros ingresos (productos/membresías): ${fmt(ingresosTrans)}. Egresos: ${fmt(egresosTrans)}. Total ingresos: ${fmt(totalIngresos)}. Balance: ${fmt(balance)}.`,
   }
 }
 
-async function rankingLavadores(args, negocioId) {
+async function rankingLavadores(args, negocioId, fmt) {
   const conditions = ['l.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
@@ -490,12 +493,11 @@ async function rankingLavadores(args, negocioId) {
     LIMIT 10
   `
   const { rows } = await pool.query(sql, params)
-  const fmt = n => Number(n).toLocaleString('es-CO')
   const resumen = rows.length === 0
     ? 'No hay datos de lavadores en este periodo.'
     : rows.map((r, i) => {
         const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`
-        return `${medal} ${r.lavador} — ${r.total_lavadas} lavadas — $${fmt(r.total_ingresos)}`
+        return `${medal} ${r.lavador} — ${r.total_lavadas} lavadas — ${fmt(r.total_ingresos)}`
       }).join('\n')
   return {
     _instruccion: 'USA EXACTAMENTE ESTOS DATOS. NO INVENTES OTROS.',
@@ -503,7 +505,7 @@ async function rankingLavadores(args, negocioId) {
   }
 }
 
-async function queryTransacciones(args, negocioId) {
+async function queryTransacciones(args, negocioId, fmt) {
   const conditions = ['t.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
@@ -544,18 +546,17 @@ async function queryTransacciones(args, negocioId) {
     else acc.egresos += Number(t.valor)
     return acc
   }, { ingresos: 0, egresos: 0 })
-  const fmt = n => Number(n).toLocaleString('es-CO')
   const resumen = rows.length === 0
     ? 'No se encontraron transacciones.'
-    : rows.map((t, i) => `${i+1}. ${t.tipo} — ${t.categoria || 'Sin categoría'} — $${fmt(t.valor)} — ${t.fecha}`).join('\n')
+    : rows.map((t, i) => `${i+1}. ${t.tipo} — ${t.categoria || 'Sin categoría'} — ${fmt(t.valor)} — ${t.fecha}`).join('\n')
   return {
     _instruccion: 'USA EXACTAMENTE ESTOS DATOS. NO INVENTES OTROS.',
     total: rows.length, ingresos: totales.ingresos, egresos: totales.egresos,
-    resumen_texto: `${rows.length} transacción(es). Ingresos: $${fmt(totales.ingresos)}. Egresos: $${fmt(totales.egresos)}.\n${resumen}`
+    resumen_texto: `${rows.length} transacción(es). Ingresos: ${fmt(totales.ingresos)}. Egresos: ${fmt(totales.egresos)}.\n${resumen}`
   }
 }
 
-async function resumenFinanciero(args, negocioId) {
+async function resumenFinanciero(args, negocioId, fmt) {
   const desde = args.fecha_desde || null
   const hasta = args.fecha_hasta || null
   const useLiteral = !args.fecha_desde
@@ -611,7 +612,6 @@ async function resumenFinanciero(args, negocioId) {
   const ingresosTrans = Number(transRes.rows.find(r => r.tipo === 'INGRESO')?.total || 0)
   const egresosTrans = Number(transRes.rows.find(r => r.tipo === 'EGRESO')?.total || 0)
 
-  const fmt = n => '$' + Number(n).toLocaleString('es-CO')
   const totalLavadas = parseInt(lavada.total_lavadas)
   const valorTotal = Number(lavada.valor_total_servicios)
   const cobrado = Number(lavada.cobrado_servicios)
@@ -633,7 +633,7 @@ async function resumenFinanciero(args, negocioId) {
   }
 }
 
-async function queryProductosServicios(negocioId) {
+async function queryProductosServicios(negocioId, fmt) {
   const [tiposLavado, adicionales, membresias, productos, metodos] = await Promise.all([
     pool.query(`SELECT nombre, precio, activo FROM tipos_lavado WHERE negocio_id = $1 ORDER BY nombre`, [negocioId]),
     pool.query(`SELECT nombre, precio, activo FROM servicios_adicionales WHERE negocio_id = $1 ORDER BY nombre`, [negocioId]),
@@ -641,7 +641,7 @@ async function queryProductosServicios(negocioId) {
     pool.query(`SELECT nombre, precio, cantidad, activo FROM productos WHERE negocio_id = $1 ORDER BY nombre`, [negocioId]),
     pool.query(`SELECT nombre, activo FROM metodos_pago WHERE negocio_id = $1 ORDER BY nombre`, [negocioId]),
   ])
-  const fmtList = (arr) => arr.map(r => `${r.nombre}: $${Number(r.precio).toLocaleString('es-CO')}${r.activo ? '' : ' (inactivo)'}`).join(', ')
+  const fmtList = (arr) => arr.map(r => `${r.nombre}: ${fmt(r.precio)}${r.activo ? '' : ' (inactivo)'}`).join(', ')
   return {
     _instruccion: 'USA EXACTAMENTE ESTOS DATOS. NO INVENTES OTROS.',
     resumen_texto: `Tipos de lavado: ${fmtList(tiposLavado.rows) || 'Ninguno'}. Adicionales: ${fmtList(adicionales.rows) || 'Ninguno'}. Membresías: ${fmtList(membresias.rows) || 'Ninguna'}. Productos: ${fmtList(productos.rows) || 'Ninguno'}. Métodos: ${metodos.rows.map(m => m.nombre).join(', ') || 'Ninguno'}.`
@@ -651,7 +651,7 @@ async function queryProductosServicios(negocioId) {
 // ============================================
 // crear_lavada — AI-driven lavada creation
 // ============================================
-async function crearLavada(args, negocioId, io) {
+async function crearLavada(args, negocioId, io, fmt) {
   const placa = (args.placa || '').toUpperCase().trim()
   if (!placa) return { error: 'La placa es obligatoria.' }
 
@@ -667,7 +667,7 @@ async function crearLavada(args, negocioId, io) {
     )
     return {
       error: `No encontre un tipo de lavado "${args.tipo_lavado_nombre}".`,
-      opciones_disponibles: allTipos.map(t => `${t.nombre} ($${Number(t.precio).toLocaleString('es-CO')})`),
+      opciones_disponibles: allTipos.map(t => `${t.nombre} (${fmt(t.precio)})`),
     }
   }
   const tipoLavado = tiposRows[0]
@@ -836,14 +836,14 @@ async function crearLavada(args, negocioId, io) {
       cliente: record.cliente_nombre,
       adicionales: adicionalesJson.map(a => a.nombre),
     },
-    resumen_texto: `Lavada creada. Placa: ${record.placa}. Tipo: ${record.tipo_lavado}. Lavador: ${record.lavador_nombre || 'Sin asignar'}. Valor: $${Number(record.valor).toLocaleString('es-CO')}. Cliente: ${record.cliente_nombre}.${adicionalesJson.length ? ` Adicionales: ${adicionalesJson.map(a => a.nombre).join(', ')}.` : ''}`
+    resumen_texto: `Lavada creada. Placa: ${record.placa}. Tipo: ${record.tipo_lavado}. Lavador: ${record.lavador_nombre || 'Sin asignar'}. Valor: ${fmt(record.valor)}. Cliente: ${record.cliente_nombre}.${adicionalesJson.length ? ` Adicionales: ${adicionalesJson.map(a => a.nombre).join(', ')}.` : ''}`
   }
 }
 
 // ============================================
 // analisis_metodos_pago
 // ============================================
-async function analisisMetodosPago(args, negocioId) {
+async function analisisMetodosPago(args, negocioId, fmt) {
   const conditions = ['l.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
@@ -886,14 +886,13 @@ async function analisisMetodosPago(args, negocioId) {
     porcentaje: granTotal > 0 ? Math.round((Number(r.total) / granTotal) * 100) : 0,
   }))
 
-  const fmt = n => Number(n).toLocaleString('es-CO')
   const resumen = resultado.length === 0
     ? 'No hay pagos registrados en este periodo.'
-    : resultado.map(r => `${r.metodo}: ${r.cantidad} pagos — $${fmt(r.total)} (${r.porcentaje}%)`).join('\n')
+    : resultado.map(r => `${r.metodo}: ${r.cantidad} pagos — ${fmt(r.total)} (${r.porcentaje}%)`).join('\n')
   return {
     _instruccion: 'USA EXACTAMENTE ESTOS DATOS. NO INVENTES OTROS.',
     total_general: granTotal,
-    resumen_texto: `Métodos de pago. Total: $${fmt(granTotal)}.\n${resumen}`
+    resumen_texto: `Métodos de pago. Total: ${fmt(granTotal)}.\n${resumen}`
   }
 }
 
@@ -971,7 +970,7 @@ async function queryTiempos(args, negocioId) {
 // ============================================
 // top_clientes
 // ============================================
-async function topClientes(args, negocioId) {
+async function topClientes(args, negocioId, fmt) {
   const conditions = ['l.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
@@ -1006,12 +1005,11 @@ async function topClientes(args, negocioId) {
   `
 
   const { rows } = await pool.query(sql, params)
-  const fmt = n => Number(n).toLocaleString('es-CO')
   const resumen = rows.length === 0
     ? 'No hay datos de clientes en este periodo.'
     : rows.map((c, i) => {
         const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`
-        return `${medal} ${c.cliente} (${c.placa}) — ${c.total_visitas} visitas — $${fmt(c.total_gasto)}`
+        return `${medal} ${c.cliente} (${c.placa}) — ${c.total_visitas} visitas — ${fmt(c.total_gasto)}`
       }).join('\n')
   return {
     _instruccion: 'USA EXACTAMENTE ESTOS DATOS. NO INVENTES OTROS.',

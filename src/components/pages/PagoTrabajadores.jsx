@@ -8,7 +8,7 @@ import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
-import { formatMoney } from '../../utils/money'
+import { formatMoney, getCurrencySymbol, formatPriceLocale } from '../../utils/money'
 import { todayBogotaStr } from '../../utils/date'
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
 
@@ -42,7 +42,7 @@ function generarRangoDias(desdeStr, hastaStr) {
   return dias
 }
 
-export default function PagoTrabajadores() {
+export default function PagoTrabajadores({ externalSearch } = {}) {
   const { metodosPago, negocioId, tiposLavado } = useData()
   const { userEmail } = useTenant()
   const toast = useToast()
@@ -787,17 +787,17 @@ export default function PagoTrabajadores() {
     return Object.values(porTrabajador).sort((a, b) => a.nombre.localeCompare(b.nombre))
   }, [pagos])
 
+  const effectiveSearch = (externalSearch || searchQuery).trim().toLowerCase()
+
   const filteredWorkerCards = useMemo(() => {
-    if (!searchQuery.trim()) return workerCards
-    const q = searchQuery.toLowerCase().trim()
-    return workerCards.filter(w => w.nombre.toLowerCase().includes(q))
-  }, [workerCards, searchQuery])
+    if (!effectiveSearch) return workerCards
+    return workerCards.filter(w => w.nombre.toLowerCase().includes(effectiveSearch))
+  }, [workerCards, effectiveSearch])
 
   const filteredPagos = useMemo(() => {
-    if (!searchQuery.trim()) return pagos
-    const q = searchQuery.toLowerCase().trim()
-    return pagos.filter(p => (p.lavador?.nombre || '').toLowerCase().includes(q))
-  }, [pagos, searchQuery])
+    if (!effectiveSearch) return pagos
+    return pagos.filter(p => (p.lavador?.nombre || '').toLowerCase().includes(effectiveSearch))
+  }, [pagos, effectiveSearch])
 
   // Fetch ALL pagos for a worker (no date filter) and open detail modal
   const handleWorkerClick = async (workerCard) => {
@@ -934,12 +934,12 @@ export default function PagoTrabajadores() {
             <input
               type="text"
               inputMode="numeric"
-              value={d.valor === 0 ? '' : Number(d.valor).toLocaleString('es-CO')}
+              value={d.valor === 0 ? '' : formatPriceLocale(d.valor)}
               onChange={(e) => {
                 const raw = e.target.value.replace(/[^\d]/g, '')
                 handleDescuentoChange(idx, 'valor', raw === '' ? 0 : Number(raw))
               }}
-              placeholder="$0"
+              placeholder={getCurrencySymbol() + '0'}
               className="descuento-valor"
             />
             <button type="button" className="descuento-remove" onClick={() => handleRemoveDescuento(idx)}>
@@ -988,12 +988,12 @@ export default function PagoTrabajadores() {
               type="text"
               inputMode="numeric"
               className="abono-valor"
-              value={a.monto === 0 ? '' : Number(a.monto).toLocaleString('es-CO')}
+              value={a.monto === 0 ? '' : formatPriceLocale(a.monto)}
               onChange={(e) => {
                 const raw = e.target.value.replace(/[^\d]/g, '')
                 handleAbonoChange(idx, 'monto', raw === '' ? 0 : Number(raw))
               }}
-              placeholder="$0"
+              placeholder={getCurrencySymbol() + '0'}
             />
             <button type="button" className="abono-remove" onClick={() => handleRemoveAbono(idx)}>
               <X size={14} />
@@ -1301,22 +1301,24 @@ export default function PagoTrabajadores() {
         </button>
       </div>
 
-      <div className="clientes-search-row">
-        <div className="search-box">
-          <Search size={18} />
-          <input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Buscar trabajador..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button className="search-clear" onClick={() => setSearchQuery('')}>
-              <X size={16} />
-            </button>
-          )}
-        </div>
+      {externalSearch === undefined && <div className="clientes-search-row">
+        {externalSearch === undefined && (
+          <div className="search-box">
+            <Search size={18} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Buscar trabajador..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button className="search-clear" onClick={() => setSearchQuery('')}>
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        )}
         <div className="clientes-filter-wrapper">
           <button
             className={`clientes-filter-btn${filtroRapido !== 'mes' ? ' active' : ''}`}
@@ -1372,7 +1374,7 @@ export default function PagoTrabajadores() {
             </>
           )}
         </div>
-      </div>
+      </div>}
 
       <div className="pagos-stats">
         <div className="pago-stat-card egresos">
@@ -1550,12 +1552,6 @@ export default function PagoTrabajadores() {
         })}
       </div>
 
-      <button
-        className="home-fab"
-        onClick={() => { resetForm(); setEditandoId(null); setModalMinimized(false); setShowModal(true) }}
-      >
-        <Plus size={28} />
-      </button>
 
       {showModal && !modalMinimized && (
         <div className="modal-overlay">

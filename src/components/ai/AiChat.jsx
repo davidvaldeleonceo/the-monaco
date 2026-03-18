@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Mic, X, Send, Check, ArrowLeft, User, Bot, ThumbsUp, ThumbsDown, ChevronRight, Sparkles } from 'lucide-react'
 import { useTenant } from '../context/TenantContext'
 import { useData } from '../context/DataContext'
@@ -19,7 +20,7 @@ function formatMarkdown(text) {
   })
 }
 
-export default function AiChat({ panelOpen, onTogglePanel }) {
+export default function AiChat({ panelOpen, onTogglePanel, hideFab }) {
   const { isPro, negocioNombre } = useTenant()
   const { refreshLavadas, refreshClientes } = useData()
   const [viewMode, setViewMode] = useState('closed') // 'closed' | 'listening' | 'chat'
@@ -412,12 +413,16 @@ export default function AiChat({ panelOpen, onTogglePanel }) {
 
   return (
     <>
-      {/* Mobile FAB */}
-      {viewMode === 'closed' && (
-        <button className="ai-fab" onClick={handleOpen} title="Asistente IA">
-          <Mic size={22} />
-        </button>
-      )}
+      {/* Mobile FAB — portal to shared fab row (right side) */}
+      {viewMode === 'closed' && !hideFab && (() => {
+        const slot = document.getElementById('fab-slot-right')
+        return slot ? createPortal(
+          <button className="ai-fab" onClick={handleOpen} title="Asistente IA">
+            <Mic size={22} />
+          </button>,
+          slot
+        ) : null
+      })()}
 
       {/* Mobile Listening Screen */}
       {viewMode === 'listening' && (

@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
-import { supabase } from '../../apiClient'
+import { supabase, getCachedProfile, clearProfileCache } from '../../apiClient'
+import { setCurrency } from '../../utils/money'
+import { COUNTRY_CURRENCY } from '../../config/currencies'
 
 const TenantContext = createContext()
 
@@ -30,33 +32,55 @@ export function TenantProvider({ session, children }) {
   const [loading, setLoading] = useState(true)
   const [justCompletedSetup, setJustCompletedSetup] = useState(false)
 
+  const applyProfile = useCallback((data) => {
+    setNegocioId(data.negocio_id)
+    setUserProfile(data)
+    setNegocioNombre(data.negocio?.nombre || '')
+    setSetupComplete(data.negocio?.setup_complete ?? true)
+    setCurrency(COUNTRY_CURRENCY[data.negocio?.pais] || data.negocio?.moneda || 'COP')
+  }, [])
+
   const fetchProfile = useCallback(async () => {
     if (!session?.user?.id) {
       setLoading(false)
       return
     }
 
+    // Fast path 1: profile from login response (instant, no API call)
+    if (session.profile) {
+      applyProfile(session.profile)
+      setLoading(false)
+      return
+    }
+
+    // Fast path 2: cached profile from sessionStorage (page refresh)
+    const cached = getCachedProfile()
+    if (cached && cached.id === session.user.id) {
+      applyProfile(cached)
+      setLoading(false)
+      return
+    }
+
+    // Fallback: API fetch (direct navigation, edge cases)
     setLoading(true)
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('*, negocio:negocios(id, nombre, setup_complete, plan, trial_ends_at, subscription_expires_at, subscription_period)')
+      .select('*, negocio:negocios(id, nombre, setup_complete, plan, trial_ends_at, subscription_expires_at, subscription_period, moneda, pais)')
       .eq('id', session.user.id)
       .single()
 
     if (data && !error) {
-      setNegocioId(data.negocio_id)
-      setUserProfile(data)
-      setNegocioNombre(data.negocio?.nombre || '')
-      setSetupComplete(data.negocio?.setup_complete ?? true)
+      applyProfile(data)
       setLoading(false)
     } else {
       const pending = localStorage.getItem('pending_negocio')
       if (pending) {
-        const { nombre_negocio } = JSON.parse(pending)
+        const { nombre_negocio, pais: pendingPais } = JSON.parse(pending)
 
         const { error: rpcError } = await supabase.rpc('crear_negocio_y_perfil', {
           p_nombre: nombre_negocio,
           p_email: session.user.email,
+          p_pais: pendingPais || 'CO',
         })
 
         if (!rpcError) {
@@ -64,14 +88,11 @@ export function TenantProvider({ session, children }) {
 
           const { data: newData } = await supabase
             .from('user_profiles')
-            .select('*, negocio:negocios(id, nombre, setup_complete, plan, trial_ends_at, subscription_expires_at, subscription_period)')
+            .select('*, negocio:negocios(id, nombre, setup_complete, plan, trial_ends_at, subscription_expires_at, subscription_period, moneda, pais)')
             .eq('id', session.user.id)
             .single()
           if (newData) {
-            setNegocioId(newData.negocio_id)
-            setUserProfile(newData)
-            setNegocioNombre(newData.negocio?.nombre || '')
-            setSetupComplete(newData.negocio?.setup_complete ?? true)
+            applyProfile(newData)
           }
         }
       } else {
@@ -81,7 +102,7 @@ export function TenantProvider({ session, children }) {
       }
       setLoading(false)
     }
-  }, [session?.user?.id, session?.access_token])
+  }, [session?.user?.id, session?.access_token, session?.profile, applyProfile])
 
   useEffect(() => {
     fetchProfile()
@@ -114,7 +135,18 @@ export function TenantProvider({ session, children }) {
     markSetupDone,
     justCompletedSetup,
     clearJustCompletedSetup,
-    refresh: fetchProfile,
+    refresh: async () => {
+      // Force a real API fetch (bypass cache)
+      clearProfileCache()
+      setLoading(true)
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('*, negocio:negocios(id, nombre, setup_complete, plan, trial_ends_at, subscription_expires_at, subscription_period, moneda, pais)')
+        .eq('id', session.user.id)
+        .single()
+      if (data) applyProfile(data)
+      setLoading(false)
+    },
     userEmail: session?.user?.email,
     userId: session?.user?.id,
     isPro: planInfo.isPro,
@@ -122,6 +154,8 @@ export function TenantProvider({ session, children }) {
     planCancelled: planInfo.cancelled,
     daysLeftInTrial: planInfo.daysLeft,
     subscriptionPeriod: userProfile?.negocio?.subscription_period || null,
+    pais: userProfile?.negocio?.pais || 'CO',
+    currencyCode: userProfile?.negocio?.moneda || 'COP',
   }
 
   return (

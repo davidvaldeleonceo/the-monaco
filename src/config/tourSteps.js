@@ -34,7 +34,7 @@ export const tourSteps = [
   {
     id: 'nav-dashboard',
     page: '/home',
-    selector: '.sidebar-nav a[href="/dashboard"], .floating-bottom-bar a[href="/dashboard"]',
+    selector: '.sidebar-nav a[href="/dashboard"], .settings-gear-btn',
     title: 'Análisis',
     description: 'Gráficas de ventas, servicios por tipo, rendimiento.',
     position: 'top',
@@ -50,7 +50,7 @@ export const tourSteps = [
   {
     id: 'nav-clientes',
     page: '/dashboard',
-    selector: '.sidebar-nav a[href="/clientes"], .floating-bottom-bar a[href="/clientes"]',
+    selector: '.sidebar-nav a[href="/clientes"], .home-tab-pill:nth-child(4)',
     title: 'Clientes',
     description: 'Administra clientes, membresías e historial.',
     position: 'top',
@@ -66,7 +66,7 @@ export const tourSteps = [
   {
     id: 'nav-trabajadores',
     page: '/clientes',
-    selector: '.sidebar-nav a[href="/pagos"], .floating-bottom-bar a[href="/pagos"]',
+    selector: '.sidebar-nav a[href="/pagos"], .home-tab-pill:nth-child(5)',
     title: 'Trabajadores',
     description: 'Registra pagos, calcula comisiones y controla el rendimiento de tu equipo.',
     position: 'top',
@@ -74,7 +74,7 @@ export const tourSteps = [
   {
     id: 'nav-cuenta',
     page: '/clientes',
-    selector: '.sidebar-nav a[href="/cuenta"], .floating-bottom-bar a[href="/cuenta"]',
+    selector: '.sidebar-nav a[href="/cuenta"], .settings-gear-btn',
     title: 'Cuenta',
     description: 'Tu perfil, plan, configuración y soporte.',
     position: 'top',

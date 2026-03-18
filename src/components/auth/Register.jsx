@@ -1,19 +1,13 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../apiClient'
+import { COUNTRIES } from '../../config/currencies'
 import PasswordInput from '../shared/PasswordInput'
 
-const countryCodes = [
-  { code: '+57', label: '🇨🇴 +57' },
-  { code: '+58', label: '🇻🇪 +58' },
-  { code: '+51', label: '🇵🇪 +51' },
-  { code: '+52', label: '🇲🇽 +52' },
-  { code: '+54', label: '🇦🇷 +54' },
-  { code: '+56', label: '🇨🇱 +56' },
-  { code: '+593', label: '🇪🇨 +593' },
-  { code: '+507', label: '🇵🇦 +507' },
-  { code: '+1', label: '🇺🇸 +1' },
-]
+const PHONE_CODES = {
+  CO: '+57', MX: '+52', US: '+1', EC: '+593', PA: '+507',
+  PE: '+51', CL: '+56', AR: '+54', NI: '+505',
+}
 
 export default function Register() {
   const navigate = useNavigate()
@@ -24,7 +18,8 @@ export default function Register() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [telefono, setTelefono] = useState('')
-  const [countryCode, setCountryCode] = useState('+57')
+  const [pais, setPais] = useState('CO')
+  const countryCode = PHONE_CODES[pais] || '+57'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
@@ -59,6 +54,7 @@ export default function Register() {
         nombre_negocio: nombreNegocio,
         nombre_usuario: null,
         telefono: fullPhone,
+        pais,
       }))
       setSuccess(true)
       setLoading(false)
@@ -72,6 +68,7 @@ export default function Register() {
       p_email: email,
       p_user_id: signUpData.user?.id,
       p_telefono: fullPhone,
+      p_pais: pais,
     })
 
     if (rpcError) {
@@ -125,6 +122,23 @@ export default function Register() {
 
         <form onSubmit={handleRegister}>
           <div className="input-group">
+            <label>País</label>
+            <div className="country-selector-grid">
+              {COUNTRIES.map(c => (
+                <button
+                  key={c.code}
+                  type="button"
+                  className={`country-chip ${pais === c.code ? 'active' : ''}`}
+                  onClick={() => setPais(c.code)}
+                >
+                  <span className="country-flag">{c.flag}</span>
+                  <span className="country-name">{c.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="input-group">
             <label>Nombre del negocio</label>
             <input
               type="text"
@@ -149,9 +163,7 @@ export default function Register() {
           <div className="form-group">
             <label>Teléfono</label>
             <div className="cliente-phone-group">
-              <select className="cliente-phone-code" value={countryCode} onChange={e => setCountryCode(e.target.value)}>
-                {countryCodes.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
-              </select>
+              <span className="cliente-phone-code-label">{countryCode}</span>
               <input
                 className="cliente-phone-number"
                 type="tel"

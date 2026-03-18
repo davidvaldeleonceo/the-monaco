@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../apiClient'
 import { useData } from '../context/DataContext'
@@ -7,7 +7,8 @@ import { useToast } from '../layout/Toast'
 import { formatMoney } from '../../utils/money'
 import { LAVADAS_SELECT } from '../../config/constants'
 import { todayBogotaStr } from '../../utils/date'
-import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles, Droplets, DollarSign, MessageCircle } from 'lucide-react'
+import { Plus, Search, X, Edit, Trash2, ChevronDown, SlidersHorizontal, Upload, Download, CheckSquare, Sparkles, Droplets, DollarSign, MessageCircle, User, Users } from 'lucide-react'
+import useIsMobile from '../../hooks/useIsMobile'
 import UpgradeModal from '../payment/UpgradeModal'
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
 import DatePicker from 'react-datepicker'
@@ -18,10 +19,11 @@ import * as XLSX from 'xlsx'
 
 registerLocale('es', es)
 
-export default function Clientes() {
-  const { clientes, tiposMembresia, tiposLavado, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, refreshLavadas, negocioId, plantillasMensaje } = useData()
+export default function Clientes({ externalSearch } = {}) {
+  const { clientes, lavadas, loadAllLavadas, lavadasAllLoaded, tiposMembresia, tiposLavado, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, refreshLavadas, negocioId, plantillasMensaje } = useData()
   const { userEmail, negocioNombre } = useTenant()
   const toast = useToast()
+  const isMobile = useIsMobile()
   const location = useLocation()
   const navigate = useNavigate()
   const [highlightId, setHighlightId] = useState(null)
@@ -67,6 +69,11 @@ export default function Clientes() {
   const [modoSeleccion, setModoSeleccion] = useState(false)
   const [filtroNuevos, setFiltroNuevos] = useState(false)
   const [sortBy, setSortBy] = useState('')
+  const [agrupadorActivo, setAgrupadorActivo] = useState('membresia')
+  // Valores: 'ninguno' | 'membresia' | 'actividad' | 'cantidad'
+  const isEmbedded = externalSearch !== undefined
+  const [gruposColapsados, setGruposColapsados] = useState(new Set())
+  const [collapseAll, setCollapseAll] = useState(isEmbedded)
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [showFabMenu, setShowFabMenu] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
@@ -87,6 +94,7 @@ export default function Clientes() {
       setFechaHasta(null)
       setFiltroRapido('')
       setFiltroNuevos(false)
+      setAgrupadorActivo('ninguno')
       setHighlightId(location.state.highlightId)
       setExpandedCard(location.state.highlightId)
       const target = clientes.find(c => c.id === location.state.highlightId)
@@ -104,6 +112,19 @@ export default function Clientes() {
     const timer = setTimeout(() => setHighlightId(null), 1200)
     return () => { cancelAnimationFrame(raf); clearTimeout(timer) }
   }, [highlightId])
+
+  // Colapsar todos los grupos cuando cambia el agrupador
+  useEffect(() => {
+    setGruposColapsados(new Set())
+    // Se inicializa vacío; el useMemo de clientesAgrupados colapsará todos en el primer render
+  }, [agrupadorActivo])
+
+  // Cargar todas las lavadas cuando se activa agrupación por cantidad o actividad
+  useEffect(() => {
+    if ((agrupadorActivo === 'cantidad' || agrupadorActivo === 'actividad') && !lavadasAllLoaded) {
+      loadAllLavadas()
+    }
+  }, [agrupadorActivo, lavadasAllLoaded])
 
   // Import CSV states
   const [showImportModal, setShowImportModal] = useState(false)
@@ -872,8 +893,7 @@ export default function Clientes() {
       return `${d.getDate()} ${meses[d.getMonth()]} ${d.getFullYear()}`
     }
     const formatMoneyVar = (v) => {
-      const num = Number(v) || 0
-      return '$' + num.toLocaleString('es-CO')
+      return formatMoney(Number(v) || 0)
     }
     const hist = clienteHistorial[cliente.id]
     const ultimaLavada = hist?.lavadas?.[0]
@@ -929,18 +949,20 @@ export default function Clientes() {
     window.open(`https://api.whatsapp.com/send?phone=${phoneForWa}`, '_blank')
   }
 
-  const hasActiveFilters = !!(filtroTipoCliente || filtroEstado || fechaDesde || fechaHasta || filtroRapido || filtroNuevos || sortBy)
+  const hasActiveFilters = !!(filtroTipoCliente || filtroEstado || fechaDesde || fechaHasta || filtroRapido || filtroNuevos || sortBy || agrupadorActivo !== 'ninguno')
   const clearAllFilters = () => {
     setFiltroTipoCliente(''); setFiltroEstado(''); setFechaDesde(null); setFechaHasta(null)
-    setFiltroRapido(''); setFiltroNuevos(false); setSortBy('')
+    setFiltroRapido(''); setFiltroNuevos(false); setSortBy(''); setAgrupadorActivo('ninguno')
   }
 
-  const clientesFiltrados = clientes.filter(c => {
-    const matchSearch = c.nombre?.toLowerCase().includes(search.toLowerCase()) ||
-      c.placa?.toLowerCase().includes(search.toLowerCase()) ||
-      c.cedula?.includes(search) ||
-      c.telefono?.includes(search)
-    const matchTipo = !filtroTipoCliente || c.membresia_id === filtroTipoCliente
+  const effectiveSearch = (externalSearch || search).toLowerCase()
+  const clientesFiltrados = useMemo(() => clientes.filter(c => {
+    const matchSearch = !effectiveSearch ||
+      c.nombre?.toLowerCase().includes(effectiveSearch) ||
+      c.placa?.toLowerCase().includes(effectiveSearch) ||
+      c.cedula?.includes(effectiveSearch) ||
+      c.telefono?.includes(effectiveSearch)
+    const matchTipo = !filtroTipoCliente || (filtroTipoCliente === '__sin__' ? !c.membresia_id : c.membresia_id === filtroTipoCliente)
     const matchEstado = !filtroEstado || getEstadoCliente(c) === filtroEstado
 
     let matchFechaDesde = true
@@ -971,15 +993,118 @@ export default function Clientes() {
     const matchNuevos = !filtroNuevos || isClienteNuevo(c)
 
     return matchSearch && matchTipo && matchEstado && matchFechaDesde && matchFechaHasta && matchNuevos
-  })
+  }), [clientes, effectiveSearch, filtroTipoCliente, filtroEstado, fechaDesde, fechaHasta, filtroNuevos])
 
-  const clientesOrdenados = [...clientesFiltrados].sort((a, b) => {
+  const clientesOrdenados = useMemo(() => [...clientesFiltrados].sort((a, b) => {
     if (sortBy === 'nombre-asc') return (a.nombre || '').localeCompare(b.nombre || '')
     if (sortBy === 'nombre-desc') return (b.nombre || '').localeCompare(a.nombre || '')
     if (sortBy === 'placa-asc') return (a.placa || '').localeCompare(b.placa || '')
     if (sortBy === 'placa-desc') return (b.placa || '').localeCompare(a.placa || '')
     return 0
-  })
+  }), [clientesFiltrados, sortBy])
+
+  const estadoPorCliente = useMemo(() => {
+    const map = new Map()
+    for (const c of clientesFiltrados) map.set(c.id, getEstadoCliente(c))
+    return map
+  }, [clientesFiltrados])
+
+  // Mapa de stats de lavadas por cliente (para grupos)
+  const lavadasPorCliente = useMemo(() => {
+    const map = new Map()
+    const hoy = new Date()
+    const inicioSemana = new Date(hoy)
+    inicioSemana.setDate(hoy.getDate() - ((hoy.getDay() + 6) % 7))
+    inicioSemana.setHours(0, 0, 0, 0)
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+    const inicioAno = new Date(hoy.getFullYear(), 0, 1)
+
+    for (const l of lavadas) {
+      if (!l.cliente_id) continue
+      const fechaStr = typeof l.fecha === 'string' ? l.fecha.substring(0, 10) : null
+      if (!fechaStr) continue
+      const fechaD = new Date(fechaStr + 'T00:00:00')
+      const entry = map.get(l.cliente_id) || { total: 0, ultima: null, estaSemana: 0, esteMes: 0, esteAno: 0 }
+      entry.total++
+      if (!entry.ultima || fechaStr > entry.ultima) entry.ultima = fechaStr
+      if (fechaD >= inicioSemana) entry.estaSemana++
+      if (fechaD >= inicioMes) entry.esteMes++
+      if (fechaD >= inicioAno) entry.esteAno++
+      map.set(l.cliente_id, entry)
+    }
+    return map
+  }, [lavadas])
+
+  // Clientes agrupados por categoría (null = sin agrupación)
+  const clientesAgrupados = useMemo(() => {
+    if (agrupadorActivo === 'ninguno') return null
+    const gruposMap = new Map()
+
+    const addToGroup = (key, label, orden, cliente) => {
+      if (!gruposMap.has(key)) gruposMap.set(key, { label, orden, clientes: [] })
+      gruposMap.get(key).clientes.push(cliente)
+    }
+
+    for (const cliente of clientesOrdenados) {
+      if (agrupadorActivo === 'membresia') {
+        const nombre = cliente.membresia?.nombre || 'Sin membresía'
+        addToGroup(nombre, nombre, nombre === 'Sin membresía' ? 999 : 0, cliente)
+      } else if (agrupadorActivo === 'cantidad') {
+        const stats = lavadasPorCliente.get(cliente.id)
+        const total = stats?.total ?? 0
+        if (total === 0) addToGroup('sin-servicios', 'Sin servicios', 3, cliente)
+        else if (total <= 4) addToGroup('1-4', '1 – 4 servicios', 2, cliente)
+        else if (total <= 9) addToGroup('5-9', '5 – 9 servicios', 1, cliente)
+        else addToGroup('10+', '10+ servicios', 0, cliente)
+      } else if (agrupadorActivo === 'actividad') {
+        const stats = lavadasPorCliente.get(cliente.id)
+        if (stats?.estaSemana > 0) addToGroup('semana', 'Vinieron esta semana', 0, cliente)
+        else if (stats?.esteMes > 0) addToGroup('mes', 'Vinieron este mes', 1, cliente)
+        else if (stats?.esteAno > 0) addToGroup('ano', 'Vinieron este año', 2, cliente)
+        else addToGroup('sin-actividad', 'Sin actividad registrada', 3, cliente)
+      }
+    }
+
+    return [...gruposMap.entries()]
+      .sort((a, b) => {
+        if (agrupadorActivo === 'membresia') {
+          if (a[1].orden !== b[1].orden) return a[1].orden - b[1].orden
+          return a[0].localeCompare(b[0])
+        }
+        return a[1].orden - b[1].orden
+      })
+      .map(([key, g]) => ({ key, label: g.label, clientes: g.clientes }))
+  }, [clientesOrdenados, agrupadorActivo, lavadasPorCliente])
+
+  // When embedded in Home tab, collapse all groups once data is ready
+  useEffect(() => {
+    if (collapseAll && clientesAgrupados?.length) {
+      setGruposColapsados(new Set(clientesAgrupados.map(g => g.key)))
+      setCollapseAll(false)
+    }
+  }, [collapseAll, clientesAgrupados])
+
+  const isGrupoColapsado = (key) => collapseAll || gruposColapsados.has(key)
+
+  const toggleGrupo = (key) => {
+    if (collapseAll) {
+      // First toggle while collapseAll: materialize all as collapsed, then open this one
+      const allKeys = clientesAgrupados?.map(g => g.key) || []
+      const next = new Set(allKeys)
+      next.delete(key)
+      setGruposColapsados(next)
+      setCollapseAll(false)
+      return
+    }
+    setGruposColapsados(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const getGrupoMeta = () => ({ icon: Users })
 
   if (loading) {
     return <div className="loading">Cargando...</div>
@@ -1028,25 +1153,29 @@ export default function Clientes() {
         </div>
       </div>
 
-      <div className="clientes-search-row">
-        <div className="search-box">
-          <Search size={18} />
+      {/* Barra de búsqueda y filtros */}
+      {isEmbedded ? null : <div className="clientes-search-row">
+        <div className="search-box-wrapper" style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <Search size={16} style={{ position: 'absolute', left: '0.625rem', color: 'var(--text-secondary)', pointerEvents: 'none' }} />
           <input
+            className="search-box"
+            style={{ paddingLeft: '2rem', width: '100%' }}
             type="text"
-            placeholder="Buscar nombre, placa, cédula..."
+            placeholder="Buscar por nombre, placa, cédula..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={e => setSearch(e.target.value)}
           />
           {search && (
-            <button className="search-clear" onClick={() => setSearch('')}>
-              <X size={16} />
+            <button className="search-clear" onClick={() => setSearch('')} style={{ position: 'absolute', right: '0.5rem' }}>
+              <X size={14} />
             </button>
           )}
         </div>
         <div className="clientes-filter-wrapper">
           <button
             className={`clientes-filter-btn ${hasActiveFilters ? 'active' : ''}`}
-            onClick={() => setShowFilterDropdown(prev => !prev)}
+            onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+            title="Filtros"
           >
             <SlidersHorizontal size={18} />
           </button>
@@ -1055,92 +1184,76 @@ export default function Clientes() {
               <div className="clientes-filter-overlay" onClick={() => setShowFilterDropdown(false)} />
               <div className="clientes-filter-dropdown">
                 <div className="cfd-section">
-                  <span className="cfd-label">Tipo</span>
-                  <select
-                    value={filtroTipoCliente}
-                    onChange={(e) => setFiltroTipoCliente(e.target.value)}
-                    className="cfd-select"
-                  >
+                  <span className="cfd-label">Agrupar por</span>
+                  <div className="cfd-rapido">
+                    <button className={`filter-btn ${agrupadorActivo === 'ninguno' ? 'active' : ''}`} onClick={() => setAgrupadorActivo('ninguno')}>Lista</button>
+                    <button className={`filter-btn ${agrupadorActivo === 'membresia' ? 'active' : ''}`} onClick={() => setAgrupadorActivo('membresia')}>Membresía</button>
+                    <button className={`filter-btn ${agrupadorActivo === 'actividad' ? 'active' : ''}`} onClick={() => setAgrupadorActivo('actividad')}>Actividad</button>
+                    <button className={`filter-btn ${agrupadorActivo === 'cantidad' ? 'active' : ''}`} onClick={() => setAgrupadorActivo('cantidad')}>Servicios</button>
+                  </div>
+                </div>
+                <div className="cfd-section">
+                  <span className="cfd-label">Tipo de cliente</span>
+                  <select className="cfd-select" value={filtroTipoCliente} onChange={e => setFiltroTipoCliente(e.target.value)}>
                     <option value="">Todos</option>
-                    {tiposMembresia.map(m => (
-                      <option key={m.id} value={m.id}>{m.nombre}</option>
+                    {tiposMembresia.map(tm => (
+                      <option key={tm.id} value={tm.id}>{tm.nombre}</option>
                     ))}
+                    <option value="__sin__">Sin membresía</option>
                   </select>
                 </div>
                 <div className="cfd-section">
                   <span className="cfd-label">Estado</span>
-                  <select
-                    value={filtroEstado}
-                    onChange={(e) => setFiltroEstado(e.target.value)}
-                    className="cfd-select"
-                  >
-                    <option value="">Todos</option>
-                    <option value="Activo">Activo</option>
-                    <option value="Inactivo">Inactivo</option>
-                  </select>
+                  <div className="cfd-rapido">
+                    <button className={`filter-btn ${filtroEstado === '' ? 'active' : ''}`} onClick={() => setFiltroEstado('')}>Todos</button>
+                    <button className={`filter-btn ${filtroEstado === 'Activo' ? 'active' : ''}`} onClick={() => setFiltroEstado('Activo')}>Activos</button>
+                    <button className={`filter-btn ${filtroEstado === 'Inactivo' ? 'active' : ''}`} onClick={() => setFiltroEstado('Inactivo')}>Vencidos</button>
+                  </div>
                 </div>
                 <div className="cfd-section">
                   <span className="cfd-label">Vencimiento</span>
-                  <div className="cfd-rapido">
-                    <button className={`filter-btn ${filtroRapido === 'hoy' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('hoy')}>Hoy</button>
-                    <button className={`filter-btn ${filtroRapido === 'semana' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('semana')}>Semana</button>
-                    <button className={`filter-btn ${filtroRapido === 'mes' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('mes')}>Mes</button>
-                    <button className={`filter-btn ${filtroRapido === 'año' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('año')}>Año</button>
-                    <button className={`filter-btn ${filtroRapido === 'todas' ? 'active' : ''}`} onClick={() => aplicarFiltroRapido('todas')}>Todas</button>
-                  </div>
                   <div className="cfd-dates">
                     <DatePicker
                       selected={fechaDesde}
-                      onChange={(date) => setFechaDesde(date)}
-                      selectsStart
-                      startDate={fechaDesde}
-                      endDate={fechaHasta}
+                      onChange={d => setFechaDesde(d)}
                       placeholderText="Desde"
-                      className="filter-date"
                       dateFormat="dd/MM/yyyy"
                       locale="es"
                       isClearable
+                      className="cfd-date-input"
                     />
-                    <span className="filter-separator">→</span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>—</span>
                     <DatePicker
                       selected={fechaHasta}
-                      onChange={(date) => setFechaHasta(date)}
-                      selectsEnd
-                      startDate={fechaDesde}
-                      endDate={fechaHasta}
-                      minDate={fechaDesde}
+                      onChange={d => setFechaHasta(d)}
                       placeholderText="Hasta"
-                      className="filter-date"
                       dateFormat="dd/MM/yyyy"
                       locale="es"
                       isClearable
+                      className="cfd-date-input"
                     />
                   </div>
                 </div>
                 <div className="cfd-section">
                   <span className="cfd-label">Ordenar</span>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="cfd-select"
-                  >
-                    <option value="">Sin orden</option>
-                    <option value="nombre-asc">Nombre A → Z</option>
-                    <option value="nombre-desc">Nombre Z → A</option>
-                    <option value="placa-asc">Placa A → Z</option>
-                    <option value="placa-desc">Placa Z → A</option>
+                  <select className="cfd-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                    <option value="">Por defecto</option>
+                    <option value="nombre-asc">Nombre A→Z</option>
+                    <option value="nombre-desc">Nombre Z→A</option>
+                    <option value="placa-asc">Placa A→Z</option>
+                    <option value="placa-desc">Placa Z→A</option>
                   </select>
                 </div>
                 <div className="cfd-section">
                   <button
                     className={`filter-btn cfd-nuevos-btn ${filtroNuevos ? 'active' : ''}`}
-                    onClick={() => setFiltroNuevos(prev => !prev)}
+                    onClick={() => setFiltroNuevos(!filtroNuevos)}
                   >
-                    <Sparkles size={14} /> Nuevos hoy
+                    <Sparkles size={14} /> Clientes nuevos hoy
                   </button>
                 </div>
                 {hasActiveFilters && (
-                  <button className="cfd-clear" onClick={() => { clearAllFilters(); setShowFilterDropdown(false) }}>
+                  <button className="filter-btn" style={{ width: '100%' }} onClick={() => { clearAllFilters(); setShowFilterDropdown(false) }}>
                     <X size={14} /> Limpiar filtros
                   </button>
                 )}
@@ -1148,12 +1261,12 @@ export default function Clientes() {
             </>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Desktop: tabla */}
-      <div className="card clientes-tabla-desktop">
+      {!isMobile && <div className="card clientes-tabla-desktop">
         <div className="table-container">
-        <table className="data-table">
+        <table className="data-table data-table--no-dividers">
           <thead>
             <tr>
               {modoSeleccion && (
@@ -1178,225 +1291,412 @@ export default function Clientes() {
             </tr>
           </thead>
           <tbody>
-            {clientesOrdenados.map((cliente) => (
-              <tr key={cliente.id} data-id={cliente.id} className={`${selectedClientes.has(cliente.id) ? 'row-selected' : ''} ${highlightId === cliente.id ? 'card-highlight' : ''}`}>
-                {modoSeleccion && (
-                  <td className="td-checkbox">
-                    <label className="custom-check">
-                      <input
-                        type="checkbox"
-                        checked={selectedClientes.has(cliente.id)}
-                        onChange={() => toggleSelectCliente(cliente.id)}
-                      />
-                      <span className="checkmark"></span>
-                    </label>
-                  </td>
-                )}
-                <td>
-                  <div className="cliente-cell">
-                    <span className="cliente-nombre">
-                      {cliente.nombre}
-                      {isClienteNuevo(cliente) && <span className="badge-nuevo">Nuevo</span>}
-                    </span>
-                    <span className="cliente-fecha">{cliente.moto}</span>
-                  </div>
-                </td>
-                <td>{cliente.placa}</td>
-                <td>{cliente.telefono}</td>
-                <td>{cliente.membresia?.nombre || 'Sin tipo'}</td>
-                <td>{formatFecha(cliente.fecha_fin_membresia)}</td>
-                <td>
-                  <div className="wa-menu-wrapper">
-                    <button
-                      className="btn-whatsapp"
-                      onClick={(e) => toggleWhatsappMenu(cliente.id, e)}
-                      title="Enviar WhatsApp"
-                    >
-                      <MessageCircle size={16} />
-                    </button>
-                    {whatsappMenu === cliente.id && (
-                      <>
-                        <div className="wa-menu-overlay" onClick={() => setWhatsappMenu(null)} />
-                        <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
-                          {(plantillasMensaje || []).length > 0 ? (plantillasMensaje || []).map(p => (
-                            <button key={p.id} onClick={() => sendWhatsApp(cliente, 'plantilla', p.id)}>
-                              {p.nombre}
-                            </button>
-                          )) : (
-                            <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em', display: 'block' }}>No hay plantillas</span>
-                          )}
-                          <button onClick={() => sendWhatsApp(cliente, 'contacto')}>
-                            Ir al contacto
-                          </button>
-                          <button onClick={() => { setWhatsappMenu(null); navigate('/cuenta?tab=config&subtab=mensajes') }}>
-                            + Agregar plantilla
-                          </button>
+            {clientesAgrupados ? (
+              clientesAgrupados.length === 0 ? (
+                <tr><td colSpan={modoSeleccion ? 8 : 7} className="empty">No hay clientes registrados</td></tr>
+              ) : (
+                clientesAgrupados.flatMap(grupo => [
+                  <tr key={`grupo-hdr-${grupo.key}`} className="grupo-header-row" onClick={() => toggleGrupo(grupo.key)}>
+                    <td colSpan={modoSeleccion ? 8 : 7} className="grupo-header-cell">
+                      {(() => {
+                        const meta = getGrupoMeta(grupo.key)
+                        const Icon = meta.icon
+                        return (
+                          <>
+                            <span className="grupo-icon-circle">
+                              <Icon size={24} />
+                            </span>
+                            <span className="grupo-text">
+                              <span className="grupo-label">{grupo.label}</span>
+                              <span className="grupo-sub">{grupo.clientes.length} clientes</span>
+                            </span>
+                            <ChevronDown size={14} className={`grupo-chevron ${isGrupoColapsado(grupo.key) ? '' : 'rotated'}`} />
+                          </>
+                        )
+                      })()}
+                    </td>
+                  </tr>,
+                  ...(!isGrupoColapsado(grupo.key) ? grupo.clientes.map((cliente) => (
+                    <tr key={cliente.id} data-id={cliente.id} className={`${selectedClientes.has(cliente.id) ? 'row-selected' : ''} ${highlightId === cliente.id ? 'card-highlight' : ''}`}>
+                      {modoSeleccion && (
+                        <td className="td-checkbox">
+                          <label className="custom-check">
+                            <input type="checkbox" checked={selectedClientes.has(cliente.id)} onChange={() => toggleSelectCliente(cliente.id)} />
+                            <span className="checkmark"></span>
+                          </label>
+                        </td>
+                      )}
+                      <td>
+                        <div className="cliente-cell">
+                          <span className="cliente-nombre">
+                            {cliente.nombre}
+                            {isClienteNuevo(cliente) && <span className="badge-nuevo">Nuevo</span>}
+                          </span>
+                          <span className="cliente-fecha">{cliente.moto}</span>
                         </div>
-                      </>
+                      </td>
+                      <td>{cliente.placa}</td>
+                      <td>{cliente.telefono}</td>
+                      <td>{cliente.membresia?.nombre || 'Sin tipo'}</td>
+                      <td>{formatFecha(cliente.fecha_fin_membresia)}</td>
+                      <td>
+                        <div className="wa-menu-wrapper">
+                          <button className="btn-whatsapp" onClick={(e) => toggleWhatsappMenu(cliente.id, e)} title="Enviar WhatsApp">
+                            <MessageCircle size={16} />
+                          </button>
+                          {whatsappMenu === cliente.id && (
+                            <>
+                              <div className="wa-menu-overlay" onClick={() => setWhatsappMenu(null)} />
+                              <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
+                                {(plantillasMensaje || []).length > 0 ? (plantillasMensaje || []).map(p => (
+                                  <button key={p.id} onClick={() => sendWhatsApp(cliente, 'plantilla', p.id)}>{p.nombre}</button>
+                                )) : (
+                                  <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em', display: 'block' }}>No hay plantillas</span>
+                                )}
+                                <button onClick={() => sendWhatsApp(cliente, 'contacto')}>Ir al contacto</button>
+                                <button onClick={() => { setWhatsappMenu(null); navigate('/cuenta?tab=config&subtab=mensajes') }}>+ Agregar plantilla</button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="acciones">
+                          <button className="btn-icon" onClick={() => handleEdit(cliente)}><Edit size={18} /></button>
+                          <button className="btn-icon delete" onClick={() => requestDeleteCliente(cliente.id)}><Trash2 size={18} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  )) : [])
+                ])
+              )
+            ) : (
+              <>
+                {clientesOrdenados.map((cliente) => (
+                  <tr key={cliente.id} data-id={cliente.id} className={`${selectedClientes.has(cliente.id) ? 'row-selected' : ''} ${highlightId === cliente.id ? 'card-highlight' : ''}`}>
+                    {modoSeleccion && (
+                      <td className="td-checkbox">
+                        <label className="custom-check">
+                          <input type="checkbox" checked={selectedClientes.has(cliente.id)} onChange={() => toggleSelectCliente(cliente.id)} />
+                          <span className="checkmark"></span>
+                        </label>
+                      </td>
                     )}
-                  </div>
-                </td>
-                <td>
-                  <div className="acciones">
-                    <button className="btn-icon" onClick={() => handleEdit(cliente)}>
-                      <Edit size={18} />
-                    </button>
-                    <button className="btn-icon delete" onClick={() => requestDeleteCliente(cliente.id)}>
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {clientesOrdenados.length === 0 && (
-              <tr>
-                <td colSpan={modoSeleccion ? 8 : 7} className="empty">No hay clientes registrados</td>
-              </tr>
+                    <td>
+                      <div className="cliente-cell">
+                        <span className="cliente-nombre">
+                          {cliente.nombre}
+                          {isClienteNuevo(cliente) && <span className="badge-nuevo">Nuevo</span>}
+                        </span>
+                        <span className="cliente-fecha">{cliente.moto}</span>
+                      </div>
+                    </td>
+                    <td>{cliente.placa}</td>
+                    <td>{cliente.telefono}</td>
+                    <td>{cliente.membresia?.nombre || 'Sin tipo'}</td>
+                    <td>{formatFecha(cliente.fecha_fin_membresia)}</td>
+                    <td>
+                      <div className="wa-menu-wrapper">
+                        <button className="btn-whatsapp" onClick={(e) => toggleWhatsappMenu(cliente.id, e)} title="Enviar WhatsApp">
+                          <MessageCircle size={16} />
+                        </button>
+                        {whatsappMenu === cliente.id && (
+                          <>
+                            <div className="wa-menu-overlay" onClick={() => setWhatsappMenu(null)} />
+                            <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
+                              {(plantillasMensaje || []).length > 0 ? (plantillasMensaje || []).map(p => (
+                                <button key={p.id} onClick={() => sendWhatsApp(cliente, 'plantilla', p.id)}>{p.nombre}</button>
+                              )) : (
+                                <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em', display: 'block' }}>No hay plantillas</span>
+                              )}
+                              <button onClick={() => sendWhatsApp(cliente, 'contacto')}>Ir al contacto</button>
+                              <button onClick={() => { setWhatsappMenu(null); navigate('/cuenta?tab=config&subtab=mensajes') }}>+ Agregar plantilla</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="acciones">
+                        <button className="btn-icon" onClick={() => handleEdit(cliente)}><Edit size={18} /></button>
+                        <button className="btn-icon delete" onClick={() => requestDeleteCliente(cliente.id)}><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {clientesOrdenados.length === 0 && (
+                  <tr>
+                    <td colSpan={modoSeleccion ? 8 : 7} className="empty">No hay clientes registrados</td>
+                  </tr>
+                )}
+              </>
             )}
           </tbody>
         </table>
         </div>
-      </div>
+      </div>}
 
       {/* Mobile: cards */}
-      <div className="clientes-cards-mobile">
-        {clientesOrdenados.map(cliente => {
-          const estado = getEstadoCliente(cliente)
-          const isExpanded = expandedCard === cliente.id
-          return (
-            <div key={cliente.id} data-id={cliente.id} className={`cliente-card ${estado === 'Activo' ? 'estado-activo-border' : 'estado-vencido-border'} ${isExpanded ? 'expanded' : ''} ${selectedClientes.has(cliente.id) ? 'card-selected' : ''} ${highlightId === cliente.id ? 'card-highlight' : ''}`}>
-              <div className="cliente-card-header" onClick={() => {
-                const next = isExpanded ? null : cliente.id
-                setExpandedCard(next)
-                if (next) fetchHistorial(cliente)
-              }}>
-                <div className="cliente-card-left">
-                  {modoSeleccion && (
-                    <label className="custom-check" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selectedClientes.has(cliente.id)}
-                        onChange={() => toggleSelectCliente(cliente.id)}
-                      />
-                      <span className="checkmark"></span>
-                    </label>
-                  )}
-                  <span className="cliente-card-nombre">
-                    {cliente.nombre}
-                    {isClienteNuevo(cliente) && <span className="badge-nuevo">Nuevo</span>}
-                  </span>
-                  <span className="cliente-card-placa">{cliente.placa}</span>
-                </div>
-                <div className="cliente-card-right">
+      {isMobile && <div className="clientes-cards-mobile">
+        {clientesAgrupados ? (
+          clientesAgrupados.length === 0 ? (
+            <div className="clientes-cards-empty">No hay clientes registrados</div>
+          ) : (
+            clientesAgrupados.map(grupo => (
+              <div key={`grupo-${grupo.key}`} className="grupo-section">
+                <div className="grupo-header-mobile" onClick={() => toggleGrupo(grupo.key)}>
                   {(() => {
-                    const { tiene, label } = getTipoClienteLabel(cliente)
+                    const meta = getGrupoMeta(grupo.key)
+                    const Icon = meta.icon
                     return (
+                      <>
+                        <span className="grupo-icon-circle">
+                          <Icon size={24} />
+                        </span>
+                        <span className="grupo-text">
+                          <span className="grupo-label">{grupo.label}</span>
+                          <span className="grupo-sub">{grupo.clientes.length} clientes</span>
+                        </span>
+                        <ChevronDown size={14} className={`grupo-chevron ${isGrupoColapsado(grupo.key) ? '' : 'rotated'}`} />
+                      </>
+                    )
+                  })()}
+                </div>
+                {!isGrupoColapsado(grupo.key) && grupo.clientes.map(cliente => {
+                  const estado = estadoPorCliente.get(cliente.id) || 'Inactivo'
+                  const isExpanded = expandedCard === cliente.id
+                  const { tiene, label } = getTipoClienteLabel(cliente)
+                  return (
+                    <div key={cliente.id} data-id={cliente.id} className={`cliente-card cliente-card--no-divider ${isExpanded ? 'expanded' : ''} ${selectedClientes.has(cliente.id) ? 'card-selected' : ''} ${highlightId === cliente.id ? 'card-highlight' : ''}`}>
+                      <div className="cliente-card-header" onClick={() => {
+                        const next = isExpanded ? null : cliente.id
+                        setExpandedCard(next)
+                        if (next) fetchHistorial(cliente)
+                      }}>
+                        {modoSeleccion && (
+                          <label className="custom-check" onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox" checked={selectedClientes.has(cliente.id)} onChange={() => toggleSelectCliente(cliente.id)} />
+                            <span className="checkmark"></span>
+                          </label>
+                        )}
+                        <span className={`cliente-card-icon ${estado === 'Activo' ? 'cliente-icon--active' : 'cliente-icon--inactive'}`}>
+                          <User size={22} />
+                        </span>
+                        <div className="cliente-card-left">
+                          <span className="cliente-card-nombre">
+                            {cliente.nombre}
+                            {isClienteNuevo(cliente) && <span className="badge-nuevo">Nuevo</span>}
+                          </span>
+                          <span className="cliente-card-placa">{cliente.placa}</span>
+                        </div>
+                        <div className="cliente-card-right">
+                          <span className={`tipo-cliente-text ${tiene ? 'con-membresia' : 'sin-membresia'}`}>
+                            {tiene ? label : 'Sin membresía'}
+                          </span>
+                          <div className="wa-menu-wrapper">
+                            <button className="btn-whatsapp btn-whatsapp-mini" onClick={(e) => toggleWhatsappMenu(cliente.id, e)} title="Enviar WhatsApp">
+                              <MessageCircle size={16} />
+                            </button>
+                            {whatsappMenu === cliente.id && (
+                              <>
+                                <div className="wa-menu-overlay" onClick={(e) => { e.stopPropagation(); setWhatsappMenu(null) }} />
+                                <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
+                                  {(plantillasMensaje || []).length > 0 ? (plantillasMensaje || []).map(p => (
+                                    <button key={p.id} onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'plantilla', p.id) }}>{p.nombre}</button>
+                                  )) : (
+                                    <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em', display: 'block' }}>No hay plantillas</span>
+                                  )}
+                                  <button onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'contacto') }}>Ir al contacto</button>
+                                  <button onClick={(e) => { e.stopPropagation(); setWhatsappMenu(null); navigate('/cuenta?tab=config&subtab=mensajes') }}>+ Agregar plantilla</button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                        </div>
+                      </div>
+                      {isExpanded && (
+                        <div className="cliente-card-body">
+                          <div className="cliente-card-row">
+                            <span className="cliente-card-label">Moto</span>
+                            <span className="cliente-card-value">{cliente.moto || '—'}</span>
+                          </div>
+                          <div className="cliente-card-row">
+                            <span className="cliente-card-label">Teléfono</span>
+                            <span className="cliente-card-value">{cliente.telefono || '—'}</span>
+                          </div>
+                          <div className="cliente-card-row">
+                            <span className="cliente-card-label">Categoría</span>
+                            <span className="cliente-card-value">{cliente.membresia?.nombre || 'Cliente'}</span>
+                          </div>
+                          <div className="cliente-card-row">
+                            <span className="cliente-card-label">Vencimiento</span>
+                            <span className="cliente-card-value">{formatFecha(cliente.fecha_fin_membresia)}</span>
+                          </div>
+                          {(() => {
+                            const hist = clienteHistorial[cliente.id]
+                            if (!hist) return null
+                            if (hist.loading) return <div className="cliente-historial"><span className="cliente-hist-loading">Cargando historial...</span></div>
+                            const items = [
+                              ...(hist.lavadas || []).map(l => ({ _type: 'lavada', fecha: l.fecha, desc: l.tipo_lavado?.nombre || 'Servicio', valor: l.valor })),
+                              ...(hist.transacciones || []).map(t => ({ _type: t.tipo === 'EGRESO' ? 'egreso' : 'ingreso', fecha: t.fecha, desc: t.descripcion || t.categoria || 'Transacción', valor: t.valor })),
+                              ...(hist.mensajes || []).map(m => ({ _type: 'mensaje', fecha: m.created_at, desc: m.plantilla_nombre || 'Mensaje WhatsApp', valor: null }))
+                            ].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+                            if (items.length === 0) return <div className="cliente-historial"><span className="cliente-hist-empty">Sin registros</span></div>
+                            return (
+                              <div className="cliente-historial">
+                                <span className="cliente-hist-title">Historial</span>
+                                {items.slice(0, 20).map((item, i) => (
+                                  <div key={i} className="cliente-hist-item">
+                                    <div className={`cliente-hist-icon ${item._type === 'lavada' ? 'icon-blue' : item._type === 'mensaje' ? 'icon-purple' : item._type === 'egreso' ? 'icon-red' : 'icon-green'}`}>
+                                      {item._type === 'lavada' ? <Droplets size={14} /> : item._type === 'mensaje' ? <MessageCircle size={14} /> : <DollarSign size={14} />}
+                                    </div>
+                                    <div className="cliente-hist-info">
+                                      <span className="cliente-hist-desc">{item.desc}</span>
+                                      <span className="cliente-hist-fecha">{formatFecha(item.fecha)}</span>
+                                    </div>
+                                    {item._type !== 'mensaje' && (
+                                      <span className={`cliente-hist-valor ${item._type === 'egreso' ? 'negativo' : ''}`}>
+                                        {item._type === 'egreso' ? '-' : ''}{formatMoney(item.valor)}
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          })()}
+                          <div className="cliente-card-actions">
+                            <button className="btn-secondary" onClick={() => handleEdit(cliente)}><Edit size={16} /> Editar</button>
+                            <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteCliente(cliente.id)}><Trash2 size={16} /> Eliminar</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ))
+          )
+        ) : (
+          <>
+            {clientesOrdenados.map(cliente => {
+              const estado = estadoPorCliente.get(cliente.id) || 'Inactivo'
+              const isExpanded = expandedCard === cliente.id
+              const { tiene, label } = getTipoClienteLabel(cliente)
+              return (
+                <div key={cliente.id} data-id={cliente.id} className={`cliente-card ${estado === 'Activo' ? 'estado-activo-border' : 'estado-vencido-border'} ${isExpanded ? 'expanded' : ''} ${selectedClientes.has(cliente.id) ? 'card-selected' : ''} ${highlightId === cliente.id ? 'card-highlight' : ''}`}>
+                  <div className="cliente-card-header" onClick={() => {
+                    const next = isExpanded ? null : cliente.id
+                    setExpandedCard(next)
+                    if (next) fetchHistorial(cliente)
+                  }}>
+                    {modoSeleccion && (
+                      <label className="custom-check" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={selectedClientes.has(cliente.id)} onChange={() => toggleSelectCliente(cliente.id)} />
+                        <span className="checkmark"></span>
+                      </label>
+                    )}
+                    <span className={`cliente-card-icon ${estado === 'Activo' ? 'cliente-icon--active' : 'cliente-icon--inactive'}`}>
+                      <User size={22} />
+                    </span>
+                    <div className="cliente-card-left">
+                      <span className="cliente-card-nombre">
+                        {cliente.nombre}
+                        {isClienteNuevo(cliente) && <span className="badge-nuevo">Nuevo</span>}
+                      </span>
+                      <span className="cliente-card-placa">{cliente.placa}</span>
+                    </div>
+                    <div className="cliente-card-right">
                       <span className={`tipo-cliente-text ${tiene ? 'con-membresia' : 'sin-membresia'}`}>
                         {tiene ? label : 'Sin membresía'}
                       </span>
-                    )
-                  })()}
-                  <div className="wa-menu-wrapper">
-                    <button
-                      className="btn-whatsapp btn-whatsapp-mini"
-                      onClick={(e) => toggleWhatsappMenu(cliente.id, e)}
-                      title="Enviar WhatsApp"
-                    >
-                      <MessageCircle size={16} />
-                    </button>
-                    {whatsappMenu === cliente.id && (
-                      <>
-                        <div className="wa-menu-overlay" onClick={(e) => { e.stopPropagation(); setWhatsappMenu(null) }} />
-                        <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
-                          {(plantillasMensaje || []).length > 0 ? (plantillasMensaje || []).map(p => (
-                            <button key={p.id} onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'plantilla', p.id) }}>
-                              {p.nombre}
-                            </button>
-                          )) : (
-                            <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em', display: 'block' }}>No hay plantillas</span>
-                          )}
-                          <button onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'contacto') }}>
-                            Ir al contacto
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); setWhatsappMenu(null); navigate('/cuenta?tab=config&subtab=mensajes') }}>
-                            + Agregar plantilla
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
-                </div>
-              </div>
-              {isExpanded && (
-                <div className="cliente-card-body">
-                  <div className="cliente-card-row">
-                    <span className="cliente-card-label">Moto</span>
-                    <span className="cliente-card-value">{cliente.moto || '—'}</span>
-                  </div>
-                  <div className="cliente-card-row">
-                    <span className="cliente-card-label">Teléfono</span>
-                    <span className="cliente-card-value">{cliente.telefono || '—'}</span>
-                  </div>
-                  <div className="cliente-card-row">
-                    <span className="cliente-card-label">Categoría</span>
-                    <span className="cliente-card-value">{cliente.membresia?.nombre || 'Cliente'}</span>
-                  </div>
-                  <div className="cliente-card-row">
-                    <span className="cliente-card-label">Vencimiento</span>
-                    <span className="cliente-card-value">{formatFecha(cliente.fecha_fin_membresia)}</span>
-                  </div>
-                  {/* Historial */}
-                  {(() => {
-                    const hist = clienteHistorial[cliente.id]
-                    if (!hist) return null
-                    if (hist.loading) return <div className="cliente-historial"><span className="cliente-hist-loading">Cargando historial...</span></div>
-                    const items = [
-                      ...(hist.lavadas || []).map(l => ({ _type: 'lavada', fecha: l.fecha, desc: l.tipo_lavado?.nombre || 'Servicio', valor: l.valor })),
-                      ...(hist.transacciones || []).map(t => ({ _type: t.tipo === 'EGRESO' ? 'egreso' : 'ingreso', fecha: t.fecha, desc: t.descripcion || t.categoria || 'Transacción', valor: t.valor })),
-                      ...(hist.mensajes || []).map(m => ({ _type: 'mensaje', fecha: m.created_at, desc: m.plantilla_nombre || 'Mensaje WhatsApp', valor: null }))
-                    ].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
-                    if (items.length === 0) return <div className="cliente-historial"><span className="cliente-hist-empty">Sin registros</span></div>
-                    return (
-                      <div className="cliente-historial">
-                        <span className="cliente-hist-title">Historial</span>
-                        {items.slice(0, 20).map((item, i) => (
-                          <div key={i} className="cliente-hist-item">
-                            <div className={`cliente-hist-icon ${item._type === 'lavada' ? 'icon-blue' : item._type === 'mensaje' ? 'icon-purple' : item._type === 'egreso' ? 'icon-red' : 'icon-green'}`}>
-                              {item._type === 'lavada' ? <Droplets size={14} /> : item._type === 'mensaje' ? <MessageCircle size={14} /> : <DollarSign size={14} />}
+                      <div className="wa-menu-wrapper">
+                        <button className="btn-whatsapp btn-whatsapp-mini" onClick={(e) => toggleWhatsappMenu(cliente.id, e)} title="Enviar WhatsApp">
+                          <MessageCircle size={16} />
+                        </button>
+                        {whatsappMenu === cliente.id && (
+                          <>
+                            <div className="wa-menu-overlay" onClick={(e) => { e.stopPropagation(); setWhatsappMenu(null) }} />
+                            <div className="wa-menu-dropdown" style={{ top: waMenuPos.top, right: waMenuPos.right }}>
+                              {(plantillasMensaje || []).length > 0 ? (plantillasMensaje || []).map(p => (
+                                <button key={p.id} onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'plantilla', p.id) }}>{p.nombre}</button>
+                              )) : (
+                                <span style={{ padding: '8px 12px', color: '#999', fontSize: '0.85em', display: 'block' }}>No hay plantillas</span>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); sendWhatsApp(cliente, 'contacto') }}>Ir al contacto</button>
+                              <button onClick={(e) => { e.stopPropagation(); setWhatsappMenu(null); navigate('/cuenta?tab=config&subtab=mensajes') }}>+ Agregar plantilla</button>
                             </div>
-                            <div className="cliente-hist-info">
-                              <span className="cliente-hist-desc">{item.desc}</span>
-                              <span className="cliente-hist-fecha">{formatFecha(item.fecha)}</span>
-                            </div>
-                            {item._type !== 'mensaje' && (
-                              <span className={`cliente-hist-valor ${item._type === 'egreso' ? 'negativo' : ''}`}>
-                                {item._type === 'egreso' ? '-' : ''}{formatMoney(item.valor)}
-                              </span>
-                            )}
-                          </div>
-                        ))}
+                          </>
+                        )}
                       </div>
-                    )
-                  })()}
-
-                  <div className="cliente-card-actions">
-                    <button className="btn-secondary" onClick={() => handleEdit(cliente)}>
-                      <Edit size={16} /> Editar
-                    </button>
-                    <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteCliente(cliente.id)}>
-                      <Trash2 size={16} /> Eliminar
-                    </button>
+                      <ChevronDown size={16} className={`cliente-card-chevron ${isExpanded ? 'rotated' : ''}`} />
+                    </div>
                   </div>
+                  {isExpanded && (
+                    <div className="cliente-card-body">
+                      <div className="cliente-card-row">
+                        <span className="cliente-card-label">Moto</span>
+                        <span className="cliente-card-value">{cliente.moto || '—'}</span>
+                      </div>
+                      <div className="cliente-card-row">
+                        <span className="cliente-card-label">Teléfono</span>
+                        <span className="cliente-card-value">{cliente.telefono || '—'}</span>
+                      </div>
+                      <div className="cliente-card-row">
+                        <span className="cliente-card-label">Categoría</span>
+                        <span className="cliente-card-value">{cliente.membresia?.nombre || 'Cliente'}</span>
+                      </div>
+                      <div className="cliente-card-row">
+                        <span className="cliente-card-label">Vencimiento</span>
+                        <span className="cliente-card-value">{formatFecha(cliente.fecha_fin_membresia)}</span>
+                      </div>
+                      {(() => {
+                        const hist = clienteHistorial[cliente.id]
+                        if (!hist) return null
+                        if (hist.loading) return <div className="cliente-historial"><span className="cliente-hist-loading">Cargando historial...</span></div>
+                        const items = [
+                          ...(hist.lavadas || []).map(l => ({ _type: 'lavada', fecha: l.fecha, desc: l.tipo_lavado?.nombre || 'Servicio', valor: l.valor })),
+                          ...(hist.transacciones || []).map(t => ({ _type: t.tipo === 'EGRESO' ? 'egreso' : 'ingreso', fecha: t.fecha, desc: t.descripcion || t.categoria || 'Transacción', valor: t.valor })),
+                          ...(hist.mensajes || []).map(m => ({ _type: 'mensaje', fecha: m.created_at, desc: m.plantilla_nombre || 'Mensaje WhatsApp', valor: null }))
+                        ].sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+                        if (items.length === 0) return <div className="cliente-historial"><span className="cliente-hist-empty">Sin registros</span></div>
+                        return (
+                          <div className="cliente-historial">
+                            <span className="cliente-hist-title">Historial</span>
+                            {items.slice(0, 20).map((item, i) => (
+                              <div key={i} className="cliente-hist-item">
+                                <div className={`cliente-hist-icon ${item._type === 'lavada' ? 'icon-blue' : item._type === 'mensaje' ? 'icon-purple' : item._type === 'egreso' ? 'icon-red' : 'icon-green'}`}>
+                                  {item._type === 'lavada' ? <Droplets size={14} /> : item._type === 'mensaje' ? <MessageCircle size={14} /> : <DollarSign size={14} />}
+                                </div>
+                                <div className="cliente-hist-info">
+                                  <span className="cliente-hist-desc">{item.desc}</span>
+                                  <span className="cliente-hist-fecha">{formatFecha(item.fecha)}</span>
+                                </div>
+                                {item._type !== 'mensaje' && (
+                                  <span className={`cliente-hist-valor ${item._type === 'egreso' ? 'negativo' : ''}`}>
+                                    {item._type === 'egreso' ? '-' : ''}{formatMoney(item.valor)}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })()}
+                      <div className="cliente-card-actions">
+                        <button className="btn-secondary" onClick={() => handleEdit(cliente)}><Edit size={16} /> Editar</button>
+                        <button className="btn-secondary btn-danger-outline" onClick={() => requestDeleteCliente(cliente.id)}><Trash2 size={16} /> Eliminar</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )
-        })}
-        {clientesOrdenados.length === 0 && (
-          <div className="clientes-cards-empty">No hay clientes registrados</div>
+              )
+            })}
+            {clientesOrdenados.length === 0 && (
+              <div className="clientes-cards-empty">No hay clientes registrados</div>
+            )}
+          </>
         )}
-      </div>
+      </div>}
 
       {modoSeleccion && selectedClientes.size > 0 && (
         <div className="bulk-action-bar">
@@ -1764,37 +2064,6 @@ export default function Clientes() {
         </div>
       )}
 
-      {/* FAB (mobile only) */}
-      {!modoSeleccion && (
-        <button
-          className={`clientes-fab ${showFabMenu ? 'open' : ''}`}
-          onClick={() => setShowFabMenu(!showFabMenu)}
-        >
-          <Plus size={24} />
-        </button>
-      )}
-      {showFabMenu && (
-        <>
-          <div className="clientes-fab-overlay" onClick={() => setShowFabMenu(false)} />
-          <div className="clientes-fab-menu">
-            <button onClick={() => { setShowFabMenu(false); setShowModal(true) }}>
-              <Plus size={18} /> Nuevo Cliente
-            </button>
-            <button onClick={() => { setShowFabMenu(false); exportarCSV() }} disabled={!clientesFiltrados.length}>
-              <Download size={18} /> Exportar CSV
-            </button>
-            <button onClick={() => { setShowFabMenu(false); exportarManyChat() }} disabled={!clientesFiltrados.length}>
-              <MessageCircle size={18} /> Exportar ManyChat
-            </button>
-            <button onClick={() => { setShowFabMenu(false); setShowImportModal(true) }}>
-              <Upload size={18} /> Importar
-            </button>
-            <button onClick={() => { setShowFabMenu(false); setModoSeleccion(true); setSelectedClientes(new Set()) }}>
-              <CheckSquare size={18} /> Seleccionar
-            </button>
-          </div>
-        </>
-      )}
       {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} reason="Has alcanzado el límite de 30 clientes" />}
 
       <ConfirmDeleteModal

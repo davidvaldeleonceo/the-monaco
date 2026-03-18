@@ -3,6 +3,7 @@ import { supabase } from '../apiClient'
 import { useData } from '../components/context/DataContext'
 import { useToast } from '../components/layout/Toast'
 import { ESTADO_CLASSES } from '../config/constants'
+import { formatMoney } from '../utils/money'
 
 export function useServiceHandlers() {
   const {
@@ -22,7 +23,7 @@ export function useServiceHandlers() {
     setTimeout(() => {
       setExpandedCards(prev => ({ ...prev, [lavadaId]: false }))
       setCollapsingCards(prev => { const n = { ...prev }; delete n[lavadaId]; return n })
-    }, 350)
+    }, 250)
   }
 
   const collapseAllExcept = (openId) => {
@@ -91,67 +92,67 @@ export function useServiceHandlers() {
   const handleEstadoChange = async (lavadaId, nuevoEstado) => {
     const lavada = lavadas.find(l => l.id === lavadaId)
     if (lavada.estado === nuevoEstado) return
-    await withCardUpdate(lavadaId, async () => {
-      const estadoAnterior = lavada.estado
-      const ahora = new Date()
-      const ahoraISO = ahora.toISOString()
-      let updates = { estado: nuevoEstado }
+    // No withCardUpdate — optimistic update avoids popup re-animation
+    const estadoAnterior = lavada.estado
+    const ahora = new Date()
+    const ahoraISO = ahora.toISOString()
+    let updates = { estado: nuevoEstado }
 
-      if (nuevoEstado === 'EN ESPERA') {
-        updates.tiempo_espera_inicio = ahoraISO
-        updates.duracion_espera = null
-        updates.tiempo_lavado_inicio = null
+    if (nuevoEstado === 'EN ESPERA') {
+      updates.tiempo_espera_inicio = ahoraISO
+      updates.duracion_espera = null
+      updates.tiempo_lavado_inicio = null
+      updates.duracion_lavado = null
+      updates.tiempo_terminado_inicio = null
+      updates.duracion_terminado = null
+    } else {
+      if (estadoAnterior === 'EN ESPERA' && lavada.tiempo_espera_inicio) {
+        updates.duracion_espera = Math.round((ahora - new Date(lavada.tiempo_espera_inicio)) / 1000)
+      }
+      if (estadoAnterior === 'EN LAVADO' && lavada.tiempo_lavado_inicio) {
+        updates.duracion_lavado = Math.round((ahora - new Date(lavada.tiempo_lavado_inicio)) / 1000)
+      }
+      if (estadoAnterior === 'TERMINADO' && lavada.tiempo_terminado_inicio) {
+        updates.duracion_terminado = Math.round((ahora - new Date(lavada.tiempo_terminado_inicio)) / 1000)
+      }
+
+      if (nuevoEstado === 'EN LAVADO') {
+        updates.tiempo_lavado_inicio = ahoraISO
         updates.duracion_lavado = null
-        updates.tiempo_terminado_inicio = null
+      }
+      if (nuevoEstado === 'TERMINADO') {
+        updates.tiempo_terminado_inicio = ahoraISO
         updates.duracion_terminado = null
-      } else {
-        if (estadoAnterior === 'EN ESPERA' && lavada.tiempo_espera_inicio) {
-          updates.duracion_espera = Math.round((ahora - new Date(lavada.tiempo_espera_inicio)) / 1000)
-        }
-        if (estadoAnterior === 'EN LAVADO' && lavada.tiempo_lavado_inicio) {
-          updates.duracion_lavado = Math.round((ahora - new Date(lavada.tiempo_lavado_inicio)) / 1000)
-        }
-        if (estadoAnterior === 'TERMINADO' && lavada.tiempo_terminado_inicio) {
-          updates.duracion_terminado = Math.round((ahora - new Date(lavada.tiempo_terminado_inicio)) / 1000)
-        }
-
-        if (nuevoEstado === 'EN LAVADO') {
-          updates.tiempo_lavado_inicio = ahoraISO
-          updates.duracion_lavado = null
-        }
-        if (nuevoEstado === 'TERMINADO') {
-          updates.tiempo_terminado_inicio = ahoraISO
-          updates.duracion_terminado = null
-        }
       }
+    }
 
-      const { error } = await supabase
-        .from('lavadas')
-        .update(updates)
-        .eq('id', lavadaId)
+    updateLavadaLocal(lavadaId, updates)
 
-      if (error) {
-        toast.error('Error al cambiar estado: ' + error.message)
-        return
-      }
-      updateLavadaLocal(lavadaId, updates)
-    })
+    const { error } = await supabase
+      .from('lavadas')
+      .update(updates)
+      .eq('id', lavadaId)
+
+    if (error) {
+      toast.error('Error al cambiar estado: ' + error.message)
+      updateLavadaLocal(lavadaId, { estado: estadoAnterior })
+    }
   }
 
   const handleLavadorChange = async (lavadaId, lavadorId) => {
-    await withCardUpdate(lavadaId, async () => {
-      const { error } = await supabase
-        .from('lavadas')
-        .update({ lavador_id: lavadorId || null })
-        .eq('id', lavadaId)
+    // No withCardUpdate — avoid re-render flash when editing inside expanded popup
+    const lavador = lavadores.find(l => l.id == lavadorId)
+    updateLavadaLocal(lavadaId, { lavador_id: lavadorId, lavador: lavador ? { nombre: lavador.nombre } : null })
 
-      if (error) {
-        toast.error('Error al cambiar lavador: ' + error.message)
-        return
-      }
-      const lavador = lavadores.find(l => l.id == lavadorId)
-      updateLavadaLocal(lavadaId, { lavador_id: lavadorId, lavador: lavador ? { nombre: lavador.nombre } : null })
-    })
+    const { error } = await supabase
+      .from('lavadas')
+      .update({ lavador_id: lavadorId || null })
+      .eq('id', lavadaId)
+
+    if (error) {
+      toast.error('Error al cambiar lavador: ' + error.message)
+      updateLavadaLocal(lavadaId, { lavador_id: null, lavador: null })
+    }
   }
 
   const clienteTieneMembresia = (cliente) => {
@@ -161,36 +162,35 @@ export function useServiceHandlers() {
   }
 
   const handleTipoLavadoChangeInline = async (lavadaId, tipoId) => {
-    await withCardUpdate(lavadaId, async () => {
-      const tipo = tiposLavado.find(t => t.id == tipoId)
-      const lavada = lavadas.find(l => l.id === lavadaId)
-      const nuevosAdicionales = autoAddIncluidos(tipo, lavada.adicionales || [])
-      let nuevoValor = calcularValor(tipoId, nuevosAdicionales)
+    // No withCardUpdate — avoid re-render flash when editing inside expanded popup
+    const tipo = tiposLavado.find(t => t.id == tipoId)
+    const lavada = lavadas.find(l => l.id === lavadaId)
+    const nuevosAdicionales = autoAddIncluidos(tipo, lavada.adicionales || [])
+    let nuevoValor = calcularValor(tipoId, nuevosAdicionales)
 
-      // Membresía cubre el lavado base, pero adicionales se cobran
-      const cliente = clientes.find(c => c.id == lavada.cliente_id)
-      if (clienteTieneMembresia(cliente)) {
-        const tipo2 = tiposLavado.find(t => t.id == tipoId)
-        nuevoValor = nuevoValor - Number(tipo2?.precio || 0)
-        if (nuevoValor < 0) nuevoValor = 0
-      }
+    const cliente = clientes.find(c => c.id == lavada.cliente_id)
+    if (clienteTieneMembresia(cliente)) {
+      const tipo2 = tiposLavado.find(t => t.id == tipoId)
+      nuevoValor = nuevoValor - Number(tipo2?.precio || 0)
+      if (nuevoValor < 0) nuevoValor = 0
+    }
 
-      const { error } = await supabase
-        .from('lavadas')
-        .update({ tipo_lavado_id: tipoId, adicionales: nuevosAdicionales, valor: nuevoValor })
-        .eq('id', lavadaId)
+    const localUpdates = {
+      tipo_lavado_id: tipoId,
+      tipo_lavado: tipo ? { nombre: tipo.nombre } : null,
+      adicionales: nuevosAdicionales,
+      valor: nuevoValor
+    }
+    updateLavadaLocal(lavadaId, localUpdates)
 
-      if (error) {
-        toast.error('Error al cambiar tipo de lavado: ' + error.message)
-        return
-      }
-      updateLavadaLocal(lavadaId, {
-        tipo_lavado_id: tipoId,
-        tipo_lavado: tipo ? { nombre: tipo.nombre } : null,
-        adicionales: nuevosAdicionales,
-        valor: nuevoValor
-      })
-    })
+    const { error } = await supabase
+      .from('lavadas')
+      .update({ tipo_lavado_id: tipoId, adicionales: nuevosAdicionales, valor: nuevoValor })
+      .eq('id', lavadaId)
+
+    if (error) {
+      toast.error('Error al cambiar tipo de lavado: ' + error.message)
+    }
   }
 
   const handlePagosChange = async (lavadaId, nuevosPagos) => {
@@ -217,42 +217,55 @@ export function useServiceHandlers() {
     updateLavadaLocal(lavadaId, { pagos: pagosSanitized, metodo_pago_id: metodoCompatible })
   }
 
+  const handleNotasChange = async (lavadaId, notas) => {
+    // No withCardUpdate — notas use localNotas + debounce in ServiceCard,
+    // so we skip the card-updating class to avoid opacity flash
+    const { error } = await supabase
+      .from('lavadas')
+      .update({ notas: notas || null })
+      .eq('id', lavadaId)
+
+    if (error) {
+      toast.error('Error al actualizar notas: ' + error.message)
+      return
+    }
+    updateLavadaLocal(lavadaId, { notas: notas || null })
+  }
+
   const handleAdicionalChange = async (lavadaId, servicio, checked) => {
-    await withCardUpdate(lavadaId, async () => {
-      const lavada = lavadas.find(l => l.id === lavadaId)
-      const adicionalesActuales = lavada.adicionales || []
+    // No withCardUpdate — avoid re-render flash when editing inside expanded popup
+    const lavada = lavadas.find(l => l.id === lavadaId)
+    const adicionalesActuales = lavada.adicionales || []
 
-      let nuevosAdicionales
-      if (checked) {
-        nuevosAdicionales = [...adicionalesActuales, { id: servicio.id, nombre: servicio.nombre, precio: Number(servicio.precio) }]
-      } else {
-        nuevosAdicionales = adicionalesActuales.filter(a => a.id !== servicio.id)
-      }
+    let nuevosAdicionales
+    if (checked) {
+      nuevosAdicionales = [...adicionalesActuales, { id: servicio.id, nombre: servicio.nombre, precio: Number(servicio.precio) }]
+    } else {
+      nuevosAdicionales = adicionalesActuales.filter(a => a.id !== servicio.id)
+    }
 
-      let nuevoValor = calcularValor(lavada.tipo_lavado_id, nuevosAdicionales)
+    let nuevoValor = calcularValor(lavada.tipo_lavado_id, nuevosAdicionales)
 
-      // Membresía cubre el lavado base, pero adicionales se cobran
-      const cliente = clientes.find(c => c.id == lavada.cliente_id)
-      if (clienteTieneMembresia(cliente)) {
-        const tipo = tiposLavado.find(t => t.id == lavada.tipo_lavado_id)
-        nuevoValor = nuevoValor - Number(tipo?.precio || 0)
-        if (nuevoValor < 0) nuevoValor = 0
-      }
+    const cliente = clientes.find(c => c.id == lavada.cliente_id)
+    if (clienteTieneMembresia(cliente)) {
+      const tipo = tiposLavado.find(t => t.id == lavada.tipo_lavado_id)
+      nuevoValor = nuevoValor - Number(tipo?.precio || 0)
+      if (nuevoValor < 0) nuevoValor = 0
+    }
 
-      const { error } = await supabase
-        .from('lavadas')
-        .update({ adicionales: nuevosAdicionales, valor: nuevoValor })
-        .eq('id', lavadaId)
-
-      if (error) {
-        toast.error('Error al actualizar adicionales: ' + error.message)
-        return
-      }
-      updateLavadaLocal(lavadaId, {
-        adicionales: nuevosAdicionales,
-        valor: nuevoValor
-      })
+    updateLavadaLocal(lavadaId, {
+      adicionales: nuevosAdicionales,
+      valor: nuevoValor
     })
+
+    const { error } = await supabase
+      .from('lavadas')
+      .update({ adicionales: nuevosAdicionales, valor: nuevoValor })
+      .eq('id', lavadaId)
+
+    if (error) {
+      toast.error('Error al actualizar adicionales: ' + error.message)
+    }
   }
 
   const [pendingDeleteLavadaId, setPendingDeleteLavadaId] = useState(null)
@@ -297,8 +310,7 @@ export function useServiceHandlers() {
       return hoy <= fin ? 'Activo' : 'Vencido'
     }
     const formatMoneyVar = (v) => {
-      const num = Number(v) || 0
-      return '$' + num.toLocaleString('es-CO')
+      return formatMoney(Number(v) || 0)
     }
 
     const variables = {
@@ -371,6 +383,7 @@ export function useServiceHandlers() {
     handleLavadorChange,
     handleTipoLavadoChangeInline,
     handlePagosChange,
+    handleNotasChange,
     handleAdicionalChange,
     pendingDeleteLavadaId, setPendingDeleteLavadaId,
     requestEliminarLavada, executeEliminarLavada,

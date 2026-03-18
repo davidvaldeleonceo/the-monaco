@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
-import { supabase } from '../../apiClient'
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { supabase, getBootstrapPromise } from '../../apiClient'
 import { useTenant } from './TenantContext'
 import { LAVADAS_SELECT, CLIENTES_SELECT } from '../../config/constants'
 import { fechaToBogotaDate, nowBogota } from '../../utils/date'
@@ -29,12 +29,30 @@ export function DataProvider({ children }) {
   const [productos, setProductos] = useState([])
   const [plantillasMensaje, setPlantillasMensaje] = useState([])
   const [categoriasTransaccion, setCategoriasTransaccion] = useState([])
+  const [initialTransacciones, setInitialTransacciones] = useState(null)
   const [loading, setLoading] = useState(true)
   const [lavadasAllLoaded, setLavadasAllLoaded] = useState(false)
 
   const fetchingRef = useRef(false)
   const debounceRef = useRef(null)
   const clientesDebounceRef = useRef(null)
+
+  const applyBootstrapData = (data) => {
+    setClientes(data.clientes || [])
+    setLavadas(data.lavadas || [])
+    setLavadasAllLoaded(false)
+    setTiposLavado(data.tiposLavado || [])
+    setLavadores(data.lavadores || [])
+    setMetodosPago(data.metodosPago || [])
+    setTiposMembresia(data.tiposMembresia || [])
+    setServiciosAdicionales(data.serviciosAdicionales || [])
+    setProductos(data.productos || [])
+    setPlantillasMensaje(data.plantillasMensaje || [])
+    setCategoriasTransaccion(data.categoriasTransaccion || [])
+    if (data.transacciones) {
+      setInitialTransacciones(data.transacciones)
+    }
+  }
 
   const fetchAllData = async () => {
     if (!negocioId) return
@@ -43,6 +61,19 @@ export function DataProvider({ children }) {
     setLoading(true)
 
     try {
+      // Try to consume pre-fetched bootstrap data (started during login)
+      const bootstrapPromise = getBootstrapPromise()
+      if (bootstrapPromise) {
+        const result = await bootstrapPromise
+        if (result?.data) {
+          applyBootstrapData(result.data)
+          setLoading(false)
+          fetchingRef.current = false
+          return
+        }
+      }
+
+      // Fallback: individual queries (page refresh, direct navigation)
       const cutoff = getCutoff60Days()
       const [
         clientesRes,
@@ -68,17 +99,6 @@ export function DataProvider({ children }) {
         supabase.from('categorias_transaccion').select('*').eq('negocio_id', negocioId).eq('activo', true).order('nombre'),
       ])
 
-      if (clientesRes.error) console.error('Error clientes:', clientesRes.error)
-      if (lavadasRes.error) console.error('Error lavadas:', lavadasRes.error)
-      if (tiposLavadoRes.error) console.error('Error tipos_lavado:', tiposLavadoRes.error)
-      if (lavadoresRes.error) console.error('Error lavadores:', lavadoresRes.error)
-      if (metodosPagoRes.error) console.error('Error metodos_pago:', metodosPagoRes.error)
-      if (tiposMembresiaRes.error) console.error('Error tipos_membresia:', tiposMembresiaRes.error)
-      if (serviciosAdicionalesRes.error) console.error('Error servicios_adicionales:', serviciosAdicionalesRes.error)
-      if (productosRes.error) console.error('Error productos:', productosRes.error)
-      if (plantillasRes.error) console.error('Error plantillas_mensaje:', plantillasRes.error)
-      if (categoriasTransaccionRes.error) console.error('Error categorias_transaccion:', categoriasTransaccionRes.error)
-
       setClientes(clientesRes.data || [])
       setLavadas(lavadasRes.data || [])
       setLavadasAllLoaded(false)
@@ -98,14 +118,14 @@ export function DataProvider({ children }) {
     }
   }
 
-  const refreshLavadas = async () => {
+  const refreshLavadas = useCallback(async () => {
     const cutoff = getCutoff60Days()
     const query = lavadasAllLoaded
       ? supabase.from('lavadas').select(LAVADAS_SELECT).eq('negocio_id', negocioId).order('fecha', { ascending: false })
       : supabase.from('lavadas').select(LAVADAS_SELECT).eq('negocio_id', negocioId).gte('fecha', cutoff).order('fecha', { ascending: false }).limit(500)
     const { data } = await query
     setLavadas(data || [])
-  }
+  }, [negocioId, lavadasAllLoaded])
 
   const loadAllLavadas = useCallback(async () => {
     if (lavadasAllLoaded) return
@@ -118,16 +138,16 @@ export function DataProvider({ children }) {
     setLavadasAllLoaded(true)
   }, [lavadasAllLoaded, negocioId])
 
-  const refreshClientes = async () => {
+  const refreshClientes = useCallback(async () => {
     const { data } = await supabase
       .from('clientes')
       .select('*, membresia:tipos_membresia(nombre)')
       .eq('negocio_id', negocioId)
       .order('nombre')
     setClientes(data || [])
-  }
+  }, [negocioId])
 
-  const refreshConfig = async () => {
+  const refreshConfig = useCallback(async () => {
     const [tiposLavadoRes, lavadoresRes, metodosPagoRes, tiposMembresiaRes, serviciosRes, productosRes, plantillasRes, categoriasRes] = await Promise.all([
       supabase.from('tipos_lavado').select('*').eq('negocio_id', negocioId).eq('activo', true),
       supabase.from('lavadores').select('*').eq('negocio_id', negocioId).eq('activo', true),
@@ -146,31 +166,31 @@ export function DataProvider({ children }) {
     setProductos(productosRes.data || [])
     setPlantillasMensaje(plantillasRes.data || [])
     setCategoriasTransaccion(categoriasRes.data || [])
-  }
+  }, [negocioId])
 
-  const updateLavadaLocal = (lavadaId, updates) => {
+  const updateLavadaLocal = useCallback((lavadaId, updates) => {
     setLavadas(prev => prev.map(l => l.id === lavadaId ? { ...l, ...updates } : l))
-  }
+  }, [])
 
-  const addLavadaLocal = (nuevaLavada) => {
+  const addLavadaLocal = useCallback((nuevaLavada) => {
     setLavadas(prev => [nuevaLavada, ...prev])
-  }
+  }, [])
 
-  const addClienteLocal = (nuevoCliente) => {
+  const addClienteLocal = useCallback((nuevoCliente) => {
     setClientes(prev => [...prev, nuevoCliente].sort((a, b) => a.nombre.localeCompare(b.nombre)))
-  }
+  }, [])
 
-  const updateClienteLocal = (clienteId, updates) => {
+  const updateClienteLocal = useCallback((clienteId, updates) => {
     setClientes(prev => prev.map(c => c.id === clienteId ? { ...c, ...updates } : c))
-  }
+  }, [])
 
-  const deleteClienteLocal = (clienteId) => {
+  const deleteClienteLocal = useCallback((clienteId) => {
     setClientes(prev => prev.filter(c => c.id !== clienteId))
-  }
+  }, [])
 
-  const deleteLavadaLocal = (lavadaId) => {
+  const deleteLavadaLocal = useCallback((lavadaId) => {
     setLavadas(prev => prev.filter(l => l.id !== lavadaId))
-  }
+  }, [])
 
   useEffect(() => {
     fetchingRef.current = false
@@ -196,7 +216,7 @@ export function DataProvider({ children }) {
       if (debounceRef.current) clearTimeout(debounceRef.current)
       supabase.removeChannel(channel)
     }
-  }, [negocioId, lavadasAllLoaded])
+  }, [negocioId, lavadasAllLoaded, refreshLavadas])
 
   // Supabase Realtime subscription for clientes — debounced
   useEffect(() => {
@@ -216,19 +236,21 @@ export function DataProvider({ children }) {
       if (clientesDebounceRef.current) clearTimeout(clientesDebounceRef.current)
       supabase.removeChannel(channel)
     }
-  }, [negocioId])
+  }, [negocioId, refreshClientes])
 
-  const lavadaCountThisMonth = lavadas.filter(l => {
+  const lavadaCountThisMonth = useMemo(() => lavadas.filter(l => {
     const dateOnly = fechaToBogotaDate(l.fecha)
     if (!dateOnly) return false
     const d = new Date(dateOnly + 'T00:00:00')
     const now = nowBogota()
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-  }).length
+  }).length, [lavadas])
 
   const clienteCount = clientes.length
 
-  const value = {
+  const clearInitialTransacciones = useCallback(() => setInitialTransacciones(null), [])
+
+  const value = useMemo(() => ({
     negocioId,
     clientes,
     lavadas,
@@ -256,7 +278,17 @@ export function DataProvider({ children }) {
     setLavadas,
     lavadaCountThisMonth,
     clienteCount,
-  }
+    initialTransacciones,
+    clearInitialTransacciones,
+  }), [
+    negocioId, clientes, lavadas, tiposLavado, lavadores, metodosPago,
+    tiposMembresia, serviciosAdicionales, productos, plantillasMensaje,
+    categoriasTransaccion, loading, lavadasAllLoaded, fetchAllData,
+    refreshLavadas, refreshClientes, refreshConfig, loadAllLavadas,
+    updateLavadaLocal, addLavadaLocal, addClienteLocal, updateClienteLocal,
+    deleteClienteLocal, deleteLavadaLocal, lavadaCountThisMonth, clienteCount,
+    initialTransacciones, clearInitialTransacciones,
+  ])
 
   return (
     <DataContext.Provider value={value}>
