@@ -4129,6 +4129,13 @@ body {
   flex-shrink: 0;
 }
 
+/* PagoTrabajadores modal — full height on mobile */
+.pagos-page .modal {
+  max-height: 100vh;
+  max-height: 100dvh;
+  border-radius: 0;
+}
+
 /* Hide header "Nuevo Servicio" button on mobile (only Lavadas — has FAB) */
 .lavadas-page .page-header-actions .btn-primary {
   display: none;
@@ -4663,7 +4670,7 @@ body {
   width: 100%; height: 100%; max-height: 100vh;
   background: var(--popover-bg, #fff);
   color: var(--text-primary);
-  padding: 2rem;
+  padding: 2rem 2rem 5rem;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 0.75rem; overflow-y: auto;
   animation: pago-popover-in 0.3s ease-out;
@@ -5765,7 +5772,7 @@ body {
 
 /* Config Title Row */
 .configuracion-page {
-  padding: 0 0.75rem;
+  padding: 0 0.75rem 10rem;
 }
 
 .config-title-row {
@@ -6982,7 +6989,7 @@ input:checked + .slider:before {
   margin: -1.5rem 0 1.2rem;
   justify-content: flex-start;
   position: relative;
-  z-index: 1002;
+  z-index: 999;
 }
 .home-mobile-filters .glass-calendar-dropdown {
   position: fixed;
@@ -8483,10 +8490,27 @@ input:checked + .slider:before {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
+  .balance-detail-panel-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
   .balance-detail-panel-title {
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--accent-primary);
+  }
+  .balance-detail-panel-filters {
+    display: flex;
+    gap: 0.4rem;
+    position: relative;
+  }
+  .balance-detail-panel-filters .glass-calendar-dropdown {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    z-index: 1001;
   }
   .balance-detail-panel-amount {
     font-size: 3rem;
@@ -8679,6 +8703,11 @@ input:checked + .slider:before {
     box-shadow: var(--card-shadow);
     margin-top: 0;
   }
+  .balance-detail-panel .chart-scroll-wrapper {
+    display: flex;
+    justify-content: center;
+    padding-left: 0;
+  }
 
   /* View switch en panel */
   .balance-detail-panel .home-balance-sheet-view-switch {
@@ -8707,8 +8736,34 @@ input:checked + .slider:before {
 
   .home-search-period-row { margin: 1.5rem 0; max-width: none; flex-wrap: nowrap; justify-content: center; }
   .home-search-period-row { display: flex; max-width: none; }
-  .home-period-wheel { height: 44px; --period-wheel-gap: 100px; }
-  .home-period-wheel-item, .home-period-wheel-item.active { font-size: 1.5rem; padding: 0.3rem 1.5rem; }
+  .home-period-wheel { display: none; }
+  .home-period-flat {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex: 1;
+    justify-content: center;
+  }
+  .home-period-flat-item {
+    padding: 0.3rem 0.75rem;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: color 0.2s, background 0.2s;
+    white-space: nowrap;
+  }
+  .home-period-flat-item:hover {
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+  }
+  .home-period-flat-item.active {
+    color: var(--accent-blue);
+    font-weight: 700;
+  }
   .home-search-desktop-row { display: none !important; }
 
   /* Inline search in period row — desktop only */
@@ -8764,38 +8819,23 @@ input:checked + .slider:before {
   .home-tab-actions { display: flex; margin-left: auto; justify-content: flex-end; align-items: center; }
   .home-tab-actions .home-desktop-add { display: flex; }
   .quick-filter-trigger {
-    flex-direction: column;
-    gap: 0.35rem;
-    padding: 0;
-    background: none;
-    box-shadow: none;
-    text-align: center;
-  }
-  .quick-filter-trigger:hover { background: none; }
-  .quick-filter-trigger.has-filters { background: none; }
-  .quick-filter-circle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    border: 1.5px solid var(--border-color);
+    flex-direction: row;
+    gap: 0;
+    padding: 0.5rem 1.25rem;
     background: var(--bg-card);
-    color: var(--text-secondary);
-    font-size: 1.1rem;
-    font-weight: 700;
-    transition: all 0.2s;
+    box-shadow: var(--card-shadow);
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
   }
-  .quick-filter-trigger.has-filters .quick-filter-circle {
-    background: var(--accent-blue);
-    border-color: var(--accent-blue);
-    color: #fff;
+  .quick-filter-trigger:hover { background: var(--bg-hover); }
+  .quick-filter-trigger.has-filters { background: var(--bg-card); }
+  .quick-filter-circle {
+    display: none;
   }
   .quick-filter-text {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
   }
   .quick-filter-trigger.has-filters .quick-filter-text {
     color: var(--accent-blue);
@@ -9146,6 +9186,10 @@ input:checked + .slider:before {
   .clientes-fab,
   .clientes-fab-overlay,
   .clientes-fab-menu {
+    display: none;
+  }
+
+  .clientes-tabla-desktop thead {
     display: none;
   }
 
@@ -9688,9 +9732,53 @@ input:checked + .slider:before {
   }
 
   /* Historial */
+  .historial-workers-grid {
+    --worker-card-width: 244px;
+  }
+
   .historial-worker-card {
-    min-width: 35%;
-    max-width: 35%;
+    padding: 0.75rem 1rem;
+  }
+
+  .historial-workers-wrapper {
+    position: relative;
+  }
+
+  .historial-workers-wrapper .scroll-arrow {
+    display: flex;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+  }
+
+  .historial-workers-wrapper .scroll-arrow:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-md);
+  }
+
+  .historial-workers-wrapper .scroll-arrow.scroll-left {
+    left: -16px;
+  }
+
+  .historial-workers-wrapper .scroll-arrow.scroll-right {
+    right: -16px;
+  }
+
+  .historial-workers-wrapper .scroll-arrow.hidden {
+    display: none;
   }
 
   .historial-detail-modal {
@@ -10198,6 +10286,14 @@ input:checked + .slider:before {
 }
 .historial-workers-grid::-webkit-scrollbar { display: none; }
 
+.historial-workers-wrapper {
+  position: relative;
+}
+
+.historial-workers-wrapper .scroll-arrow {
+  display: none;
+}
+
 /* Worker card */
 .historial-worker-card {
   background: var(--bg-card);
@@ -10206,8 +10302,8 @@ input:checked + .slider:before {
   padding: 1.25rem;
   cursor: pointer;
   transition: all 0.2s;
-  min-width: 60%;
-  max-width: 60%;
+  min-width: var(--worker-card-width, 60%);
+  max-width: var(--worker-card-width, 60%);
   flex-shrink: 0;
   scroll-snap-align: start;
   box-shadow: var(--shadow-sm);
@@ -10226,7 +10322,7 @@ input:checked + .slider:before {
 }
 
 .historial-worker-name {
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -10251,7 +10347,7 @@ input:checked + .slider:before {
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 .historial-worker-stat {
@@ -10271,15 +10367,15 @@ input:checked + .slider:before {
 }
 
 .historial-stat-value {
-  font-size: 0.95rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .historial-worker-saldo {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 500;
-  padding-top: 0.75rem;
+  padding-top: 0.5rem;
   border-top: 1px solid var(--border-color);
 }
 
@@ -15453,11 +15549,13 @@ input:checked + .slider:before {
 }
 
 .grupo-header-cell {
-  display: flex !important;
-  align-items: center;
-  gap: 0.875rem;
   padding: 0.7rem 1rem !important;
   user-select: none;
+}
+.grupo-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
 }
 
 /* Group text block (title + subtitle) — matches msettings-text */

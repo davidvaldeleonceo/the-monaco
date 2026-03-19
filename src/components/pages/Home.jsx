@@ -2503,30 +2503,98 @@ export default function Home() {
               <span>Volver</span>
             </button>
           </div>
-          <span className="balance-detail-panel-title">
-            Resumen de{' '}
-            <span className="desktop-period-wrapper">
-              <button className="desktop-period-trigger" onClick={() => setShowPeriodOptionsDesktop(p => !p)}>
-                {displayPeriodoLabel.toLowerCase()}
-              </button>
-              {showPeriodOptionsDesktop && (
-                <>
-                  <div className="period-dropdown-overlay" onClick={() => setShowPeriodOptionsDesktop(false)} />
-                  <div className="desktop-period-dropdown">
-                    {periodWheelItems.map(item => (
-                      <button
-                        key={item.key}
-                        className={`desktop-period-dropdown-item ${getActiveQuickPill() === item.key ? 'active' : ''}`}
-                        onClick={() => { handleQuickDatePill(item.key); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); setShowPeriodOptionsDesktop(false) }}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </span>
-          </span>
+          <div className="balance-detail-panel-title-row">
+            <span className="balance-detail-panel-title">Resumen de {displayPeriodoLabel.toLowerCase()}</span>
+            <div className="balance-detail-panel-filters">
+              <div className="glass-filter-wrapper">
+                <button
+                  className={`glass-filter glass-filter-periodo ${showPeriodOptionsDesktop ? 'active' : ''}`}
+                  onClick={() => { setShowPeriodOptionsDesktop(p => !p); setShowBSDesde(false); setShowBSHasta(false) }}
+                >
+                  <span className="glass-filter-text">{displayPeriodoLabel}</span>
+                  <ChevronDown size={14} className={`glass-filter-chevron ${showPeriodOptionsDesktop ? 'rotated' : ''}`} />
+                </button>
+                {showPeriodOptionsDesktop && (
+                  <>
+                    <div className="glass-dropdown-backdrop" onClick={() => setShowPeriodOptionsDesktop(false)} />
+                    <div className="glass-dropdown">
+                      {periodWheelItems.map(item => (
+                        <button
+                          key={item.key}
+                          className={`glass-dropdown-item ${getActiveQuickPill() === item.key ? 'active' : ''}`}
+                          onClick={() => { handleQuickDatePill(item.key); setSelectedBarIndex(null); setChartAnimKey(k => k + 1); setShowPeriodOptionsDesktop(false) }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="glass-filter-wrapper">
+                <button
+                  className={`glass-filter ${filtroFechaDesde ? 'active' : ''}`}
+                  onClick={() => { setShowBSDesde(p => !p); setShowBSHasta(false); setShowPeriodOptionsDesktop(false) }}
+                >
+                  <Calendar size={14} className="glass-filter-icon" />
+                  <span className="glass-filter-text">
+                    {filtroFechaDesde
+                      ? filtroFechaDesde.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+                      : 'Desde'}
+                  </span>
+                  {filtroFechaDesde && (
+                    <X size={12} className="glass-filter-clear" onClick={(e) => { e.stopPropagation(); setFiltroFechaDesde(null); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }} />
+                  )}
+                </button>
+                {showBSDesde && (
+                  <>
+                    <div className="glass-dropdown-backdrop" onClick={() => setShowBSDesde(false)} />
+                    <div className="glass-calendar-dropdown">
+                      <DatePicker
+                        selected={filtroFechaDesde}
+                        onChange={(date) => { setFiltroFechaDesde(date); setShowBSDesde(false); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}
+                        locale="es"
+                        inline
+                        maxDate={filtroFechaHasta || undefined}
+                        calendarClassName="glass-calendar"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="glass-filter-wrapper">
+                <button
+                  className={`glass-filter ${filtroFechaHasta ? 'active' : ''}`}
+                  onClick={() => { setShowBSHasta(p => !p); setShowBSDesde(false); setShowPeriodOptionsDesktop(false) }}
+                >
+                  <Calendar size={14} className="glass-filter-icon" />
+                  <span className="glass-filter-text">
+                    {filtroFechaHasta
+                      ? filtroFechaHasta.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+                      : 'Hasta'}
+                  </span>
+                  {filtroFechaHasta && (
+                    <X size={12} className="glass-filter-clear" onClick={(e) => { e.stopPropagation(); setFiltroFechaHasta(null); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }} />
+                  )}
+                </button>
+                {showBSHasta && (
+                  <>
+                    <div className="glass-dropdown-backdrop" onClick={() => setShowBSHasta(false)} />
+                    <div className="glass-calendar-dropdown">
+                      <DatePicker
+                        selected={filtroFechaHasta}
+                        onChange={(date) => { setFiltroFechaHasta(date); setShowBSHasta(false); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}
+                        locale="es"
+                        inline
+                        minDate={filtroFechaDesde || undefined}
+                        calendarClassName="glass-calendar"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
 
           <span className={`balance-detail-panel-amount ${balanceSheetPill === 'balance' ? (stableBalance >= 0 ? 'positivo' : 'negativo') : balanceSheetPill === 'ingresos' ? 'positivo' : 'negativo'}`}>
             <NumberTicker value={balanceSheetPill === 'balance' ? stableBalance : balanceSheetPill === 'ingresos' ? stableIngresos : -stableEgresos} masked={!showMoney} />
@@ -2545,9 +2613,20 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <button className="balance-view-pill-trigger" onClick={() => { setBalanceSheetView(balanceSheetView === 'metodo' ? 'categoria' : 'metodo'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}>
-              {balanceSheetView === 'metodo' ? 'Métodos de pago' : 'Categorías'}
-            </button>
+            <div className="balance-panel-pills">
+              <button
+                className={`balance-panel-pill ${balanceSheetView === 'metodo' ? 'active' : ''}`}
+                onClick={() => { setBalanceSheetView('metodo'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}
+              >
+                Métodos de pago
+              </button>
+              <button
+                className={`balance-panel-pill ${balanceSheetView === 'categoria' ? 'active' : ''}`}
+                onClick={() => { setBalanceSheetView('categoria'); setSelectedBarIndex(null); setChartAnimKey(k => k + 1) }}
+              >
+                Categorías
+              </button>
+            </div>
           </div>
 
           {/* BarChart */}
@@ -2577,10 +2656,10 @@ export default function Home() {
             return chartData.length > 0 ? (
               <div className="home-balance-sheet-chart animate" key={chartAnimKey}>
                 <div className="chart-scroll-wrapper">
-                  <BarChart data={chartData} width={Math.max(chartData.length * 90, 400)} height={300} margin={{ top: 30, right: 0, left: 0, bottom: 20 }} barCategoryGap={20}>
+                  <BarChart data={chartData} width={isMobile ? Math.max(chartData.length * 90, 400) : Math.max(chartData.length * 140, 800)} height={isMobile ? 300 : 420} margin={{ top: 30, right: 0, left: 0, bottom: 20 }} barCategoryGap={20}>
                     <XAxis dataKey="nombre" tick={<CustomXTick />} axisLine={false} tickLine={false} interval={0} />
                     <YAxis hide />
-                    <Bar dataKey="valor" radius={[16, 16, 16, 16]} barSize={72} minPointSize={32} isAnimationActive={false} onClick={(_, index) => setSelectedBarIndex(selectedBarIndex === index ? null : index)}>
+                    <Bar dataKey="valor" radius={[16, 16, 16, 16]} barSize={isMobile ? 72 : 100} minPointSize={32} isAnimationActive={false} onClick={(_, index) => setSelectedBarIndex(selectedBarIndex === index ? null : index)}>
                       {chartData.map((entry, index) => {
                         const isSelected = selectedBarIndex === index
                         const baseColor = entry.negativo ? 'var(--accent-red)' : barColor
@@ -2636,10 +2715,7 @@ export default function Home() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Escape') { setShowSearchBar(false); setSearchQuery('') } }}
             />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')}><X size={14} /></button>
-            )}
-            <button onClick={() => { setShowSearchBar(false); setSearchQuery('') }}><X size={16} /></button>
+            <button onClick={() => { if (searchQuery) { setSearchQuery('') } else { setShowSearchBar(false) } }}><X size={16} /></button>
           </div>
         )}
         {!showSearchBar && (
@@ -2651,29 +2727,16 @@ export default function Home() {
           </button>
         )}
         {!isMobile && (
-          <div className="home-period-wheel" ref={periodWheelRef} onTouchStart={onWheelTouchStart} onTouchEnd={onWheelTouchEnd}>
-            {periodWheelItems.map((item, i) => {
-              const offset = circularOffset(wheelIndex, i)
-              const absOffset = Math.abs(offset)
-              const opacity = absOffset === 0 ? 1 : absOffset === 1 ? 0.4 : 0.15
-              const scale = absOffset === 0 ? 1 : absOffset === 1 ? 0.85 : 0.7
-              return (
-                <button
-                  key={item.key}
-                  className={`home-period-wheel-item ${offset === 0 ? 'active' : ''}`}
-                  style={{
-                    transform: `translateX(calc(${offset} * var(--period-wheel-gap, 64px))) scale(${scale})`,
-                    opacity,
-                  }}
-                  onClick={() => {
-                    if (offset === 0) return
-                    handleWheelNav(offset > 0 ? 1 : -1)
-                  }}
-                >
-                  {item.label}
-                </button>
-              )
-            })}
+          <div className="home-period-flat">
+            {periodWheelItems.map(item => (
+              <button
+                key={item.key}
+                className={`home-period-flat-item ${getActiveQuickPill() === item.key ? 'active' : ''}`}
+                onClick={() => handleQuickDatePill(item.key)}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         )}
         {!isMobile && (
@@ -2793,7 +2856,7 @@ export default function Home() {
             <span className="home-tab-pill-icon"><ArrowLeftRight size={22} /></span>
             <span className="home-tab-pill-label">Movimientos</span>
           </button>
-          {isMobile && rol !== 'viewer' && (
+          {rol !== 'viewer' && (
             <button className={`home-tab-pill ${tab === 'clientes' ? 'active' : ''}`} onClick={() => setTab('clientes')}>
               <span className="home-tab-pill-icon"><Users size={22} /></span>
               <span className="home-tab-pill-label">Clientes</span>
@@ -2922,7 +2985,7 @@ export default function Home() {
       </div>
 
       {/* Embedded mobile tabs */}
-      {tab === 'clientes' && isMobile && (
+      {tab === 'clientes' && (
         <Suspense fallback={<div className="loading-screen">Cargando...</div>}>
           <div className="embedded-tab-content">
             <Clientes externalSearch={searchQuery} />
@@ -3787,7 +3850,7 @@ export default function Home() {
 
 
       {/* FAB pill for mobile (left side) — "+" and search */}
-      {!modoSeleccion && (() => {
+      {!modoSeleccion && tab !== 'trabajadores' && (() => {
         const slot = document.getElementById('fab-slot-left')
         return slot ? createPortal(
           <div className="fab-pill-container">

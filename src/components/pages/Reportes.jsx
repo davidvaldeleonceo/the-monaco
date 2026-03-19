@@ -2,10 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../apiClient'
 import { useTenant } from '../context/TenantContext'
 import { FileText, FileSpreadsheet, TrendingUp, TrendingDown } from 'lucide-react'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
-import ExcelJS from 'exceljs'
-import { saveAs } from 'file-saver'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { formatMoney, formatMoneyShort } from '../../utils/money'
@@ -422,8 +418,11 @@ export default function Reportes() {
   const renderLabel = ({ name, porcentaje }) => porcentaje > 0 ? `${name} ${porcentaje}%` : ''
 
   // --- PDF ---
-  const descargarPDF = () => {
+  const descargarPDF = async () => {
     if (!data) return
+    const { default: jsPDF } = await import('jspdf')
+    await import('jspdf-autotable')
+    const { saveAs } = await import('file-saver')
     const doc = new jsPDF('p', 'mm', 'a4')
     const W = 210, H = 297, M = 20
     const cVerde = [16, 185, 129], cRojo = [239, 68, 68]
@@ -710,6 +709,8 @@ export default function Reportes() {
   // --- Excel ---
   const descargarExcel = async () => {
     if (!data) return
+    const { default: ExcelJS } = await import('exceljs')
+    const { saveAs } = await import('file-saver')
     const wb = new ExcelJS.Workbook()
     wb.creator = negocioNombre || 'Monaco'
     wb.created = new Date()

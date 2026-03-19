@@ -1001,7 +1001,7 @@ async function topClientes(args, negocioId, fmt) {
     WHERE ${conditions.join(' AND ')}
     GROUP BY c.id, c.nombre, c.placa
     ORDER BY ${orderCol} DESC
-    LIMIT ${parseInt(limite)}
+    LIMIT $${params.push(parseInt(limite) || 10)}
   `
 
   const { rows } = await pool.query(sql, params)

@@ -501,15 +501,15 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
                       onChange={(e) => setNuevoClienteData(prev => ({ ...prev, nombre: e.target.value }))}
                       autoFocus
                     />
-                    {nuevoClienteData.nombre.trim() !== '' && clientes.some(c => c.nombre?.trim().toLowerCase() === nuevoClienteData.nombre.trim().toLowerCase()) && (
-                      <span className="cliente-ya-existe-warning">Cliente ya existe</span>
-                    )}
                     <input
                       type="text"
                       placeholder="Placa"
                       value={nuevoClienteData.placa}
                       onChange={(e) => setNuevoClienteData(prev => ({ ...prev, placa: e.target.value }))}
                     />
+                    {nuevoClienteData.placa.trim() !== '' && clientes.some(c => c.placa?.trim().toLowerCase() === nuevoClienteData.placa.trim().toLowerCase()) && (
+                      <span className="cliente-ya-existe-warning">Ya existe un cliente con esta placa</span>
+                    )}
                     <input
                       type="text"
                       placeholder="Teléfono (opcional)"

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useToast } from '../layout/Toast'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { Users, Building2, Droplets, DollarSign, TrendingUp, Clock, AlertTriangle, CheckCircle, Pencil, Trash2, X, Check, CreditCard } from 'lucide-react'
 import { API_URL, TOKEN_KEY } from '../../config/constants'
@@ -45,6 +46,7 @@ function timeAgo(dateStr) {
 }
 
 export default function AdminDashboard() {
+  const toast = useToast()
   const [overview, setOverview] = useState(null)
   const [negocios, setNegocios] = useState([])
   const [actividad, setActividad] = useState([])
@@ -114,7 +116,7 @@ export default function AdminDashboard() {
       setEditingId(null)
       fetchAll()
     } catch (err) {
-      alert('Error: ' + err.message)
+      toast.error(err.message)
     }
   }
 
@@ -124,7 +126,7 @@ export default function AdminDashboard() {
       setDeleteConfirm(null)
       fetchAll()
     } catch (err) {
-      alert('Error: ' + err.message)
+      toast.error(err.message)
     }
   }
 

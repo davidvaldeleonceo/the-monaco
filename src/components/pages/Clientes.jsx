@@ -1298,6 +1298,7 @@ export default function Clientes({ externalSearch } = {}) {
                 clientesAgrupados.flatMap(grupo => [
                   <tr key={`grupo-hdr-${grupo.key}`} className="grupo-header-row" onClick={() => toggleGrupo(grupo.key)}>
                     <td colSpan={modoSeleccion ? 8 : 7} className="grupo-header-cell">
+                      <div className="grupo-header-inner">
                       {(() => {
                         const meta = getGrupoMeta(grupo.key)
                         const Icon = meta.icon
@@ -1314,6 +1315,7 @@ export default function Clientes({ externalSearch } = {}) {
                           </>
                         )
                       })()}
+                      </div>
                     </td>
                   </tr>,
                   ...(!isGrupoColapsado(grupo.key) ? grupo.clientes.map((cliente) => (

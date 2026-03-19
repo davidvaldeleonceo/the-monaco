@@ -1,15 +1,16 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../apiClient'
 import { useData } from '../context/DataContext'
 import { useTenant } from '../context/TenantContext'
 import { useToast } from '../layout/Toast'
-import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash, Minus, ChevronRight, Search, SlidersHorizontal } from 'lucide-react'
+import { Plus, X, Trash2, Pencil, DollarSign, Users, Hash, Minus, ChevronRight, ChevronLeft, Search, SlidersHorizontal } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney, getCurrencySymbol, formatPriceLocale } from '../../utils/money'
-import { todayBogotaStr } from '../../utils/date'
+import { todayBogotaStr, fechaToBogotaDate } from '../../utils/date'
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
 
 registerLocale('es', es)
@@ -66,6 +67,32 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
   const [nuevoTrabajadorNombre, setNuevoTrabajadorNombre] = useState('')
   const [periodoTipo, setPeriodoTipo] = useState('')
   const trabajadorWrapperRef = useRef(null)
+  const workersGridRef = useRef(null)
+  const [showScrollLeft, setShowScrollLeft] = useState(false)
+  const [showScrollRight, setShowScrollRight] = useState(false)
+
+  const updateScrollArrows = () => {
+    const el = workersGridRef.current
+    if (!el) return
+    setShowScrollLeft(el.scrollLeft > 0)
+    setShowScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2)
+  }
+
+  useEffect(() => {
+    const el = workersGridRef.current
+    if (!el) return
+    updateScrollArrows()
+    el.addEventListener('scroll', updateScrollArrows)
+    const ro = new ResizeObserver(updateScrollArrows)
+    ro.observe(el)
+    return () => { el.removeEventListener('scroll', updateScrollArrows); ro.disconnect() }
+  })
+
+  const scrollWorkers = (dir) => {
+    const el = workersGridRef.current
+    if (!el) return
+    el.scrollBy({ left: dir * 240, behavior: 'smooth' })
+  }
 
   // Filtros de fecha (igual que Balance)
   const hoyInit = new Date()
@@ -262,7 +289,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
 
   // Verificar si una fecha cae dentro de días ya pagados
   const esDiaYaPagado = (fechaStr) => {
-    const fecha = parseDateStr(fechaStr?.split('T')[0])
+    const fecha = parseDateStr(fechaToBogotaDate(fechaStr))
     if (!fecha) return false
     return diasYaPagados.some(d =>
       d.getFullYear() === fecha.getFullYear() &&
@@ -282,8 +309,8 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       .select('*, tipo_lavado:tipos_lavado(nombre, precio)')
       .eq('negocio_id', negocioId)
       .eq('lavador_id', lavadorId)
-      .gte('fecha', desde)
-      .lte('fecha', hasta + 'T23:59:59')
+      .gte('fecha', desde + 'T00:00:00-05:00')
+      .lte('fecha', hasta + 'T23:59:59-05:00')
       .order('fecha', { ascending: true })
     const result = data || []
     setLavadasPeriodo(result)
@@ -757,6 +784,21 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
   // Derive worker cards from filtered pagos
   const workerCards = useMemo(() => {
     const porTrabajador = {}
+
+    // Initialize all workers (even those without payments)
+    lavadores.forEach(l => {
+      porTrabajador[l.id] = {
+        lavador_id: l.id,
+        nombre: l.nombre || 'Sin nombre',
+        pagos: [],
+        total_pagado: 0,
+        total_a_pagar: 0,
+        total_ganado: 0,
+        total_descuentos: 0,
+        saldo: 0
+      }
+    })
+
     pagosActivos.forEach(p => {
       const lid = p.lavador_id
       if (!porTrabajador[lid]) {
@@ -785,7 +827,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
     })
 
     return Object.values(porTrabajador).sort((a, b) => a.nombre.localeCompare(b.nombre))
-  }, [pagos])
+  }, [pagos, lavadores])
 
   const effectiveSearch = (externalSearch || searchQuery).trim().toLowerCase()
 
@@ -1404,32 +1446,36 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       {filteredWorkerCards.length > 0 && (
         <>
         <h2 className="section-title">Trabajadores</h2>
-        <div className="historial-workers-grid">
-          {filteredWorkerCards.map(w => (
-            <div
-              key={w.lavador_id}
-              className="historial-worker-card"
-              onClick={() => handleWorkerClick(w)}
-            >
-              <div className="historial-worker-header">
-                <div className="historial-worker-name">{w.nombre}</div>
-              </div>
-              <div className="historial-worker-stats">
-                <div className="historial-worker-stat">
-                  <span className="historial-stat-label">Ganado</span>
-                  <span className="historial-stat-value">{formatMoney(w.total_ganado)}</span>
+        <div className="historial-workers-wrapper">
+          <button className={`scroll-arrow scroll-left ${showScrollLeft ? '' : 'hidden'}`} onClick={() => scrollWorkers(-1)}><ChevronLeft size={18} /></button>
+          <div className="historial-workers-grid" ref={workersGridRef}>
+            {filteredWorkerCards.map(w => (
+              <div
+                key={w.lavador_id}
+                className="historial-worker-card"
+                onClick={() => handleWorkerClick(w)}
+              >
+                <div className="historial-worker-header">
+                  <div className="historial-worker-name">{w.nombre}</div>
                 </div>
-                <div className="historial-worker-stat">
-                  <span className="historial-stat-label">Por pagar</span>
-                  <span className="historial-stat-value">{formatMoney(w.por_pagar)}</span>
+                <div className="historial-worker-stats">
+                  <div className="historial-worker-stat">
+                    <span className="historial-stat-label">Ganado</span>
+                    <span className="historial-stat-value">{formatMoney(w.total_ganado)}</span>
+                  </div>
+                  <div className="historial-worker-stat">
+                    <span className="historial-stat-label">Por pagar</span>
+                    <span className="historial-stat-value">{formatMoney(w.por_pagar)}</span>
+                  </div>
+                </div>
+                <div className={`historial-worker-saldo ${w.saldo >= 0 ? 'saldo-favor' : 'saldo-pendiente'}`}>
+                  {w.saldo >= 0 ? 'A favor: ' : 'Pendiente: '}
+                  <strong>{formatMoney(Math.abs(w.saldo))}</strong>
                 </div>
               </div>
-              <div className={`historial-worker-saldo ${w.saldo >= 0 ? 'saldo-favor' : 'saldo-pendiente'}`}>
-                {w.saldo >= 0 ? 'A favor: ' : 'Pendiente: '}
-                <strong>{formatMoney(Math.abs(w.saldo))}</strong>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <button className={`scroll-arrow scroll-right ${showScrollRight ? '' : 'hidden'}`} onClick={() => scrollWorkers(1)}><ChevronRight size={18} /></button>
         </div>
         </>
       )}
@@ -1695,6 +1741,20 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
           Continuar pago...
         </button>
       )}
+
+      {!showModal && (() => {
+        const slot = document.getElementById('fab-slot-left')
+        return slot ? createPortal(
+          <button
+            className="fab-nuevo-servicio"
+            onClick={() => { resetForm(); setEditandoId(null); setModalMinimized(false); setShowModal(true) }}
+            title="Agregar Pago"
+          >
+            <Plus size={24} />
+          </button>,
+          slot
+        ) : null
+      })()}
 
       {selectedWorker && renderWorkerDetailModal()}
 

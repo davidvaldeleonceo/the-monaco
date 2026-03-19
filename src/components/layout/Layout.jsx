@@ -65,7 +65,7 @@ export default function Layout({ user }) {
 
   const mainMenuItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Análisis' },
-    { to: '/clientes', icon: Users, label: 'Clientes' },
+    ...(!isMobile ? [] : [{ to: '/clientes', icon: Users, label: 'Clientes' }]),
     { to: '/pagos', icon: Wallet, label: 'Trabajadores' },
   ]
 

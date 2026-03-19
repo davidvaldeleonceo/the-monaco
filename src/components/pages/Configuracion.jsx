@@ -499,7 +499,7 @@ export default function Configuracion() {
                     onChange={(e) => setAdicionalEdit({ ...adicionalEdit, precio: e.target.value })}
                     placeholder="Precio"
                   />
-                  <button className="btn-icon" onClick={handleAdicionalSave} title="Guardar"><Plus size={16} style={{ transform: 'rotate(45deg)' }} /></button>
+                  <button className="btn-icon" onClick={handleAdicionalSave} title="Guardar"><Check size={16} /></button>
                   <button className="btn-icon" onClick={() => setAdicionalEdit(null)} title="Cancelar"><X size={16} /></button>
                 </>
               ) : (
@@ -533,7 +533,7 @@ export default function Configuracion() {
                 onChange={(e) => setAdicionalEdit({ ...adicionalEdit, precio: e.target.value })}
                 placeholder="Precio"
               />
-              <button className="btn-icon" onClick={handleAdicionalSave} title="Guardar"><Plus size={16} /></button>
+              <button className="btn-icon" onClick={handleAdicionalSave} title="Guardar"><Check size={16} /></button>
               <button className="btn-icon" onClick={() => setAdicionalEdit(null)} title="Cancelar"><X size={16} /></button>
             </div>
           ) : (
