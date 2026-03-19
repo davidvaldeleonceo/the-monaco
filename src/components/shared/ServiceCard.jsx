@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import Timer from './Timer'
 import { formatMoney, getCurrencySymbol, formatPriceLocale } from '../../utils/money'
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../../config/constants'
-import { MessageCircle, Trash2, CheckCircle2, Plus, X, Clock, Droplets, CircleCheck, HandCoins, Sparkles } from 'lucide-react'
+import { MessageCircle, Trash2, CheckCircle2, Plus, X, Clock, Droplets, CircleCheck, HandCoins, Sparkles, Pencil } from 'lucide-react'
 
 export default function ServiceCard({
   lavada,
@@ -15,6 +15,7 @@ export default function ServiceCard({
   onLavadorChange,
   onPagosChange,
   onNotasChange,
+  onValorChange,
   onEliminar,
   onWhatsApp,
   // UI state
@@ -90,6 +91,10 @@ export default function ServiceCard({
   const [estadoPopover, setEstadoPopoverLocal] = useState(false)
   const [pagoPopover, setPagoPopoverLocal] = useState(false)
   const [pendingEstado, setPendingEstado] = useState(null)
+  const [editingValor, setEditingValor] = useState(false)
+  const [localValor, setLocalValor] = useState('')
+  const valorInputRef = useRef(null)
+  const valorEscapedRef = useRef(false)
 
   const setEstadoPopover = (val) => {
     setEstadoPopoverLocal(val)
@@ -573,9 +578,39 @@ export default function ServiceCard({
 
             <div className="lavada-card-footer">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <div className={`lavada-card-valor ${(pagosOk && allMetodosSet) ? 'pago-ok' : total > 0 ? 'pago-error' : ''}`}>
-                  {formatMoney(total)}
-                </div>
+                {editingValor ? (
+                  <div className="valor-edit-inline">
+                    <span className="valor-edit-prefix">{getCurrencySymbol()}</span>
+                    <input
+                      ref={valorInputRef}
+                      className="valor-edit-input"
+                      type="number"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={localValor}
+                      onChange={(e) => setLocalValor(e.target.value)}
+                      onBlur={() => {
+                        if (valorEscapedRef.current) { valorEscapedRef.current = false; return }
+                        const v = Math.max(0, Math.round(Number(localValor) || 0))
+                        if (v !== total) onValorChange?.(lavada.id, v)
+                        setEditingValor(false)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.target.blur()
+                        if (e.key === 'Escape') { valorEscapedRef.current = true; setEditingValor(false) }
+                      }}
+                      style={{ width: `${Math.max(4, String(localValor).length + 1)}ch` }}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className={`lavada-card-valor valor-editable ${(pagosOk && allMetodosSet) ? 'pago-ok' : total > 0 ? 'pago-error' : ''}`}
+                    onClick={() => { valorEscapedRef.current = false; setLocalValor(String(total)); setEditingValor(true); setTimeout(() => valorInputRef.current?.select(), 50) }}
+                  >
+                    {formatMoney(total)}
+                    <Pencil size={12} className="valor-edit-icon" />
+                  </div>
+                )}
                 <button
                   className="pago-pill-add"
                   onClick={() => setPagoPopover(true)}

@@ -373,11 +373,7 @@ body {
   margin-left: calc(-1 * (46px + 0.875rem) + 0.25rem);
   width: calc(100% + (46px + 0.875rem) - 0.25rem);
 }
-@media (min-width: 400px) {
-  .country-selector-mobile {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
+/* country-selector-mobile stays at 2 columns on all mobile widths */
 
 /* Celebration */
 .celebration-confetti {
@@ -5252,6 +5248,65 @@ body {
   color: var(--accent-red);
 }
 
+.lavada-card-valor.valor-editable {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 8px;
+  padding: 0.375rem 0.5rem;
+  min-height: 44px;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.lavada-card-valor.valor-editable:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+.lavada-card-valor.valor-editable:active {
+  background: rgba(0, 0, 0, 0.06);
+}
+.valor-edit-icon {
+  opacity: 0.35;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+.lavada-card-valor.valor-editable:hover .valor-edit-icon {
+  opacity: 0.6;
+}
+.valor-edit-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  background: var(--bg-secondary);
+  border: 2px solid var(--accent-blue);
+  border-radius: 8px;
+  padding: 0.375rem 0.5rem;
+  min-height: 44px;
+}
+.valor-edit-prefix {
+  font-weight: 700;
+  font-size: inherit;
+  color: var(--text-secondary);
+}
+.valor-edit-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-weight: 700;
+  font-size: inherit;
+  color: var(--text-primary);
+  min-width: 4ch;
+  font-family: inherit;
+}
+.valor-edit-input::-webkit-inner-spin-button,
+.valor-edit-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.valor-edit-input[type=number] {
+  -moz-appearance: textfield;
+}
+
 .pago-diff-msg {
   font-size: 0.75rem;
   color: var(--accent-red);
@@ -6950,7 +7005,7 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 4rem;
+  font-size: 3.5rem;
   font-weight: 700;
   letter-spacing: -0.06em;
   color: var(--text-primary);
@@ -7732,12 +7787,13 @@ input:checked + .slider:before {
 .home-balance-card.ingresos { box-shadow: 0 4px 20px rgba(30, 64, 175, 0.2); }
 .home-balance-card.egresos { box-shadow: 0 4px 20px oklch(0.5 0.18 30 / 0.2); }
 .home-balance-label { font-size: 0.875rem; color: var(--text-secondary); font-weight: 500; text-align: left; }
-.home-balance-amount { font-size: 4rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: baseline; min-width: 0; overflow: hidden; }
+.home-balance-amount { font-size: 3.5rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: baseline; min-width: 0; overflow: hidden; }
 .home-balance-amount.positivo { color: var(--accent-green); }
 .home-balance-amount.negativo { color: var(--accent-red); }
 .home-balance-amount .nt-suffix,
 .home-balance-inline-amount .nt-suffix { font-size: 0.18em; }
 .home-balance-periodo { font-size: 0.75rem; color: var(--text-secondary); }
+
 
 /* Balance Card — sparkline below value */
 .balance-title { font-size: 1rem; }
@@ -8070,7 +8126,7 @@ input:checked + .slider:before {
 
 /* Tab Row (pills + total + actions) */
 .home-tab-row { display: flex; flex-wrap: wrap; align-items: center; margin: 2rem 1rem 0.75rem; row-gap: 1.5rem; column-gap: 0.5rem; }
-.home-tab-total-inline { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); text-align: left; order: 3; flex: 1; }
+.home-tab-total-inline { font-size: 1rem; font-weight: 700; color: var(--text-primary); text-align: left; order: 3; flex: 1; }
 .home-tab-total-inline.negative { color: var(--accent-red); }
 .home-tab-total-cobrado { font-size: 0.8em; font-weight: 600; color: var(--text-secondary); }
 .home-tab-actions { display: flex; gap: 0.5rem; flex-shrink: 0; order: 4; align-items: center; }

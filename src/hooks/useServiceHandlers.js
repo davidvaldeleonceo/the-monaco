@@ -232,6 +232,23 @@ export function useServiceHandlers() {
     updateLavadaLocal(lavadaId, { notas: notas || null })
   }
 
+  const handleValorChange = async (lavadaId, nuevoValor) => {
+    const valor = Math.max(0, Math.round(Number(nuevoValor) || 0))
+    const lavada = lavadas.find(l => l.id === lavadaId)
+    const valorAnterior = lavada?.valor ?? 0
+    updateLavadaLocal(lavadaId, { valor })
+
+    const { error } = await supabase
+      .from('lavadas')
+      .update({ valor })
+      .eq('id', lavadaId)
+
+    if (error) {
+      toast.error('Error al actualizar precio: ' + error.message)
+      updateLavadaLocal(lavadaId, { valor: valorAnterior })
+    }
+  }
+
   const handleAdicionalChange = async (lavadaId, servicio, checked) => {
     // No withCardUpdate — avoid re-render flash when editing inside expanded popup
     const lavada = lavadas.find(l => l.id === lavadaId)
@@ -384,6 +401,7 @@ export function useServiceHandlers() {
     handleTipoLavadoChangeInline,
     handlePagosChange,
     handleNotasChange,
+    handleValorChange,
     handleAdicionalChange,
     pendingDeleteLavadaId, setPendingDeleteLavadaId,
     requestEliminarLavada, executeEliminarLavada,

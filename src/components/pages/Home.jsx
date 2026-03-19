@@ -100,6 +100,7 @@ export default function Home() {
     handleTipoLavadoChangeInline,
     handlePagosChange,
     handleNotasChange,
+    handleValorChange: handleServiceValorChange,
     handleAdicionalChange,
     pendingDeleteLavadaId, setPendingDeleteLavadaId,
     requestEliminarLavada, executeEliminarLavada,
@@ -3059,6 +3060,7 @@ export default function Home() {
                           onLavadorChange={handleLavadorChange}
                           onPagosChange={handlePagosChange}
                           onNotasChange={handleNotasChange}
+                          onValorChange={handleServiceValorChange}
                           onEliminar={requestEliminarLavada}
                           onWhatsApp={handleWhatsApp}
                           plantillasMensaje={plantillasMensaje}

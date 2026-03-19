@@ -121,6 +121,7 @@ export default function Lavadas() {
     handleTipoLavadoChangeInline,
     handlePagosChange,
     handleNotasChange,
+    handleValorChange,
     handleAdicionalChange,
     pendingDeleteLavadaId, setPendingDeleteLavadaId,
     requestEliminarLavada, executeEliminarLavada,
@@ -739,6 +740,7 @@ export default function Lavadas() {
             onLavadorChange={handleLavadorChange}
             onPagosChange={handlePagosChange}
             onNotasChange={handleNotasChange}
+            onValorChange={handleValorChange}
             onEliminar={requestEliminarLavada}
             onWhatsApp={enviarWhatsApp}
             isExpanded={expandedCards[lavada.id]}
