@@ -768,7 +768,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
 
     await supabase
       .from('pago_trabajadores')
-      .update({ anulado: true })
+      .delete()
       .eq('id', pago.id)
       .eq('negocio_id', negocioId)
 
@@ -816,9 +816,17 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
     : [...lavadoresConPago, ...lavadores.filter(l => l.id == formData.lavador_id)]
 
   const pagosActivos = pagos.filter(p => !p.anulado)
+  const pagosAnulados = pagos.filter(p => p.anulado)
   const totalPagadoMes = pagosActivos.reduce((sum, p) => sum + Number(p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? p.valor_pagado : p.total_pagar), 0)
   const pagosRealizados = pagosActivos.length
   const trabajadoresUnicos = new Set(pagosActivos.map(p => p.lavador_id)).size
+
+  const eliminarAnulados = async () => {
+    if (!pagosAnulados.length) return
+    const ids = pagosAnulados.map(p => p.id)
+    await supabase.from('pago_trabajadores').delete().in('id', ids).eq('negocio_id', negocioId)
+    fetchData()
+  }
 
   // Derive worker cards from filtered pagos
   const workerCards = useMemo(() => {
@@ -1566,7 +1574,18 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
         </>
       )}
 
-      <h2 className="section-title">Historial</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+        <h2 className="section-title" style={{ margin: 0 }}>Historial</h2>
+        {pagosAnulados.length > 0 && (
+          <button
+            className="btn-secondary"
+            style={{ fontSize: '0.8rem', padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}
+            onClick={eliminarAnulados}
+          >
+            <Trash2 size={14} /> Eliminar {pagosAnulados.length} anulado{pagosAnulados.length > 1 ? 's' : ''}
+          </button>
+        )}
+      </div>
 
       {/* Desktop: tabla */}
       <div className="card pagos-tabla-desktop">
@@ -1850,7 +1869,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
         isOpen={!!pendingAnularPago}
         onClose={() => setPendingAnularPago(null)}
         onConfirm={executeAnularPago}
-        message={`Se anulará el pago de ${pendingAnularPago?.lavador?.nombre || 'este trabajador'}. Ingresa tu contraseña para confirmar.`}
+        message={`Se eliminará el pago de ${pendingAnularPago?.lavador?.nombre || 'este trabajador'} y sus transacciones asociadas. Ingresa tu contraseña para confirmar.`}
       />
     </div>
   )
