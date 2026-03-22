@@ -947,15 +947,17 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
     const anulados = pagosData.filter(p => p.anulado)
 
     let total_pagado = 0
-    let total_a_pagar = 0
     let total_descuentos = 0
 
     activos.forEach(p => {
       const valorPagado = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
       total_pagado += valorPagado
-      total_a_pagar += Number(p.total_pagar || 0)
       total_descuentos += Number(p.descuentos || 0)
     })
+
+    // Use earnings from real lavadas (workerCard) instead of summing pago records
+    const total_ganado = workerCard.total_ganado || 0
+    const total_a_pagar = total_ganado - total_descuentos
 
     setSelectedWorker({
       lavador_id: workerCard.lavador_id,
@@ -965,6 +967,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       pagos: activos,
       pagos_anulados: anulados,
       total_pagado,
+      total_ganado,
       total_a_pagar,
       total_descuentos,
       saldo: total_pagado - total_a_pagar
@@ -1320,7 +1323,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
           <div className="historial-detail-stats">
             <div className="historial-detail-stat">
               <span className="historial-stat-label">Total Ganado</span>
-              <span className="historial-stat-value">{formatMoney(w.total_a_pagar + w.total_descuentos)}</span>
+              <span className="historial-stat-value">{formatMoney(w.total_ganado)}</span>
             </div>
             <div className="historial-detail-stat">
               <span className="historial-stat-label">Total Pagado</span>
