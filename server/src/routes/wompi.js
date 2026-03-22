@@ -24,6 +24,46 @@ function computeIsPro(negocio) {
   return false
 }
 
+// Helper: activate subscription for a negocio (used by webhook, check-transaction, and /pay)
+// Must be called inside a transaction with FOR UPDATE lock on pagos_suscripcion row
+async function activateSubscription(client, negocioId, transactionId, period) {
+  const plan = PLANS[period]
+  if (!plan) return false
+
+  // Check if already activated (idempotent)
+  const { rows: existingPayment } = await client.query(
+    `SELECT estado, periodo_desde FROM pagos_suscripcion WHERE wompi_transaction_id = $1 FOR UPDATE`,
+    [transactionId]
+  )
+  const alreadyActivated = existingPayment[0]?.estado === 'APPROVED' && existingPayment[0]?.periodo_desde
+  if (alreadyActivated) return true
+
+  // Extend from MAX(subscription_expires_at, now()) so user doesn't lose remaining days
+  const { rows: negRows } = await client.query(
+    'SELECT subscription_expires_at FROM negocios WHERE id = $1 FOR UPDATE',
+    [negocioId]
+  )
+  const now = new Date()
+  const currentExpiry = negRows[0]?.subscription_expires_at
+  const baseDate = currentExpiry && new Date(currentExpiry) > now
+    ? new Date(currentExpiry)
+    : now
+  const expiresAt = new Date(baseDate)
+  expiresAt.setDate(expiresAt.getDate() + plan.days)
+
+  await client.query(
+    `UPDATE negocios SET plan = 'pro', subscription_expires_at = $2, subscription_period = $3 WHERE id = $1`,
+    [negocioId, expiresAt, period]
+  )
+
+  await client.query(
+    `UPDATE pagos_suscripcion SET estado = 'APPROVED', periodo_desde = (now() AT TIME ZONE 'America/Bogota')::date, periodo_hasta = $2 WHERE wompi_transaction_id = $1`,
+    [transactionId, expiresAt]
+  )
+
+  return true
+}
+
 // GET /api/wompi/config — public key + plan info
 router.get('/config', auth, async (req, res) => {
   res.json({
@@ -54,20 +94,60 @@ router.get('/pse-banks', async (_req, res) => {
 })
 
 // GET /api/wompi/check-transaction/:id — poll transaction status (with auth)
+// When local status is PENDING, queries Wompi API directly and activates if APPROVED
 router.get('/check-transaction/:id', auth, async (req, res) => {
   try {
     const negocioId = req.user?.negocio_id
     if (!negocioId) return res.status(401).json({ error: 'No negocio' })
 
     const { rows } = await pool.query(
-      'SELECT estado FROM pagos_suscripcion WHERE wompi_transaction_id = $1 AND negocio_id = $2',
+      'SELECT estado, periodo FROM pagos_suscripcion WHERE wompi_transaction_id = $1 AND negocio_id = $2',
       [req.params.id, negocioId]
     )
     if (!rows[0]) {
-      // Transaction not found for this negocio — still pending or doesn't exist
       return res.json({ status: 'PENDING' })
     }
-    res.json({ status: rows[0].estado })
+
+    // If already resolved locally, return immediately
+    if (rows[0].estado !== 'PENDING') {
+      return res.json({ status: rows[0].estado })
+    }
+
+    // PENDING — query Wompi API directly
+    const txRes = await fetch(`${WOMPI_API}/transactions/${req.params.id}`)
+    if (!txRes.ok) {
+      return res.json({ status: 'PENDING' })
+    }
+    const txData = await txRes.json()
+    const wompiStatus = txData.data?.status
+
+    if (wompiStatus === 'APPROVED') {
+      // Activate subscription using shared helper (with FOR UPDATE lock)
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await activateSubscription(client, negocioId, req.params.id, rows[0].periodo)
+        await client.query('COMMIT')
+      } catch (e) {
+        await client.query('ROLLBACK')
+        throw e
+      } finally {
+        client.release()
+      }
+      return res.json({ status: 'APPROVED' })
+    }
+
+    if (wompiStatus === 'DECLINED' || wompiStatus === 'ERROR' || wompiStatus === 'VOIDED') {
+      // Update local status to terminal
+      await pool.query(
+        'UPDATE pagos_suscripcion SET estado = $1, updated_at = now() WHERE wompi_transaction_id = $2',
+        [wompiStatus, req.params.id]
+      )
+      return res.json({ status: wompiStatus })
+    }
+
+    // Still PENDING at Wompi
+    return res.json({ status: 'PENDING' })
   } catch (err) {
     logger.error('Check transaction error:', err)
     res.status(500).json({ error: 'Error al verificar transacción' })
@@ -843,50 +923,16 @@ router.post('/webhook', async (req, res) => {
       [negocioId, tx.id, reference, tx.amount_in_cents, tx.currency, tx.status, period, JSON.stringify(tx)]
     )
 
-    // If approved, activate subscription — only if not already activated by /pay
-    // Uses a transaction with FOR UPDATE to prevent race conditions from duplicate webhooks
+    // If approved, activate subscription — uses shared helper with FOR UPDATE lock
     if (tx.status === 'APPROVED') {
-      const plan = PLANS[period]
-      if (!plan) {
+      if (!PLANS[period]) {
         return res.status(200).json({ received: true })
       }
 
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
-
-        // Lock the row to prevent concurrent webhook from reading stale state
-        const { rows: existingPayment } = await client.query(
-          `SELECT estado, periodo_desde FROM pagos_suscripcion WHERE wompi_transaction_id = $1 FOR UPDATE`,
-          [tx.id]
-        )
-        const alreadyActivated = existingPayment[0]?.estado === 'APPROVED' && existingPayment[0]?.periodo_desde
-
-        if (!alreadyActivated) {
-          // Extend from MAX(subscription_expires_at, now()) so user doesn't lose remaining days
-          const { rows: negRows } = await client.query(
-            'SELECT subscription_expires_at FROM negocios WHERE id = $1 FOR UPDATE',
-            [negocioId]
-          )
-          const now = new Date()
-          const currentExpiry = negRows[0]?.subscription_expires_at
-          const baseDate = currentExpiry && new Date(currentExpiry) > now
-            ? new Date(currentExpiry)
-            : now
-          const expiresAt = new Date(baseDate)
-          expiresAt.setDate(expiresAt.getDate() + plan.days)
-
-          await client.query(
-            `UPDATE negocios SET plan = 'pro', subscription_expires_at = $2, subscription_period = $3 WHERE id = $1`,
-            [negocioId, expiresAt, period]
-          )
-
-          await client.query(
-            `UPDATE pagos_suscripcion SET periodo_desde = (now() AT TIME ZONE 'America/Bogota')::date, periodo_hasta = $2 WHERE wompi_transaction_id = $1`,
-            [tx.id, expiresAt]
-          )
-        }
-
+        await activateSubscription(client, negocioId, tx.id, period)
         await client.query('COMMIT')
       } catch (e) {
         await client.query('ROLLBACK')

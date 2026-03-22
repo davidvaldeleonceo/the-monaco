@@ -9,8 +9,8 @@ import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
-import { formatMoney, getCurrencySymbol, formatPriceLocale } from '../../utils/money'
-import { todayBogotaStr, fechaToBogotaDate } from '../../utils/date'
+import { formatMoney, getCurrencySymbol, formatPriceLocale, parsePriceLocale } from '../../utils/money'
+import { todayBogotaStr, fechaToBogotaDate, getTimezoneOffset } from '../../utils/date'
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
 
 registerLocale('es', es)
@@ -120,7 +120,9 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
     adicionales_cantidad: 0,
     detalle: null,
     metodo_pago_id: '',
-    abonos_detalle: []
+    abonos_detalle: [],
+    adelantos_previos: 0,
+    pagos_absorbidos: []
   })
 
   useEffect(() => {
@@ -309,8 +311,8 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       .select('*, tipo_lavado:tipos_lavado(nombre, precio)')
       .eq('negocio_id', negocioId)
       .eq('lavador_id', lavadorId)
-      .gte('fecha', desde + 'T00:00:00-05:00')
-      .lte('fecha', hasta + 'T23:59:59-05:00')
+      .gte('fecha', desde + 'T00:00:00' + getTimezoneOffset())
+      .lte('fecha', hasta + 'T23:59:59' + getTimezoneOffset())
       .order('fecha', { ascending: true })
     const result = data || []
     setLavadasPeriodo(result)
@@ -359,6 +361,24 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       detalleInfo.pago_adicionales_detalle = lavador.pago_adicionales_detalle
       detalleInfo.tipo_base_nombre = tipoBase?.nombre || null
       detalleInfo.tipo_base_precio = precioBase
+    } else if (tipo === 'fijo_por_lavada') {
+      let sumaLavadas = 0
+      if (lavador.pago_por_tipo_lavado) {
+        const conteoTipos = {}
+        lavadas.forEach(l => {
+          const tid = l.tipo_lavado_id
+          sumaLavadas += Number(lavador.pago_por_tipo_lavado[tid] || 0)
+          conteoTipos[tid] = (conteoTipos[tid] || 0) + 1
+        })
+        detalleInfo.conteo_tipos = conteoTipos
+      } else {
+        sumaLavadas = numLavadas * Number(lavador.pago_por_lavada || 0)
+      }
+      const porAdicional = numAdicionales * Number(lavador.pago_por_adicional || 0)
+      total = sumaLavadas + porAdicional
+      detalleInfo.pago_por_lavada = lavador.pago_por_lavada
+      detalleInfo.pago_por_tipo_lavado = lavador.pago_por_tipo_lavado
+      detalleInfo.pago_por_adicional = lavador.pago_por_adicional
     }
 
     return { total: Math.round(total), detalle: detalleInfo, adicionales_cantidad: numAdicionales, lavadas_cantidad: numLavadas }
@@ -373,30 +393,39 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       setCalculando(true)
       const todasLavadas = await fetchLavadasTrabajador(lavador.id, formData.fecha_desde, formData.fecha_hasta)
 
-      // Filtrar lavadas de días ya pagados
-      const lavadasFiltradas = todasLavadas.filter(l => !esDiaYaPagado(l.fecha))
-      const excluidas = todasLavadas.length - lavadasFiltradas.length
-      setLavadasExcluidas(excluidas)
+      // Fetch existing pagos that overlap with selected period (adelantos previos)
+      const { data: pagosOverlap } = await supabase
+        .from('pago_trabajadores')
+        .select('id, fecha_desde, fecha_hasta, valor_pagado, total_pagar')
+        .eq('lavador_id', lavador.id)
+        .or('anulado.is.null,anulado.eq.false')
+        .lte('fecha_desde', formData.fecha_hasta)
+        .gte('fecha_hasta', formData.fecha_desde)
 
-      // Verificar si hay al menos un día no pagado en el rango
-      const rangoDias = generarRangoDias(formData.fecha_desde, formData.fecha_hasta)
-      const hayDiasNuevos = rangoDias.some(d =>
-        !diasYaPagados.some(yp =>
-          yp.getFullYear() === d.getFullYear() &&
-          yp.getMonth() === d.getMonth() &&
-          yp.getDate() === d.getDate()
-        )
-      )
+      // Exclude the pago being edited
+      const pagosAbsorbibles = (pagosOverlap || []).filter(p => {
+        if (editandoId && p.id === editandoId) return false
+        return p.fecha_desde && p.fecha_hasta
+      })
 
-      const result = calcularPagoAutomatico(lavador, lavadasFiltradas, hayDiasNuevos)
-      const totalPagar = result.total - Number(formData.descuentos)
+      const adelantosPrevios = pagosAbsorbibles.reduce((sum, p) => {
+        const vp = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
+        return sum + vp
+      }, 0)
+
+      // Use ALL lavadas (don't exclude any — advances are subtracted separately)
+      const result = calcularPagoAutomatico(lavador, todasLavadas, true)
+      const totalPagar = Math.max(0, result.total - Number(formData.descuentos) - adelantosPrevios)
+      setLavadasExcluidas(0)
       setFormData(prev => ({
         ...prev,
         total: result.total,
         total_pagar: totalPagar,
         lavadas_cantidad: result.lavadas_cantidad,
         adicionales_cantidad: result.adicionales_cantidad,
-        detalle: result.detalle
+        detalle: result.detalle,
+        adelantos_previos: adelantosPrevios,
+        pagos_absorbidos: pagosAbsorbibles.map(p => p.id)
       }))
       setCalculando(false)
     }
@@ -405,7 +434,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
 
   // Recalc total_pagar when descuentos change
   useEffect(() => {
-    setFormData(prev => ({ ...prev, total_pagar: prev.total - Number(prev.descuentos) }))
+    setFormData(prev => ({ ...prev, total_pagar: Math.max(0, prev.total - Number(prev.descuentos) - Number(prev.adelantos_previos || 0)) }))
   }, [formData.descuentos])
 
   // Auto-sync valor_pagado: if no abonos and user hasn't manually set, default to total_pagar
@@ -482,7 +511,9 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       adicionales_cantidad: 0,
       detalle: null,
       metodo_pago_id: '',
-      abonos_detalle: []
+      abonos_detalle: [],
+      adelantos_previos: 0,
+      pagos_absorbidos: []
     })
     setLavadasPeriodo([])
     setLavadasExcluidas(0)
@@ -528,7 +559,9 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       adicionales_cantidad: pago.adicionales_cantidad || 0,
       detalle: pago.detalle || null,
       metodo_pago_id: pago.metodo_pago_id || '',
-      abonos_detalle: abonos
+      abonos_detalle: abonos,
+      adelantos_previos: 0,
+      pagos_absorbidos: []
     })
     setValorPagadoManual(true)
     setTrabajadorSearch(pago.lavador?.nombre || '')
@@ -598,7 +631,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       metodo_pago_id: a.metodo_pago_id,
       placa_o_persona: lavador?.nombre || '',
       descripcion: `Pago trabajador (abono) - ${periodo}`,
-      fecha: formData.fecha + 'T12:00:00-05:00',
+      fecha: formData.fecha + 'T12:00:00' + getTimezoneOffset(),
       negocio_id: negocioId
     }))
 
@@ -609,7 +642,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
         : pagoAnterior?.fecha?.split('T')[0]
       const nombreAnterior = pagoAnterior?.lavador?.nombre || ''
 
-      // Validar que no se cruce con otro pago existente (excluyendo el que se edita)
+      // Validar que no se cruce con otro pago existente (excluyendo el que se edita y los que se absorben)
       if (formData.fecha_desde && formData.fecha_hasta) {
         const { data: existentes } = await supabase
           .from('pago_trabajadores')
@@ -618,8 +651,10 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
           .neq('id', editandoId)
           .or(`anulado.is.null,anulado.eq.false`)
 
+        const absorbidos = formData.pagos_absorbidos || []
         const duplicado = (existentes || []).some(p => {
           if (!p.fecha_desde || !p.fecha_hasta) return false
+          if (absorbidos.includes(p.id)) return false
           return p.fecha_desde <= formData.fecha_hasta && p.fecha_hasta >= formData.fecha_desde
         })
 
@@ -675,6 +710,14 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       // Insert new transactions (one per abono)
       await supabase.from('transacciones').insert(transacciones)
 
+      // Anulate absorbed advance pagos (keep their transactions intact)
+      if (formData.pagos_absorbidos?.length > 0) {
+        await supabase
+          .from('pago_trabajadores')
+          .update({ anulado: true })
+          .in('id', formData.pagos_absorbidos)
+      }
+
     } else {
       if (formData.fecha_desde && formData.fecha_hasta) {
         const { data: existentes } = await supabase
@@ -683,8 +726,10 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
           .eq('lavador_id', formData.lavador_id)
           .or(`anulado.is.null,anulado.eq.false`)
 
+        const absorbidos = formData.pagos_absorbidos || []
         const duplicado = (existentes || []).some(p => {
           if (!p.fecha_desde || !p.fecha_hasta) return false
+          if (absorbidos.includes(p.id)) return false
           return p.fecha_desde <= formData.fecha_hasta && p.fecha_hasta >= formData.fecha_desde
         })
 
@@ -694,7 +739,15 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
         }
       }
 
-      const { descuentos_detalle, abonos_detalle, ...formDataRest } = formData
+      // Anulate absorbed advance pagos (keep their transactions intact)
+      if (formData.pagos_absorbidos?.length > 0) {
+        await supabase
+          .from('pago_trabajadores')
+          .update({ anulado: true })
+          .in('id', formData.pagos_absorbidos)
+      }
+
+      const { descuentos_detalle, abonos_detalle, adelantos_previos, pagos_absorbidos, ...formDataRest } = formData
       const { error: pagoError } = await supabase.from('pago_trabajadores').insert([{
         ...formDataRest,
         descuentos_detalle: descuentos_detalle || [],
@@ -885,6 +938,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
     if (tipo === 'porcentaje') return 'Porcentaje'
     if (tipo === 'sueldo_fijo') return 'Sueldo fijo'
     if (tipo === 'porcentaje_lavada') return '% de servicio + adic.'
+    if (tipo === 'fijo_por_lavada') return 'Fijo por lavada'
     return '-'
   }
 
@@ -978,8 +1032,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
               inputMode="numeric"
               value={d.valor === 0 ? '' : formatPriceLocale(d.valor)}
               onChange={(e) => {
-                const raw = e.target.value.replace(/[^\d]/g, '')
-                handleDescuentoChange(idx, 'valor', raw === '' ? 0 : Number(raw))
+                handleDescuentoChange(idx, 'valor', parsePriceLocale(e.target.value))
               }}
               placeholder={getCurrencySymbol() + '0'}
               className="descuento-valor"
@@ -1032,8 +1085,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
               className="abono-valor"
               value={a.monto === 0 ? '' : formatPriceLocale(a.monto)}
               onChange={(e) => {
-                const raw = e.target.value.replace(/[^\d]/g, '')
-                handleAbonoChange(idx, 'monto', raw === '' ? 0 : Number(raw))
+                handleAbonoChange(idx, 'monto', parsePriceLocale(e.target.value))
               }}
               placeholder={getCurrencySymbol() + '0'}
             />
@@ -1136,10 +1188,45 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
                 </>
               )
             })()}
+            {lavador?.tipo_pago === 'fijo_por_lavada' && (() => {
+              const detalle = formData.detalle || {}
+              if (detalle.pago_por_tipo_lavado && detalle.conteo_tipos) {
+                return (
+                  <>
+                    {Object.entries(detalle.conteo_tipos).map(([tid, count]) => {
+                      const tipo = tiposLavado.find(t => t.id === tid)
+                      const monto = Number(detalle.pago_por_tipo_lavado[tid] || 0)
+                      return (
+                        <p key={tid} className="pago-resumen-linea">
+                          {tipo?.nombre || 'Servicio'} x{count} = {formatMoney(monto * count)}
+                        </p>
+                      )
+                    })}
+                    {Number(detalle.pago_por_adicional || 0) > 0 && (
+                      <p className="pago-resumen-linea">+ {formData.adicionales_cantidad} adicionales x {formatMoney(detalle.pago_por_adicional)}</p>
+                    )}
+                  </>
+                )
+              }
+              return (
+                <>
+                  <p className="pago-resumen-linea">{formData.lavadas_cantidad} servicios x {formatMoney(lavador.pago_por_lavada || 0)}</p>
+                  {Number(lavador.pago_por_adicional || 0) > 0 && (
+                    <p className="pago-resumen-linea">+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_por_adicional)}</p>
+                  )}
+                </>
+              )
+            })()}
             <div className="pago-linea-total pago-resumen-subtotal">
               <span>Subtotal</span>
               <strong>{formatMoney(formData.total)}</strong>
             </div>
+            {formData.adelantos_previos > 0 && (
+              <div className="pago-linea-total pago-resumen-adelantos">
+                <span>Adelantos previos ({formData.pagos_absorbidos?.length || 0} pago{(formData.pagos_absorbidos?.length || 0) !== 1 ? 's' : ''})</span>
+                <strong className="valor-negativo">-{formatMoney(formData.adelantos_previos)}</strong>
+              </div>
+            )}
           </div>
         )}
 
@@ -1463,6 +1550,12 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
                     <span className="historial-stat-label">Ganado</span>
                     <span className="historial-stat-value">{formatMoney(w.total_ganado)}</span>
                   </div>
+                  {w.total_descuentos > 0 && (
+                    <div className="historial-worker-stat">
+                      <span className="historial-stat-label">Descuentos</span>
+                      <span className="historial-stat-value valor-negativo">{formatMoney(w.total_descuentos)}</span>
+                    </div>
+                  )}
                   <div className="historial-worker-stat">
                     <span className="historial-stat-label">Por pagar</span>
                     <span className="historial-stat-value">{formatMoney(w.por_pagar)}</span>

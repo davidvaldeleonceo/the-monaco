@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase, getCachedProfile, clearProfileCache } from '../../apiClient'
 import { setCurrency } from '../../utils/money'
-import { COUNTRY_CURRENCY } from '../../config/currencies'
+import { COUNTRY_CURRENCY, getTimezone } from '../../config/currencies'
+import { setTimezone } from '../../utils/date'
 
 const TenantContext = createContext()
 
@@ -38,6 +39,7 @@ export function TenantProvider({ session, children }) {
     setNegocioNombre(data.negocio?.nombre || '')
     setSetupComplete(data.negocio?.setup_complete ?? true)
     setCurrency(COUNTRY_CURRENCY[data.negocio?.pais] || data.negocio?.moneda || 'COP')
+    setTimezone(getTimezone(data.negocio?.pais || 'CO'))
   }, [])
 
   const fetchProfile = useCallback(async () => {

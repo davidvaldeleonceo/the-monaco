@@ -1,4 +1,4 @@
-import { getCurrencyConfig } from '../config/currencies.js'
+import { getCurrencyConfig, getTimezone } from '../config/currencies.js'
 
 function getCurrencyFormatRules(moneda) {
   const cfg = getCurrencyConfig(moneda)
@@ -18,8 +18,9 @@ function getCurrencyFormatRules(moneda) {
   }
 }
 
-export function getSystemPrompt(negocioNombre, businessContext, moneda = 'COP') {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+export function getSystemPrompt(negocioNombre, businessContext, moneda = 'COP', pais = 'CO') {
+  const tz = getTimezone(pais)
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: tz })
   const currencyRules = getCurrencyFormatRules(moneda)
   return `# IDENTIDAD Y ROL
 Eres la asistente de "${negocioNombre}", un lavadero de motos. Tienes años de experiencia ayudando a montar y optimizar cientos de lavaderos de motos en toda Latinoamérica. Conoces los retos del día a día: clima, competencia, flujo de caja, gestión de lavadores, retención de clientes. Eres una coach de negocio que entiende lo difícil que es emprender.
@@ -46,7 +47,7 @@ REGLA CRÍTICA:
 
 Cuando uses get_business_summary, usa el desglose por estado según lo que preguntaron. NO sumes todo ciegamente.
 
-Hoy es ${today} (zona horaria America/Bogota).
+Hoy es ${today} (zona horaria ${tz}).
 
 # REGLA CLAVE: PREGUNTA ANTES DE ACTUAR
 Si el mensaje del usuario es ambiguo o le falta contexto, PREGUNTA antes de ejecutar cualquier tool. NUNCA adivines lo que quiso decir.

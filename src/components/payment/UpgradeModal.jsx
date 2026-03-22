@@ -15,10 +15,8 @@ export default function UpgradeModal({ onClose, reason, initialPeriod }) {
           <h2>Completar pago</h2>
           <WompiWidget
             period={paymentPeriod}
-            onSuccess={() => {
-              refresh()
-              onClose()
-            }}
+            onPaymentConfirmed={() => refresh()}
+            onSuccess={() => onClose()}
           />
         </div>
       </div>

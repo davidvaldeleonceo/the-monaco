@@ -1,13 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../apiClient'
-import { COUNTRIES } from '../../config/currencies'
+import { COUNTRIES, getPhoneCode } from '../../config/currencies'
 import PasswordInput from '../shared/PasswordInput'
-
-const PHONE_CODES = {
-  CO: '+57', MX: '+52', US: '+1', EC: '+593', PA: '+507',
-  PE: '+51', CL: '+56', AR: '+54', NI: '+505',
-}
 
 export default function Register() {
   const navigate = useNavigate()
@@ -19,7 +14,7 @@ export default function Register() {
   const [password, setPassword] = useState('')
   const [telefono, setTelefono] = useState('')
   const [pais, setPais] = useState('CO')
-  const countryCode = PHONE_CODES[pais] || '+57'
+  const countryCode = `+${getPhoneCode(pais)}`
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
@@ -123,19 +118,17 @@ export default function Register() {
         <form onSubmit={handleRegister}>
           <div className="input-group">
             <label>País</label>
-            <div className="country-selector-grid">
+            <select
+              value={pais}
+              onChange={(e) => setPais(e.target.value)}
+              className="country-select"
+            >
               {COUNTRIES.map(c => (
-                <button
-                  key={c.code}
-                  type="button"
-                  className={`country-chip ${pais === c.code ? 'active' : ''}`}
-                  onClick={() => setPais(c.code)}
-                >
-                  <span className="country-flag">{c.flag}</span>
-                  <span className="country-name">{c.name}</span>
-                </button>
+                <option key={c.code} value={c.code}>
+                  {c.flag}  {c.name}
+                </option>
               ))}
-            </div>
+            </select>
           </div>
 
           <div className="input-group">

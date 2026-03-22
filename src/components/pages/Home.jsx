@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../apiClient'
 import { useData } from '../context/DataContext'
 import { useTenant } from '../context/TenantContext'
+import { getPhoneCode } from '../../config/currencies'
 import { useServiceHandlers } from '../../hooks/useServiceHandlers'
 import ServiceCard from '../shared/ServiceCard'
 import SwipeableCard from '../shared/SwipeableCard'
@@ -23,7 +24,7 @@ import DatePicker, { registerLocale } from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import es from 'date-fns/locale/es'
 import * as XLSX from 'xlsx'
-import { fechaToBogotaDate, nowBogota } from '../../utils/date'
+import { fechaToBogotaDate, nowBogota, getTimezoneOffset } from '../../utils/date'
 
 registerLocale('es', es)
 
@@ -77,8 +78,9 @@ function SearchPillMobile({ searchQuery, setSearchQuery, searchInputRef, onClose
 export default function Home() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal, refreshClientes, categoriasTransaccion, initialTransacciones, clearInitialTransacciones } = useData()
-  const { negocioNombre, userEmail, userProfile, isPro } = useTenant()
+  const { lavadas, metodosPago, negocioId, clientes, deleteLavadaLocal, loadAllLavadas, lavadasAllLoaded, productos, refreshConfig, tiposMembresia, updateClienteLocal, addClienteLocal, refreshClientes, categoriasTransaccion, initialTransacciones, clearInitialTransacciones, transaccionesVersion } = useData()
+  const { negocioNombre, userEmail, userProfile, isPro, pais } = useTenant()
+  const phoneCode = getPhoneCode(pais)
   const isMobile = useIsMobile()
   const rol = userProfile?.rol || 'admin'
   const { showMoney, toggleMoney, displayMoney, displayMoneyShort } = useMoneyVisibility()
@@ -442,7 +444,7 @@ export default function Home() {
       setPrevTransacciones(data || [])
     }
     fetchPrevTransacciones()
-  }, [periodo, filtroFechaDesde, filtroFechaHasta, negocioId])
+  }, [periodo, filtroFechaDesde, filtroFechaHasta, negocioId, transaccionesVersion])
 
   useEffect(() => {
     if (periodo === 'a' && !lavadasAllLoaded) {
@@ -1465,7 +1467,7 @@ export default function Home() {
     if (!editProductData.metodo_pago_id || !editProductData.fecha) return
 
     const updates = {
-      fecha: editProductData.fecha + 'T12:00:00-05:00',
+      fecha: editProductData.fecha + 'T12:00:00' + getTimezoneOffset(),
       placa_o_persona: editProductData.placa_o_persona,
       descripcion: editProductData.descripcion,
       metodo_pago_id: editProductData.metodo_pago_id,
@@ -1647,7 +1649,7 @@ export default function Home() {
     const clienteNombre = cliente?.nombre || ''
     const clientePlaca = cliente?.placa || ''
     const placaPersona = `${clienteNombre} - ${clientePlaca}`
-    const fechaStr = fechaLocalStr(new Date()) + 'T12:00:00-05:00'
+    const fechaStr = fechaLocalStr(new Date()) + 'T12:00:00' + getTimezoneOffset()
 
     if (ventaForm.tipo_venta === 'PRODUCTO') {
       const producto = productos.find(p => p.id === ventaForm.producto_id)
@@ -1830,22 +1832,22 @@ export default function Home() {
   }
 
   const parseFecha = (raw) => {
-    if (!raw) return fechaLocalStr(new Date()) + 'T12:00:00-05:00'
+    if (!raw) return fechaLocalStr(new Date()) + 'T12:00:00' + getTimezoneOffset()
     if (raw instanceof Date && !isNaN(raw.getTime())) {
       const y = raw.getUTCFullYear()
       const m = String(raw.getUTCMonth() + 1).padStart(2, '0')
       const d = String(raw.getUTCDate()).padStart(2, '0')
-      return `${y}-${m}-${d}T12:00:00-05:00`
+      return `${y}-${m}-${d}T12:00:00${getTimezoneOffset()}`
     }
     const str = raw.toString().trim()
     const matchDMY = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
     if (matchDMY) {
       const dd = String(parseInt(matchDMY[1], 10)).padStart(2, '0')
       const mm = String(parseInt(matchDMY[2], 10)).padStart(2, '0')
-      return `${matchDMY[3]}-${mm}-${dd}T12:00:00-05:00`
+      return `${matchDMY[3]}-${mm}-${dd}T12:00:00${getTimezoneOffset()}`
     }
     const matchISO = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-    if (matchISO) return `${matchISO[1]}-${matchISO[2]}-${matchISO[3]}T12:00:00-05:00`
+    if (matchISO) return `${matchISO[1]}-${matchISO[2]}-${matchISO[3]}T12:00:00${getTimezoneOffset()}`
     return null
   }
 
@@ -2086,7 +2088,7 @@ export default function Home() {
       metodo_pago_id: movimientoForm.metodo_pago_id,
       placa_o_persona: movimientoForm.placa_o_persona,
       descripcion: movimientoForm.descripcion,
-      fecha: movimientoForm.fecha + 'T12:00:00-05:00',
+      fecha: movimientoForm.fecha + 'T12:00:00' + getTimezoneOffset(),
       negocio_id: negocioId
     }]).select('id').single()
 
@@ -2877,7 +2879,7 @@ export default function Home() {
         <div className="home-tab-actions">
           <div className="quick-filter-wrapper">
             <div
-              className={`quick-filter-trigger ${filtroEstado.length > 0 || filtroPago ? 'has-filters' : ''}`}
+              className={`quick-filter-trigger ${filtroEstado.length > 0 || filtroPago || filtroLavador.length > 0 ? 'has-filters' : ''}`}
               onClick={() => setShowQuickFilter(prev => !prev)}
               role="button"
               tabIndex={0}
@@ -2934,8 +2936,32 @@ export default function Home() {
                       ))}
                     </div>
                   </div>
-                  {(filtroEstado.length > 0 || filtroPago) && (
-                    <button className="quick-filter-clear" onClick={() => { setFiltroEstado([]); setFiltroPago(''); closeQuickFilter() }}>
+                  {tab === 'servicios' && lavadores.length > 0 && (
+                    <>
+                      <div className="quick-filter-divider" />
+                      <div className="quick-filter-section">
+                        <span className="quick-filter-label">Trabajador</span>
+                        <div className="quick-filter-chips">
+                          {lavadores.map(l => (
+                            <button
+                              key={l.id}
+                              className={`quick-filter-chip quick-filter-lavador ${filtroLavador.includes(String(l.id)) ? 'active' : ''}`}
+                              onClick={() => {
+                                setFiltroLavador(prev => {
+                                  const id = String(l.id)
+                                  return prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id]
+                                })
+                              }}
+                            >
+                              {l.nombre}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {(filtroEstado.length > 0 || filtroPago || filtroLavador.length > 0) && (
+                    <button className="quick-filter-clear" onClick={() => { setFiltroEstado([]); setFiltroPago(''); setFiltroLavador([]); closeQuickFilter() }}>
                       Limpiar filtros
                     </button>
                   )}
@@ -3512,7 +3538,7 @@ export default function Home() {
                     className="btn-plantilla-chip"
                     onClick={() => {
                       const telefono = clienteInfoModal.telefono.replace(/\D/g, '')
-                      window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
+                      window.open(`https://api.whatsapp.com/send?phone=${phoneCode}${telefono}`, '_blank')
                     }}
                   >
                     Mensaje nuevo
@@ -3531,7 +3557,7 @@ export default function Home() {
                           placa: clienteInfoModal.placa || '',
                         }
                         const texto = p.texto.replace(/\{(\w+)\}/g, (match, key) => variables[key] ?? match)
-                        window.open(`https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(texto)}`, '_blank')
+                        window.open(`https://api.whatsapp.com/send?phone=${phoneCode}${telefono}&text=${encodeURIComponent(texto)}`, '_blank')
                         supabase.from('mensajes_enviados').insert([{
                           cliente_id: clienteInfoModal.id,
                           plantilla_id: p.id,

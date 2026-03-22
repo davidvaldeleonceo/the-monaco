@@ -445,6 +445,15 @@ export default function Configuracion() {
         : `${formatMoney(item.pago_adicional_fijo || 0)}/adic`
       return `${formatPct(item.pago_porcentaje_lavada)} de ${baseLabel} + ${adicInfo}`
     }
+    if (item.tipo_pago === 'fijo_por_lavada') {
+      const lavadaInfo = item.pago_por_tipo_lavado
+        ? 'valor por tipo'
+        : `${formatMoney(item.pago_por_lavada || 0)}/lav`
+      const adicInfo = Number(item.pago_por_adicional || 0) > 0
+        ? ` + ${formatMoney(item.pago_por_adicional)}/adic`
+        : ''
+      return lavadaInfo + adicInfo
+    }
     return '-'
   }
 
@@ -468,6 +477,28 @@ export default function Configuracion() {
       pago_adicionales_detalle: {
         ...(prev.pago_adicionales_detalle || {}),
         [servicioId]: value === '' ? '' : Number(value)
+      }
+    }))
+  }
+
+  const getModoLavada = (formObj) => formObj.pago_por_tipo_lavado ? 'por_tipo' : 'mismo_valor'
+
+  const handleModoLavadaChange = (setFn, formObj, modo) => {
+    if (modo === 'por_tipo') {
+      const detalle = {}
+      tiposLavado.forEach(t => { detalle[t.id] = 0 })
+      setFn(prev => ({ ...prev, pago_por_tipo_lavado: detalle, pago_por_lavada: '' }))
+    } else {
+      setFn(prev => ({ ...prev, pago_por_tipo_lavado: null, pago_por_lavada: '' }))
+    }
+  }
+
+  const handleDetalleLavadaChange = (setFn, tipoId, value) => {
+    setFn(prev => ({
+      ...prev,
+      pago_por_tipo_lavado: {
+        ...(prev.pago_por_tipo_lavado || {}),
+        [tipoId]: value === '' ? '' : Number(value)
       }
     }))
   }
@@ -978,6 +1009,7 @@ export default function Configuracion() {
                         <option value="porcentaje">Porcentaje</option>
                         <option value="sueldo_fijo">Sueldo fijo</option>
                         <option value="porcentaje_lavada">% lavada + adic.</option>
+                        <option value="fijo_por_lavada">Fijo por lavada</option>
                       </select>
                     </span>
                   </div>
@@ -1100,6 +1132,7 @@ export default function Configuracion() {
           <option value="porcentaje">Porcentaje del valor total</option>
           <option value="sueldo_fijo">Sueldo fijo + adicionales</option>
           <option value="porcentaje_lavada">% sobre lavada básica + adicionales</option>
+          <option value="fijo_por_lavada">Valor fijo por lavada</option>
         </select>
       </div>
       {formObj.tipo_pago === 'porcentaje' && (
@@ -1217,6 +1250,48 @@ export default function Configuracion() {
               </div>
             </>
           )}
+        </>
+      )}
+      {formObj.tipo_pago === 'fijo_por_lavada' && (
+        <>
+          <div className="form-group">
+            <label>Pago por lavada</label>
+            <select
+              value={getModoLavada(formObj)}
+              onChange={(e) => handleModoLavadaChange(setFn, formObj, e.target.value)}
+            >
+              <option value="mismo_valor">Mismo valor para todas</option>
+              <option value="por_tipo">Diferente por tipo de servicio</option>
+            </select>
+          </div>
+          {getModoLavada(formObj) === 'mismo_valor' && (
+            <div className="form-group">
+              <label>Valor fijo por cada lavada</label>
+              <input type="number" value={numVal(formObj.pago_por_lavada)} onChange={changeHandler('pago_por_lavada')} />
+            </div>
+          )}
+          {getModoLavada(formObj) === 'por_tipo' && (
+            <>
+              <div className="adicionales-config-list">
+                {tiposLavado.map(t => (
+                  <div className="form-group-row" key={t.id}>
+                    <label style={{ flex: 1 }}>{t.nombre} ({formatMoney(t.precio)})</label>
+                    <input
+                      type="number"
+                      style={{ width: '100px' }}
+                      value={numVal((formObj.pago_por_tipo_lavado || {})[t.id])}
+                      onChange={(e) => handleDetalleLavadaChange(setFn, t.id, e.target.value)}
+                      placeholder={getCurrencySymbol() + '0'}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <div className="form-group">
+            <label>Pago por cada adicional (opcional)</label>
+            <input type="number" value={numVal(formObj.pago_por_adicional)} onChange={changeHandler('pago_por_adicional')} />
+          </div>
         </>
       )}
     </>

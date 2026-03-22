@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../apiClient'
 import { useData } from '../context/DataContext'
 import { useTenant } from '../context/TenantContext'
+import { getPhoneCode, COUNTRY_PHONE_CODE } from '../../config/currencies'
 import { useToast } from '../layout/Toast'
 import { formatMoney } from '../../utils/money'
 import { LAVADAS_SELECT } from '../../config/constants'
@@ -21,7 +22,8 @@ registerLocale('es', es)
 
 export default function Clientes({ externalSearch } = {}) {
   const { clientes, lavadas, loadAllLavadas, lavadasAllLoaded, tiposMembresia, tiposLavado, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, refreshLavadas, negocioId, plantillasMensaje } = useData()
-  const { userEmail, negocioNombre } = useTenant()
+  const { userEmail, negocioNombre, pais } = useTenant()
+  const phoneCode = getPhoneCode(pais)
   const toast = useToast()
   const isMobile = useIsMobile()
   const location = useLocation()
@@ -32,20 +34,13 @@ export default function Clientes({ externalSearch } = {}) {
   const [editando, setEditando] = useState(null)
   const [countryCode, setCountryCode] = useState('+57')
 
-  const countryCodes = [
-    { code: '+57', label: 'CO +57' },
-    { code: '+58', label: 'VE +58' },
-    { code: '+51', label: 'PE +51' },
-    { code: '+52', label: 'MX +52' },
-    { code: '+54', label: 'AR +54' },
-    { code: '+56', label: 'CL +56' },
-    { code: '+593', label: 'EC +593' },
-    { code: '+507', label: 'PA +507' },
-    { code: '+1', label: 'US +1' },
-  ]
+  const defaultPhoneCode = `+${phoneCode}`
+  const countryCodes = Object.entries(COUNTRY_PHONE_CODE).map(([country, code]) => ({
+    code: `+${code}`, label: `${country} +${code}`,
+  }))
 
   const parsePhoneWithCode = (fullPhone) => {
-    if (!fullPhone) return { code: '+57', number: '' }
+    if (!fullPhone) return { code: defaultPhoneCode, number: '' }
     const digits = fullPhone.replace(/\D/g, '')
     // Try longest codes first to avoid false matches (e.g. +593 before +5)
     const sortedCodes = [...countryCodes].sort((a, b) => b.code.length - a.code.length)
@@ -55,7 +50,7 @@ export default function Clientes({ externalSearch } = {}) {
         return { code: c.code, number: digits.slice(codeDigits.length) }
       }
     }
-    return { code: '+57', number: digits }
+    return { code: defaultPhoneCode, number: digits }
   }
 
   const [search, setSearch] = useState('')
@@ -243,7 +238,7 @@ export default function Clientes({ externalSearch } = {}) {
 
     setShowModal(false)
     setEditando(null)
-    setCountryCode('+57')
+    setCountryCode(defaultPhoneCode)
     setFormData({
       nombre: '',
       cedula: '',
@@ -415,13 +410,13 @@ export default function Clientes({ externalSearch } = {}) {
     try {
       if (!clientesFiltrados.length) return
       // Known country codes — longest first to match 3-digit codes before 1-digit
-      const codigosPais = ['593', '507', '57', '58', '56', '54', '52', '51', '1']
+      const codigosPais = Object.values(COUNTRY_PHONE_CODE).sort((a, b) => b.length - a.length)
       const data = clientesFiltrados.map(c => {
         const tel = (c.telefono || '').trim()
         let telExport = ''
         if (tel) {
           const yaTieneCodigo = codigosPais.some(code => tel.startsWith(code))
-          telExport = yaTieneCodigo ? tel : `57${tel}`
+          telExport = yaTieneCodigo ? tel : `${phoneCode}${tel}`
         }
         return {
           Nombre: c.nombre || '',
@@ -918,9 +913,11 @@ export default function Clientes({ externalSearch } = {}) {
       return
     }
     const telefono = cliente.telefono.replace(/\D/g, '')
-    // Phone is stored with country code (e.g. "573001234567"), add 57 only if missing
-    const phoneForWa = telefono.length > 0 && !telefono.startsWith('1') && telefono.length <= 10
-      ? `57${telefono}` : telefono
+    // Phone is stored with country code — add tenant's code only if missing
+    const knownCodes = Object.values(COUNTRY_PHONE_CODE).sort((a, b) => b.length - a.length)
+    const alreadyHasCode = knownCodes.some(code => telefono.startsWith(code))
+    const phoneForWa = telefono.length > 0 && !alreadyHasCode
+      ? `${phoneCode}${telefono}` : telefono
     if (tipo === 'contacto') {
       window.open(`https://api.whatsapp.com/send?phone=${phoneForWa}`, '_blank')
       return

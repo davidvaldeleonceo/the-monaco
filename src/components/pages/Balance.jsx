@@ -10,12 +10,12 @@ import { formatMoney, getCurrencySymbol, formatPriceLocale } from '../../utils/m
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 import { useMoneyVisibility } from '../context/MoneyVisibilityContext'
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
-import { fechaToBogotaDate, nowBogota } from '../../utils/date'
+import { fechaToBogotaDate, nowBogota, getTimezoneOffset } from '../../utils/date'
 
 registerLocale('es', es)
 
 export default function Balance() {
-  const { metodosPago: metodosPagoConfig, lavadas, negocioId, categoriasTransaccion } = useData()
+  const { metodosPago: metodosPagoConfig, lavadas, negocioId, categoriasTransaccion, transaccionesVersion } = useData()
   const { displayMoney } = useMoneyVisibility()
 
   const [transacciones, setTransacciones] = useState([])
@@ -110,7 +110,7 @@ export default function Balance() {
 
   useEffect(() => {
     fetchData()
-  }, [fechaDesde, fechaHasta])
+  }, [fechaDesde, fechaHasta, transaccionesVersion])
 
   const fetchData = async () => {
     let query = supabase
@@ -270,7 +270,7 @@ export default function Balance() {
 
     await supabase.from('transacciones').insert([{
       ...formData,
-      fecha: formData.fecha + 'T12:00:00-05:00',
+      fecha: formData.fecha + 'T12:00:00' + getTimezoneOffset(),
       negocio_id: negocioId
     }])
 
@@ -335,7 +335,7 @@ export default function Balance() {
     if (!editData.tipo || !editData.categoria || !editData.metodo_pago_id || !editData.fecha) return
 
     const updates = {
-      fecha: editData.fecha + 'T12:00:00-05:00',
+      fecha: editData.fecha + 'T12:00:00' + getTimezoneOffset(),
       tipo: editData.tipo,
       categoria: editData.categoria,
       placa_o_persona: editData.placa_o_persona,

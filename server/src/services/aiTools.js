@@ -1,5 +1,5 @@
 import pool from '../config/database.js'
-import { getFormatter } from '../config/currencies.js'
+import { getFormatter, getTimezone } from '../config/currencies.js'
 
 const businessContextCache = new Map()
 const CONTEXT_TTL = 5 * 60 * 1000
@@ -12,17 +12,18 @@ export async function getBusinessContext(negocioId) {
     pool.query('SELECT nombre, precio FROM tipos_lavado WHERE negocio_id = $1 AND activo = true ORDER BY nombre', [negocioId]),
     pool.query('SELECT nombre FROM lavadores WHERE negocio_id = $1 AND activo = true ORDER BY nombre', [negocioId]),
     pool.query('SELECT nombre FROM metodos_pago WHERE negocio_id = $1 AND activo = true ORDER BY nombre', [negocioId]),
-    pool.query('SELECT moneda FROM negocios WHERE id = $1', [negocioId]),
+    pool.query('SELECT moneda, pais FROM negocios WHERE id = $1', [negocioId]),
   ])
 
   const moneda = negocioRes.rows[0]?.moneda || 'COP'
+  const pais = negocioRes.rows[0]?.pais || 'CO'
   const fmt = getFormatter(moneda)
   const servicios = tiposRes.rows.map(t => `${t.nombre} (${fmt(t.precio)})`).join(', ') || 'Sin servicios'
   const lavadores = lavadoresRes.rows.map(l => l.nombre).join(', ') || 'Sin lavadores'
   const metodos = metodosRes.rows.map(m => m.nombre).join(', ') || 'Sin métodos'
 
   const contextText = `SERVICIOS: ${servicios}\nLAVADORES: ${lavadores}\nMÉTODOS DE PAGO: ${metodos}`
-  const data = { contextText, moneda }
+  const data = { contextText, moneda, pais }
   businessContextCache.set(negocioId, { data, fetchedAt: Date.now() })
   return data
 }
@@ -219,50 +220,51 @@ export const toolDefinitions = [
   },
 ]
 
-export async function executeTool(name, args, negocioId, io, moneda = 'COP') {
+export async function executeTool(name, args, negocioId, io, moneda = 'COP', pais = 'CO') {
   const fmt = getFormatter(moneda)
+  const tz = getTimezone(pais)
   switch (name) {
     case 'query_lavadas':
-      return await queryLavadas(args, negocioId, fmt)
+      return await queryLavadas(args, negocioId, fmt, tz)
     case 'query_clientes':
-      return await queryClientes(args, negocioId)
+      return await queryClientes(args, negocioId, tz)
     case 'query_trabajadores':
-      return await queryTrabajadores(args, negocioId)
+      return await queryTrabajadores(args, negocioId, tz)
     case 'get_business_summary':
-      return await getBusinessSummary(args, negocioId, fmt)
+      return await getBusinessSummary(args, negocioId, fmt, tz)
     case 'ranking_lavadores':
-      return await rankingLavadores(args, negocioId, fmt)
+      return await rankingLavadores(args, negocioId, fmt, tz)
     case 'query_transacciones':
       return await queryTransacciones(args, negocioId, fmt)
     case 'resumen_financiero':
-      return await resumenFinanciero(args, negocioId, fmt)
+      return await resumenFinanciero(args, negocioId, fmt, tz)
     case 'query_productos_servicios':
       return await queryProductosServicios(negocioId, fmt)
     case 'crear_lavada':
-      return await crearLavada(args, negocioId, io, fmt)
+      return await crearLavada(args, negocioId, io, fmt, tz)
     case 'analisis_metodos_pago':
-      return await analisisMetodosPago(args, negocioId, fmt)
+      return await analisisMetodosPago(args, negocioId, fmt, tz)
     case 'query_tiempos':
-      return await queryTiempos(args, negocioId)
+      return await queryTiempos(args, negocioId, tz)
     case 'top_clientes':
-      return await topClientes(args, negocioId, fmt)
+      return await topClientes(args, negocioId, fmt, tz)
     default:
       return { error: `Tool desconocida: ${name}` }
   }
 }
 
-async function queryLavadas(args, negocioId, fmt) {
+async function queryLavadas(args, negocioId, fmt, tz) {
   const conditions = ['l.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
 
   if (args.fecha_desde) {
-    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_desde)
     idx++
   }
   if (args.fecha_hasta) {
-    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_hasta)
     idx++
   }
@@ -307,7 +309,7 @@ async function queryLavadas(args, negocioId, fmt) {
   }
 }
 
-async function queryClientes(args, negocioId) {
+async function queryClientes(args, negocioId, tz) {
   const conditions = ['c.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
@@ -344,7 +346,7 @@ async function queryClientes(args, negocioId) {
   }
 }
 
-async function queryTrabajadores(args, negocioId) {
+async function queryTrabajadores(args, negocioId, tz) {
   const conditions = ['negocio_id = $1']
   const params = [negocioId]
   let idx = 2
@@ -368,7 +370,10 @@ async function queryTrabajadores(args, negocioId) {
   const { rows } = await pool.query(sql, params)
   const resumen = rows.length === 0
     ? 'No hay trabajadores registrados.'
-    : rows.map((t, i) => `${i+1}. ${t.nombre} — ${t.activo ? 'Activo' : 'Inactivo'} — Pago: ${t.tipo_pago || 'No definido'}`).join('\n')
+    : rows.map((t, i) => {
+      const pagoLabel = { porcentaje: 'Porcentaje', sueldo_fijo: 'Sueldo fijo', porcentaje_lavada: '% de servicio + adic.', fijo_por_lavada: 'Fijo por lavada' }[t.tipo_pago] || 'No definido'
+      return `${i+1}. ${t.nombre} — ${t.activo ? 'Activo' : 'Inactivo'} — Pago: ${pagoLabel}`
+    }).join('\n')
   return {
     _instruccion: 'USA EXACTAMENTE ESTOS DATOS. NO INVENTES OTROS.',
     total: rows.length,
@@ -376,36 +381,36 @@ async function queryTrabajadores(args, negocioId) {
   }
 }
 
-async function getBusinessSummary(args, negocioId, fmt) {
+async function getBusinessSummary(args, negocioId, fmt, tz) {
   let dateFilter
   switch (args.periodo) {
     case 'hoy':
-      dateFilter = `fecha >= (date_trunc('day', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`
+      dateFilter = `fecha >= (date_trunc('day', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`
       break
     case 'semana':
-      dateFilter = `fecha >= (date_trunc('week', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`
+      dateFilter = `fecha >= (date_trunc('week', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`
       break
     case 'mes':
-      dateFilter = `fecha >= (date_trunc('month', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`
+      dateFilter = `fecha >= (date_trunc('month', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`
       break
     default:
-      dateFilter = `fecha >= (date_trunc('day', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`
+      dateFilter = `fecha >= (date_trunc('day', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`
   }
 
   // Date filter for transacciones (DATE column, no timezone conversion needed)
   let transDateFilter
   switch (args.periodo) {
     case 'hoy':
-      transDateFilter = `fecha >= (now() AT TIME ZONE 'America/Bogota')::date AND fecha < ((now() AT TIME ZONE 'America/Bogota')::date + interval '1 day')`
+      transDateFilter = `fecha >= (now() AT TIME ZONE '${tz}')::date AND fecha < ((now() AT TIME ZONE '${tz}')::date + interval '1 day')`
       break
     case 'semana':
-      transDateFilter = `fecha >= date_trunc('week', now() AT TIME ZONE 'America/Bogota')::date AND fecha < (date_trunc('week', now() AT TIME ZONE 'America/Bogota')::date + interval '7 days')`
+      transDateFilter = `fecha >= date_trunc('week', now() AT TIME ZONE '${tz}')::date AND fecha < (date_trunc('week', now() AT TIME ZONE '${tz}')::date + interval '7 days')`
       break
     case 'mes':
-      transDateFilter = `fecha >= date_trunc('month', now() AT TIME ZONE 'America/Bogota')::date AND fecha < (date_trunc('month', now() AT TIME ZONE 'America/Bogota')::date + interval '1 month')`
+      transDateFilter = `fecha >= date_trunc('month', now() AT TIME ZONE '${tz}')::date AND fecha < (date_trunc('month', now() AT TIME ZONE '${tz}')::date + interval '1 month')`
       break
     default:
-      transDateFilter = `fecha >= (now() AT TIME ZONE 'America/Bogota')::date AND fecha < ((now() AT TIME ZONE 'America/Bogota')::date + interval '1 day')`
+      transDateFilter = `fecha >= (now() AT TIME ZONE '${tz}')::date AND fecha < ((now() AT TIME ZONE '${tz}')::date + interval '1 day')`
   }
 
   const [lavadaStats, transStats, clienteStats] = await Promise.all([
@@ -461,20 +466,20 @@ async function getBusinessSummary(args, negocioId, fmt) {
   }
 }
 
-async function rankingLavadores(args, negocioId, fmt) {
+async function rankingLavadores(args, negocioId, fmt, tz) {
   const conditions = ['l.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
 
   if (args.fecha_desde) {
-    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_desde)
     idx++
   } else {
-    conditions.push(`l.fecha >= (date_trunc('day', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha >= (date_trunc('day', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`)
   }
   if (args.fecha_hasta) {
-    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_hasta)
     idx++
   }
@@ -556,7 +561,7 @@ async function queryTransacciones(args, negocioId, fmt) {
   }
 }
 
-async function resumenFinanciero(args, negocioId, fmt) {
+async function resumenFinanciero(args, negocioId, fmt, tz) {
   const desde = args.fecha_desde || null
   const hasta = args.fecha_hasta || null
   const useLiteral = !args.fecha_desde
@@ -564,12 +569,12 @@ async function resumenFinanciero(args, negocioId, fmt) {
   // Lavadas income (from pagos JSONB)
   const lavadaParams = [negocioId]
   let lavadaDateFilter = useLiteral
-    ? `l.fecha >= (date_trunc('day', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`
-    : `l.fecha >= ($2::timestamp AT TIME ZONE 'America/Bogota')`
+    ? `l.fecha >= (date_trunc('day', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`
+    : `l.fecha >= ($2::timestamp AT TIME ZONE '${tz}')`
   if (!useLiteral) lavadaParams.push(desde)
   if (hasta) {
     lavadaParams.push(hasta)
-    lavadaDateFilter += ` AND l.fecha < (($${lavadaParams.length}::date + interval '1 day')::timestamp AT TIME ZONE 'America/Bogota')`
+    lavadaDateFilter += ` AND l.fecha < (($${lavadaParams.length}::date + interval '1 day')::timestamp AT TIME ZONE '${tz}')`
   }
 
   const [lavadaRes, transRes, metodosRes] = await Promise.all([
@@ -583,7 +588,7 @@ async function resumenFinanciero(args, negocioId, fmt) {
     (() => {
       const transParams = [negocioId]
       let transDateFilter = useLiteral
-        ? `fecha >= (now() AT TIME ZONE 'America/Bogota')::date`
+        ? `fecha >= (now() AT TIME ZONE '${tz}')::date`
         : (transParams.push(desde), `fecha >= $${transParams.length}::date`)
       if (hasta) {
         transParams.push(hasta)
@@ -651,7 +656,7 @@ async function queryProductosServicios(negocioId, fmt) {
 // ============================================
 // crear_lavada — AI-driven lavada creation
 // ============================================
-async function crearLavada(args, negocioId, io, fmt) {
+async function crearLavada(args, negocioId, io, fmt, tz) {
   const placa = (args.placa || '').toUpperCase().trim()
   if (!placa) return { error: 'La placa es obligatoria.' }
 
@@ -677,7 +682,7 @@ async function crearLavada(args, negocioId, io, fmt) {
     `SELECT c.id, c.nombre, c.moto, c.membresia_id, tm.descuento
      FROM clientes c
      LEFT JOIN tipos_membresia tm ON tm.id = c.membresia_id
-       AND c.fecha_fin_membresia >= (now() AT TIME ZONE 'America/Bogota')::date
+       AND c.fecha_fin_membresia >= (now() AT TIME ZONE '${tz}')::date
      WHERE c.negocio_id = $1 AND UPPER(c.placa) = $2`,
     [negocioId, placa]
   )
@@ -771,7 +776,7 @@ async function crearLavada(args, negocioId, io, fmt) {
   if (!isPro) {
     const { rows: countRows } = await pool.query(
       `SELECT COUNT(*) AS cnt FROM lavadas
-       WHERE negocio_id = $1 AND fecha >= (date_trunc('month', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`,
+       WHERE negocio_id = $1 AND fecha >= (date_trunc('month', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`,
       [negocioId]
     )
     if (parseInt(countRows[0].cnt) >= 5) {
@@ -813,7 +818,7 @@ async function crearLavada(args, negocioId, io, fmt) {
     const { rows: monthCount } = await pool.query(
       `SELECT COUNT(*) AS cnt FROM lavadas
        WHERE cliente_id = $1 AND negocio_id = $2
-         AND fecha >= (date_trunc('month', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`,
+         AND fecha >= (date_trunc('month', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`,
       [clienteId, negocioId]
     )
     if (parseInt(monthCount[0].cnt) > 1) {
@@ -843,20 +848,20 @@ async function crearLavada(args, negocioId, io, fmt) {
 // ============================================
 // analisis_metodos_pago
 // ============================================
-async function analisisMetodosPago(args, negocioId, fmt) {
+async function analisisMetodosPago(args, negocioId, fmt, tz) {
   const conditions = ['l.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
 
   if (args.fecha_desde) {
-    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_desde)
     idx++
   } else {
-    conditions.push(`l.fecha >= (date_trunc('week', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha >= (date_trunc('week', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`)
   }
   if (args.fecha_hasta) {
-    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_hasta)
     idx++
   }
@@ -899,20 +904,20 @@ async function analisisMetodosPago(args, negocioId, fmt) {
 // ============================================
 // query_tiempos
 // ============================================
-async function queryTiempos(args, negocioId) {
+async function queryTiempos(args, negocioId, tz) {
   const conditions = ['l.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
 
   if (args.fecha_desde) {
-    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_desde)
     idx++
   } else {
-    conditions.push(`l.fecha >= (date_trunc('week', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha >= (date_trunc('week', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`)
   }
   if (args.fecha_hasta) {
-    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_hasta)
     idx++
   }
@@ -970,20 +975,20 @@ async function queryTiempos(args, negocioId) {
 // ============================================
 // top_clientes
 // ============================================
-async function topClientes(args, negocioId, fmt) {
+async function topClientes(args, negocioId, fmt, tz) {
   const conditions = ['l.negocio_id = $1']
   const params = [negocioId]
   let idx = 2
 
   if (args.fecha_desde) {
-    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha >= ($${idx}::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_desde)
     idx++
   } else {
-    conditions.push(`l.fecha >= (date_trunc('month', now() AT TIME ZONE 'America/Bogota') AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha >= (date_trunc('month', now() AT TIME ZONE '${tz}') AT TIME ZONE '${tz}')`)
   }
   if (args.fecha_hasta) {
-    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE 'America/Bogota')`)
+    conditions.push(`l.fecha < (($${idx}::date + interval '1 day')::timestamp AT TIME ZONE '${tz}')`)
     params.push(args.fecha_hasta)
     idx++
   }

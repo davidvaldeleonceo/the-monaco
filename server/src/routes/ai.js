@@ -3,6 +3,7 @@ import multer from 'multer'
 import pool from '../config/database.js'
 import env from '../config/env.js'
 import { chat } from '../services/aiService.js'
+import { getTimezone } from '../config/currencies.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } })
@@ -10,8 +11,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 // In-memory daily limit: 3 AI queries/day per negocio (PRO only, free has no access)
 const dailyUsage = new Map()
 
-function checkDailyLimit(negocioId) {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+function checkDailyLimit(negocioId, tz = 'America/Bogota') {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: tz })
   const key = `${negocioId}:${today}`
 
   if (!dailyUsage.has(key)) {
@@ -37,7 +38,7 @@ function computeIsPro(negocio) {
 
 async function getNegocio(negocioId) {
   const { rows } = await pool.query(
-    'SELECT plan, trial_ends_at, subscription_expires_at, nombre FROM negocios WHERE id = $1',
+    'SELECT plan, trial_ends_at, subscription_expires_at, nombre, pais FROM negocios WHERE id = $1',
     [negocioId]
   )
   return rows[0]
@@ -62,7 +63,8 @@ router.post('/chat', async (req, res) => {
     }
 
     const unlimited = req.user.email === 'principal@themonaco.com.co'
-    const { allowed, remaining } = unlimited ? { allowed: true, remaining: 999 } : checkDailyLimit(negocioId)
+    const tz = getTimezone(negocio.pais || 'CO')
+    const { allowed, remaining } = unlimited ? { allowed: true, remaining: 999 } : checkDailyLimit(negocioId, tz)
     if (!allowed) {
       return res.status(429).json({ error: 'DAILY_LIMIT', message: 'Has alcanzado el límite de 3 consultas diarias de IA.' })
     }

@@ -377,6 +377,7 @@ DO $$ BEGIN
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS telefono TEXT;
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS moneda TEXT DEFAULT 'COP';
   ALTER TABLE negocios ADD COLUMN IF NOT EXISTS pais TEXT DEFAULT 'CO';
+  ALTER TABLE lavadores ADD COLUMN IF NOT EXISTS pago_por_tipo_lavado JSONB;
 END $$;
 
 -- Ensure nombre/placa are NOT NULL (idempotent — safe to re-run)

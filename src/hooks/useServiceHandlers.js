@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { supabase } from '../apiClient'
 import { useData } from '../components/context/DataContext'
+import { useTenant } from '../components/context/TenantContext'
 import { useToast } from '../components/layout/Toast'
 import { ESTADO_CLASSES } from '../config/constants'
+import { getPhoneCode } from '../config/currencies'
 import { formatMoney } from '../utils/money'
 
 export function useServiceHandlers() {
@@ -10,7 +12,9 @@ export function useServiceHandlers() {
     lavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales,
     updateLavadaLocal, deleteLavadaLocal, plantillasMensaje, negocioId
   } = useData()
+  const { pais } = useTenant()
   const toast = useToast()
+  const phoneCode = getPhoneCode(pais)
 
   const [expandedCards, setExpandedCards] = useState({})
   const [editingPago, setEditingPago] = useState(null)
@@ -355,18 +359,18 @@ export function useServiceHandlers() {
     const telefono = cliente.telefono.replace(/\D/g, '')
 
     if (!plantillaId) {
-      window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
+      window.open(`https://api.whatsapp.com/send?phone=${phoneCode}${telefono}`, '_blank')
       return
     }
 
     const plantilla = plantillasMensaje.find(p => p.id === plantillaId)
     if (!plantilla) {
-      window.open(`https://api.whatsapp.com/send?phone=57${telefono}`, '_blank')
+      window.open(`https://api.whatsapp.com/send?phone=${phoneCode}${telefono}`, '_blank')
       return
     }
 
     const mensajeTexto = resolverPlantilla(plantilla.texto, cliente, lavada, negocioNombre)
-    window.open(`https://api.whatsapp.com/send?phone=57${telefono}&text=${encodeURIComponent(mensajeTexto)}`, '_blank')
+    window.open(`https://api.whatsapp.com/send?phone=${phoneCode}${telefono}&text=${encodeURIComponent(mensajeTexto)}`, '_blank')
 
     // Fire-and-forget: registrar mensaje enviado
     supabase.from('mensajes_enviados').insert([{

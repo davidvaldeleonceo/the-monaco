@@ -22,7 +22,7 @@ const DOC_TYPES = [
   { value: 'PP', label: 'Pasaporte' },
 ]
 
-export default function WompiWidget({ period, onSuccess }) {
+export default function WompiWidget({ period, onSuccess, onPaymentConfirmed }) {
   const [step, setStep] = useState('form') // form | processing | success | error | waiting_nequi | nequi_timeout
   const [error, setError] = useState(null)
   const [processingMsg, setProcessingMsg] = useState('Procesando pago...')
@@ -127,6 +127,7 @@ export default function WompiWidget({ period, onSuccess }) {
           pollingRef.current = null
           setStep('success')
           submittingRef.current = false
+          onPaymentConfirmed?.()
           const t = setTimeout(() => onSuccess?.(), 2000)
           timersRef.current = [t]
         } else if (result.status === 'DECLINED' || result.status === 'ERROR' || result.status === 'VOIDED') {
@@ -184,6 +185,7 @@ export default function WompiWidget({ period, onSuccess }) {
       if (result.success && result.status === 'APPROVED') {
         setStep('success')
         submittingRef.current = false
+        onPaymentConfirmed?.()
         const t = setTimeout(() => onSuccess?.(), 2000)
         timersRef.current = [t]
       } else if (result.success && result.status === 'PENDING' && result.method === 'PSE') {

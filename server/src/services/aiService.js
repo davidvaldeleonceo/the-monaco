@@ -43,7 +43,7 @@ export async function chat(message, sessionId, negocioId, negocioNombre, io) {
   const session = getOrCreateSession(sessionId, negocioId, negocioNombre, context.contextText)
 
   // Refresh system prompt on every message
-  session.messages[0] = { role: 'system', content: getSystemPrompt(negocioNombre, context.contextText, context.moneda) }
+  session.messages[0] = { role: 'system', content: getSystemPrompt(negocioNombre, context.contextText, context.moneda, context.pais) }
 
   // Keep system prompt + last 4 user/assistant text pairs for follow-up context.
   // Strip tool_calls and tool results to force fresh data queries on each message.
@@ -80,7 +80,7 @@ export async function chat(message, sessionId, negocioId, negocioNombre, io) {
 
         let result
         try {
-          result = await executeTool(tc.function.name, args, negocioId, io, context.moneda)
+          result = await executeTool(tc.function.name, args, negocioId, io, context.moneda, context.pais)
         } catch (err) {
           console.error(`Tool error [${tc.function.name}]:`, err.message)
           result = { error: `Error ejecutando ${tc.function.name}: ${err.message}` }

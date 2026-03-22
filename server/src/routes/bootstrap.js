@@ -4,6 +4,7 @@
  */
 import { Router } from 'express'
 import pool from '../config/database.js'
+import { getTimezone } from '../config/currencies.js'
 
 const router = Router()
 
@@ -13,10 +14,9 @@ function getCutoff60Days() {
   return d.toISOString()
 }
 
-function getCurrentMonthRange() {
-  // Use Bogota timezone for consistency
+function getCurrentMonthRange(tz = 'America/Bogota') {
   const now = new Date()
-  const bogota = new Date(now.toLocaleString('en-US', { timeZone: 'America/Bogota' }))
+  const bogota = new Date(now.toLocaleString('en-US', { timeZone: tz }))
   const y = bogota.getFullYear()
   const m = String(bogota.getMonth() + 1).padStart(2, '0')
   const desde = `${y}-${m}-01`
@@ -54,7 +54,9 @@ router.get('/', async (req, res, next) => {
     }
 
     const cutoff = getCutoff60Days()
-    const { desde, hasta } = getCurrentMonthRange()
+    const { rows: [negRow] } = await pool.query('SELECT pais FROM negocios WHERE id = $1', [negocioId])
+    const tz = getTimezone(negRow?.pais || 'CO')
+    const { desde, hasta } = getCurrentMonthRange(tz)
 
     // Run ALL queries in parallel
     const [

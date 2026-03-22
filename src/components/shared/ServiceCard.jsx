@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import Timer from './Timer'
 import { formatMoney, getCurrencySymbol, formatPriceLocale } from '../../utils/money'
+import { getActiveTimezone } from '../../utils/date'
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../../config/constants'
 import { MessageCircle, Trash2, CheckCircle2, Plus, X, Clock, Droplets, CircleCheck, HandCoins, Sparkles, Pencil } from 'lucide-react'
 
@@ -111,7 +112,7 @@ export default function ServiceCard({
       setPagoPopoverLocal(false)
     }
   }, [activePopoverId, lavada.id])
-  const [waMenuPos, setWaMenuPos] = useState({ top: 0, right: 0 })
+  const [waMenuPos, setWaMenuPos] = useState(null)
   const waButtonRef = useRef(null)
   const lavadorSelectRef = useRef(null)
   const pagos = lavada.pagos || []
@@ -366,7 +367,7 @@ export default function ServiceCard({
         onClick={() => { setEstadoPopover(false); setPagoPopover(false); selectionMode && onToggleSelect ? onToggleSelect(lavada.id) : onToggleExpand() }}
       >
         <div className="lavada-card-cliente">
-          <span className="lavada-card-nombre">{lavada.cliente?.nombre || 'No encontrado'} <span className="lavada-card-fecha">{new Date(lavada.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', timeZone: 'America/Bogota' })}</span></span>
+          <span className="lavada-card-nombre">{lavada.cliente?.nombre || 'No encontrado'} <span className="lavada-card-fecha">{new Date(lavada.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', timeZone: getActiveTimezone() })}</span></span>
           <span className="lavada-card-placa">
             <span onClick={(e) => { e.stopPropagation(); onPlacaClick?.(lavada) }} style={{ cursor: 'pointer' }}>{lavada.placa}</span>
             {clienteCategoria && <span className="cliente-categoria-badge badge-desktop-only">{clienteCategoria}</span>}
@@ -714,7 +715,14 @@ export default function ServiceCard({
                     onClick={() => {
                       if (!waMenu && waButtonRef.current) {
                         const rect = waButtonRef.current.getBoundingClientRect()
-                        setWaMenuPos({ bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right })
+                        const menuHeight = Math.min((plantillasMensaje.length + 2) * 40, 280)
+                        let bottom = window.innerHeight - rect.top + 4
+                        let right = window.innerWidth - rect.right
+                        // Clamp so menu stays within viewport
+                        if (bottom + menuHeight > window.innerHeight - 10) bottom = 10
+                        if (right < 10) right = 10
+                        if (right + 220 > window.innerWidth) right = window.innerWidth - 230
+                        setWaMenuPos({ bottom, right })
                       }
                       setWaMenu(!waMenu)
                     }}
@@ -722,7 +730,7 @@ export default function ServiceCard({
                   >
                     <MessageCircle size={18} />
                   </button>
-                  {waMenu && (
+                  {waMenu && waMenuPos && (
                     <>
                       <div className="wa-menu-overlay" onClick={() => setWaMenu(false)} />
                       <div className="wa-menu-dropdown" style={{ bottom: waMenuPos.bottom, right: waMenuPos.right }}>

@@ -291,6 +291,23 @@ body {
 }
 
 /* Country selector */
+.country-select {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: var(--bg-secondary);
+  border: 0.5px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 1rem;
+  appearance: auto;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.country-select:focus {
+  outline: none;
+  border-color: rgba(0,0,0,0.15);
+  box-shadow: var(--focus-ring);
+}
 .country-selector-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -5607,7 +5624,10 @@ body {
   box-shadow: 0 4px 16px rgba(0,0,0,0.25);
   z-index: var(--z-modal);
   min-width: 200px;
-  overflow: hidden;
+  max-width: calc(100vw - 20px);
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .wa-menu-dropdown button {
@@ -8352,6 +8372,11 @@ input:checked + .slider:before {
   border-color: var(--accent-blue);
   color: var(--accent-blue);
 }
+.quick-filter-chip.quick-filter-lavador.active {
+  background: oklch(0.4 0.18 259 / 0.12);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
 .quick-filter-divider {
   height: 1px;
   background: var(--border-color);
@@ -10283,6 +10308,10 @@ input:checked + .slider:before {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border-color);
+}
+.pago-resumen-adelantos {
+  margin-top: 4px;
+  font-size: 0.85rem;
 }
 
 .pago-periodo-section {

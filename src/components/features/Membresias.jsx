@@ -8,6 +8,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
 import es from 'date-fns/locale/es'
 import { formatMoney } from '../../utils/money'
+import { getTimezoneOffset } from '../../utils/date'
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
 import { useToast } from '../layout/Toast'
 
@@ -224,7 +225,7 @@ export default function Membresias() {
       metodo_pago_id: formData.metodo_pago_id || null,
       placa_o_persona: `${clienteNombre} - ${clientePlaca}`,
       descripcion: `Pago membresía ${membresia.nombre}`,
-      fecha: fechaLocalStr(new Date()) + 'T12:00:00-05:00',
+      fecha: fechaLocalStr(new Date()) + 'T12:00:00' + getTimezoneOffset(),
       negocio_id: negocioId
     }])
 

@@ -33,9 +33,12 @@ export function DataProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [lavadasAllLoaded, setLavadasAllLoaded] = useState(false)
 
+  const [transaccionesVersion, setTransaccionesVersion] = useState(0)
+
   const fetchingRef = useRef(false)
   const debounceRef = useRef(null)
   const clientesDebounceRef = useRef(null)
+  const transaccionesDebounceRef = useRef(null)
 
   const applyBootstrapData = (data) => {
     setClientes(data.clientes || [])
@@ -238,6 +241,26 @@ export function DataProvider({ children }) {
     }
   }, [negocioId, refreshClientes])
 
+  // Supabase Realtime subscription for transacciones — version counter
+  useEffect(() => {
+    if (!negocioId) return
+
+    const channel = supabase
+      .channel('transacciones-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transacciones' }, () => {
+        if (transaccionesDebounceRef.current) clearTimeout(transaccionesDebounceRef.current)
+        transaccionesDebounceRef.current = setTimeout(() => {
+          setTransaccionesVersion(v => v + 1)
+        }, 300)
+      })
+      .subscribe()
+
+    return () => {
+      if (transaccionesDebounceRef.current) clearTimeout(transaccionesDebounceRef.current)
+      supabase.removeChannel(channel)
+    }
+  }, [negocioId])
+
   const lavadaCountThisMonth = useMemo(() => lavadas.filter(l => {
     const dateOnly = fechaToBogotaDate(l.fecha)
     if (!dateOnly) return false
@@ -280,6 +303,7 @@ export function DataProvider({ children }) {
     clienteCount,
     initialTransacciones,
     clearInitialTransacciones,
+    transaccionesVersion,
   }), [
     negocioId, clientes, lavadas, tiposLavado, lavadores, metodosPago,
     tiposMembresia, serviciosAdicionales, productos, plantillasMensaje,
@@ -287,7 +311,7 @@ export function DataProvider({ children }) {
     refreshLavadas, refreshClientes, refreshConfig, loadAllLavadas,
     updateLavadaLocal, addLavadaLocal, addClienteLocal, updateClienteLocal,
     deleteClienteLocal, deleteLavadaLocal, lavadaCountThisMonth, clienteCount,
-    initialTransacciones, clearInitialTransacciones,
+    initialTransacciones, clearInitialTransacciones, transaccionesVersion,
   ])
 
   return (
