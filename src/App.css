@@ -10177,6 +10177,14 @@ input:checked + .slider:before {
   align-items: center;
   gap: 0.5rem;
 }
+.form-group-row input {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
 
 .add-service-select {
   width: 100%;

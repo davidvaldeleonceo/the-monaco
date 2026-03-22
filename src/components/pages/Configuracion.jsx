@@ -364,7 +364,12 @@ export default function Configuracion() {
     }
 
     if (error) {
-      toast.error('Error al guardar: ' + error.message)
+      if (error.message?.includes('PLAN_LIMIT_REACHED')) {
+        const limitMsg = { productos: '5 productos', plantillas_mensaje: 'plantillas' }[getTable()] || 'este recurso'
+        toast.error(`Límite del plan gratuito alcanzado (${limitMsg}). Actualiza a PRO.`)
+      } else {
+        toast.error('Error al guardar: ' + error.message)
+      }
       return
     }
 
@@ -735,6 +740,7 @@ export default function Configuracion() {
                         <option value="porcentaje">Porcentaje</option>
                         <option value="sueldo_fijo">Sueldo fijo</option>
                         <option value="porcentaje_lavada">% de lavada + adic.</option>
+                        <option value="fijo_por_lavada">Fijo por lavada</option>
                       </select>
                     </td>
                     <td className={`lavador-detalle ${!item.tipo_pago ? 'muted' : ''}`}>
@@ -1819,27 +1825,24 @@ export default function Configuracion() {
 
     const freeFeatures = [
       { label: 'Hasta 50 lavadas por mes', included: true },
-      { label: 'Hasta 30 clientes', included: true },
+      { label: 'Hasta 40 clientes', included: true },
+      { label: 'Hasta 10 pagos de trabajadores/mes', included: true },
+      { label: 'Hasta 5 productos', included: true },
+      { label: 'Hasta 10 mensajes WhatsApp/mes', included: true },
       { label: 'Registro de servicios', included: true },
       { label: 'Métodos de pago', included: true },
-      { label: 'Lavadas ilimitadas', included: false },
-      { label: 'Clientes ilimitados', included: false },
-      { label: 'Pago de trabajadores', included: false },
-      { label: 'Membresías', included: false },
-      { label: 'Análisis y reportes', included: false },
-      { label: 'Mensajes por WhatsApp', included: false },
+      { label: 'Todo ilimitado', included: false },
+      { label: 'Soporte prioritario', included: false },
     ]
 
     const proFeatures = [
       { label: 'Lavadas ilimitadas', included: true },
       { label: 'Clientes ilimitados', included: true },
-      { label: 'Registro de servicios', included: true },
-      { label: 'Métodos de pago', included: true },
-      { label: 'Pago de trabajadores', included: true },
+      { label: 'Pago de trabajadores ilimitado', included: true },
+      { label: 'Productos ilimitados', included: true },
+      { label: 'Mensajes WhatsApp ilimitados', included: true },
       { label: 'Membresías', included: true },
       { label: 'Análisis y reportes', included: true },
-      { label: 'Mensajes por WhatsApp', included: true },
-      { label: 'Productos e inventario', included: true },
       { label: 'Soporte prioritario', included: true },
     ]
 
