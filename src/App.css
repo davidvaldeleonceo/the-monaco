@@ -1844,10 +1844,16 @@ body {
 .modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 1rem;
-  padding: 1.25rem 1.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
   border-top: 1px solid var(--border-color);
   margin-top: 0;
+}
+.modal-footer button {
+  width: auto;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 /* ===== Confirm Delete Modal (compact centered) ===== */

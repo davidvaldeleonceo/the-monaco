@@ -59,7 +59,8 @@ export default function Configuracion() {
     pago_por_adicional: '',
     pago_porcentaje_lavada: '',
     pago_adicional_fijo: '',
-    pago_adicionales_detalle: null
+    pago_adicionales_detalle: null,
+    pago_por_tipo_lavado: null
   })
 
   const tabs = [
@@ -172,7 +173,7 @@ export default function Configuracion() {
       case 'metodos':
         return { nombre: '', activo: true }
       case 'lavadores':
-        return { nombre: '', telefono: '', activo: true, tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null }
+        return { nombre: '', telefono: '', activo: true, tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null, pago_por_tipo_lavado: null }
       case 'productos':
         return { nombre: '', precio: '', cantidad: '', activo: true }
       case 'mensajes':
@@ -195,7 +196,7 @@ export default function Configuracion() {
       case 'metodos':
         return ['nombre', 'activo']
       case 'lavadores':
-        return ['nombre', 'telefono', 'activo', 'tipo_pago', 'pago_porcentaje', 'pago_sueldo_base', 'pago_por_lavada', 'pago_por_adicional', 'pago_porcentaje_lavada', 'pago_adicional_fijo', 'pago_adicionales_detalle']
+        return ['nombre', 'telefono', 'activo', 'tipo_pago', 'pago_porcentaje', 'pago_sueldo_base', 'pago_por_lavada', 'pago_por_adicional', 'pago_porcentaje_lavada', 'pago_adicional_fijo', 'pago_adicionales_detalle', 'pago_por_tipo_lavado']
       case 'productos':
         return ['nombre', 'precio', 'cantidad', 'activo']
       case 'mensajes':
@@ -209,7 +210,7 @@ export default function Configuracion() {
     }
   }
 
-  const stringFields = ['nombre', 'telefono', 'descripcion', 'tipo_pago', 'activo', 'pago_adicionales_detalle', 'adicionales_incluidos', 'es_base', 'texto', 'tipo']
+  const stringFields = ['nombre', 'telefono', 'descripcion', 'tipo_pago', 'activo', 'pago_adicionales_detalle', 'adicionales_incluidos', 'es_base', 'texto', 'tipo', 'pago_por_tipo_lavado']
 
   const numVal = (v) => v === '' || v === null || v === undefined ? '' : v
   const numChange = (field) => (e) => {
@@ -258,7 +259,7 @@ export default function Configuracion() {
     for (const f of fields) {
       if (f === 'tipo_pago') {
         editData[f] = item[f] || null
-      } else if (f === 'pago_adicionales_detalle') {
+      } else if (f === 'pago_adicionales_detalle' || f === 'pago_por_tipo_lavado') {
         editData[f] = item[f] || null
       } else if (f === 'adicionales_incluidos') {
         const raw = item[f]
@@ -2075,7 +2076,7 @@ export default function Configuracion() {
             <div className="config-desktop-actions">
               {configSubTab === 'lavadores' && (
                 <button className="btn-secondary" onClick={() => {
-                  setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
+                  setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null, pago_por_tipo_lavado: null })
                   setShowBulkModal(true)
                 }}>
                   <Settings size={18} />
@@ -2134,7 +2135,7 @@ export default function Configuracion() {
                     </button>
                     <button onClick={() => {
                       setShowFabMenu(false)
-                      setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null })
+                      setBulkForm({ tipo_pago: null, pago_porcentaje: '', pago_sueldo_base: '', pago_por_lavada: '', pago_por_adicional: '', pago_porcentaje_lavada: '', pago_adicional_fijo: '', pago_adicionales_detalle: null, pago_por_tipo_lavado: null })
                       setShowBulkModal(true)
                     }}>
                       <Settings size={18} /> Pago General
