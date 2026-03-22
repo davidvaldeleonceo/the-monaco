@@ -710,14 +710,6 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       // Insert new transactions (one per abono)
       await supabase.from('transacciones').insert(transacciones)
 
-      // Anulate absorbed advance pagos (keep their transactions intact)
-      if (formData.pagos_absorbidos?.length > 0) {
-        await supabase
-          .from('pago_trabajadores')
-          .update({ anulado: true })
-          .in('id', formData.pagos_absorbidos)
-      }
-
     } else {
       if (formData.fecha_desde && formData.fecha_hasta) {
         const { data: existentes } = await supabase
@@ -737,14 +729,6 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
           toast.error('Ya existe un pago para este trabajador en ese período. No se puede pagar dos veces el mismo rango.')
           return
         }
-      }
-
-      // Anulate absorbed advance pagos (keep their transactions intact)
-      if (formData.pagos_absorbidos?.length > 0) {
-        await supabase
-          .from('pago_trabajadores')
-          .update({ anulado: true })
-          .in('id', formData.pagos_absorbidos)
       }
 
       const { descuentos_detalle, abonos_detalle, adelantos_previos, pagos_absorbidos, ...formDataRest } = formData
@@ -865,20 +849,27 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
           total_a_pagar: 0,
           total_ganado: 0,
           total_descuentos: 0,
-          saldo: 0
+          saldo: 0,
+          _periodos: {}
         }
       }
       porTrabajador[lid].pagos.push(p)
       const valorPagado = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
       porTrabajador[lid].total_pagado += valorPagado
-      porTrabajador[lid].total_a_pagar += Number(p.total_pagar || 0)
-      porTrabajador[lid].total_ganado += Number(p.total || 0)
       porTrabajador[lid].total_descuentos += Number(p.descuentos || 0)
+      // Deduplicate total (service earnings) by period to avoid double-counting
+      const periodoKey = `${p.fecha_desde || ''}|${p.fecha_hasta || ''}`
+      if (!porTrabajador[lid]._periodos[periodoKey]) {
+        porTrabajador[lid]._periodos[periodoKey] = true
+        porTrabajador[lid].total_ganado += Number(p.total || 0)
+      }
     })
 
     Object.values(porTrabajador).forEach(w => {
-      w.saldo = w.total_pagado - w.total_a_pagar
+      w.total_a_pagar = w.total_ganado - w.total_descuentos
       w.por_pagar = Math.max(0, w.total_a_pagar - w.total_pagado)
+      w.saldo = w.total_pagado - w.total_a_pagar
+      delete w._periodos
     })
 
     return Object.values(porTrabajador).sort((a, b) => a.nombre.localeCompare(b.nombre))
@@ -1615,12 +1606,13 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
                   </td>
                   <td className={esAnulado ? '' : 'valor-positivo'}>
                     <strong>{formatMoney(pago.valor_pagado != null && Number(pago.valor_pagado) !== 0 ? pago.valor_pagado : pago.total_pagar)}</strong>
-                    {!esAnulado && pago.valor_pagado != null && Number(pago.valor_pagado) !== 0 && Number(pago.valor_pagado) < Number(pago.total_pagar) && (
-                      <span className="badge-parcial">Parcial</span>
-                    )}
-                    {!esAnulado && pago.valor_pagado != null && Number(pago.valor_pagado) > Number(pago.total_pagar) && (
-                      <span className="badge-excede">Excede</span>
-                    )}
+                    {!esAnulado && (() => {
+                      const vp = Number(pago.valor_pagado || 0)
+                      const tp = Number(pago.total_pagar || 0)
+                      if (vp > 0 && vp < tp) return <span className="badge-parcial">Parcial</span>
+                      if (vp > tp && tp > 0) return <span className="badge-excede">Completo + adicional</span>
+                      return null
+                    })()}
                   </td>
                   <td className="acciones-cell">
                     {esAnulado ? (
@@ -1666,12 +1658,13 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
                   <span className={`pago-card-total ${esAnulado ? '' : 'positivo'}`}>
                     {formatMoney(pago.valor_pagado != null && Number(pago.valor_pagado) !== 0 ? pago.valor_pagado : pago.total_pagar)}
                   </span>
-                  {!esAnulado && pago.valor_pagado != null && Number(pago.valor_pagado) !== 0 && Number(pago.valor_pagado) < Number(pago.total_pagar) && (
-                    <span className="badge-parcial">Parcial</span>
-                  )}
-                  {!esAnulado && pago.valor_pagado != null && Number(pago.valor_pagado) > Number(pago.total_pagar) && (
-                    <span className="badge-excede">Excede</span>
-                  )}
+                  {!esAnulado && (() => {
+                    const vp = Number(pago.valor_pagado || 0)
+                    const tp = Number(pago.total_pagar || 0)
+                    if (vp > 0 && vp < tp) return <span className="badge-parcial">Parcial</span>
+                    if (vp > tp && tp > 0) return <span className="badge-excede">Completo + adicional</span>
+                    return null
+                  })()}
                   {esAnulado && <span className="estado-badge inactivo">Anulado</span>}
                 </div>
               </div>
