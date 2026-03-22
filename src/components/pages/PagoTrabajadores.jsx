@@ -126,8 +126,8 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
   })
 
   useEffect(() => {
-    fetchData()
-  }, [filtroDesde, filtroHasta])
+    if (negocioId) fetchData()
+  }, [filtroDesde, filtroHasta, negocioId])
 
   // Close trabajador dropdown on click outside
   useEffect(() => {
@@ -750,6 +750,8 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       const { descuentos_detalle, abonos_detalle, adelantos_previos, pagos_absorbidos, ...formDataRest } = formData
       const { error: pagoError } = await supabase.from('pago_trabajadores').insert([{
         ...formDataRest,
+        fecha_desde: formDataRest.fecha_desde || null,
+        fecha_hasta: formDataRest.fecha_hasta || null,
         descuentos_detalle: descuentos_detalle || [],
         abonos_detalle: abonos_detalle || [],
         metodo_pago_id: metodoPagoPrincipal,
