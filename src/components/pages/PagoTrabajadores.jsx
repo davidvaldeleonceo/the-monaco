@@ -842,7 +842,8 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
         total_a_pagar: 0,
         total_ganado: 0,
         total_descuentos: 0,
-        saldo: 0
+        saldo: 0,
+        _periodos: {}
       }
     })
 
