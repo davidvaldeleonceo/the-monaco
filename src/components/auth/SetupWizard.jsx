@@ -252,7 +252,7 @@ export default function SetupWizard() {
       return (
         <>
           <Sparkles size={56} className="setup-icon" />
-          <h1>Tu lavadero está casi listo!</h1>
+          <h1>Tu negocio está casi listo!</h1>
           <p className="subtitle">Configuremos lo esencial en menos de 2 minutos. Puedes omitir cualquier paso.</p>
           <div className="setup-actions">
             <button className="setup-btn-primary" onClick={next}>Comenzar</button>
@@ -318,7 +318,7 @@ export default function SetupWizard() {
       return (
         <>
           <button className="setup-btn-back" onClick={back}><ChevronLeft size={16} /> Volver</button>
-          <StepHeader step={1} title="Servicios de lavado" subtitle="Configura tus servicios, selecciona qué incluye cada uno y asigna el precio." />
+          <StepHeader step={1} title="Tipos de servicio" subtitle="Configura tus servicios, selecciona qué incluye cada uno y asigna el precio." />
 
           <div className="setup-lavado-list">
             {visibleLavados.map(l => {
@@ -465,7 +465,7 @@ export default function SetupWizard() {
       return (
         <>
           <button className="setup-btn-back" onClick={back}><ChevronLeft size={16} /> Volver</button>
-          <StepHeader step={3} title="Trabajadores" subtitle="Agrega quiénes trabajan en tu lavadero. Podrás configurar sus pagos después en Configuración." />
+          <StepHeader step={3} title="Trabajadores" subtitle="Agrega quiénes trabajan en tu negocio. Podrás configurar sus pagos después en Configuración." />
 
           <div className="setup-chips">
             {localTrabajadores.map(t => (
@@ -534,7 +534,7 @@ export default function SetupWizard() {
       return (
         <>
           <button className="setup-btn-back" onClick={back}><ChevronLeft size={16} /> Volver</button>
-          <StepHeader step={4} title="Servicios adicionales" subtitle="Estos precios aplican solo cuando el servicio no está incluido en el lavado. Puedes modificarlos después en Configuración." />
+          <StepHeader step={4} title="Servicios adicionales" subtitle="Estos precios aplican solo cuando el servicio no está incluido en el tipo de servicio principal. Puedes modificarlos después en Configuración." />
 
           <div className="setup-list">
             {visibleAdicionales.map(a => {
@@ -739,10 +739,10 @@ export default function SetupWizard() {
         <>
           <CircleCheck size={56} className="setup-icon setup-icon-success" />
           <h1>Todo listo!</h1>
-          <p className="subtitle">Tu lavadero {negocioNombre} está configurado.</p>
+          <p className="subtitle">Tu negocio {negocioNombre} está configurado.</p>
 
           <div className="setup-summary">
-            <div className="setup-summary-item"><CircleCheck size={18} /> {lavadosCount} servicios de lavado</div>
+            <div className="setup-summary-item"><CircleCheck size={18} /> {lavadosCount} tipos de servicio</div>
             <div className="setup-summary-item"><CircleCheck size={18} /> {metodosCount} métodos de pago</div>
             <div className="setup-summary-item"><CircleCheck size={18} /> {trabajadoresCount} trabajador{trabajadoresCount !== 1 ? 'es' : ''}</div>
             <div className="setup-summary-item"><CircleCheck size={18} /> {adicionalesCount} servicios adicionales</div>
@@ -756,7 +756,7 @@ export default function SetupWizard() {
           <div className="setup-actions">
             <button className="setup-btn-back" onClick={back}><ChevronLeft size={16} /> Volver</button>
             <button className="setup-btn-primary" onClick={saveAll} disabled={saving}>
-              {saving ? 'Guardando...' : 'Ir a mi lavadero'}
+              {saving ? 'Guardando...' : 'Ir a mi negocio'}
             </button>
           </div>
         </>

@@ -164,14 +164,14 @@ export default function AdminDashboard() {
           <div className="admin-kpi-icon"><Droplets size={20} /></div>
           <div className="admin-kpi-info">
             <span className="admin-kpi-value">{overview?.lavadas_total}</span>
-            <span className="admin-kpi-label">Lavadas totales</span>
+            <span className="admin-kpi-label">Servicios totales</span>
           </div>
         </div>
         <div className="admin-kpi-card">
           <div className="admin-kpi-icon"><TrendingUp size={20} /></div>
           <div className="admin-kpi-info">
             <span className="admin-kpi-value">{overview?.lavadas_7d}</span>
-            <span className="admin-kpi-label">Lavadas (7d)</span>
+            <span className="admin-kpi-label">Servicios (7d)</span>
           </div>
         </div>
         <div className="admin-kpi-card">
@@ -231,7 +231,7 @@ export default function AdminDashboard() {
               contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8 }}
               labelFormatter={d => new Date(d + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}
             />
-            <Bar dataKey="lavadas" fill="var(--accent-blue)" radius={[4, 4, 0, 0]} name="Lavadas" />
+            <Bar dataKey="lavadas" fill="var(--accent-blue)" radius={[4, 4, 0, 0]} name="Servicios" />
             <Bar dataKey="negocios_activos" fill="var(--accent-green)" radius={[4, 4, 0, 0]} name="Negocios activos" />
           </BarChart>
         </ResponsiveContainer>
@@ -255,7 +255,7 @@ export default function AdminDashboard() {
                 <th>Plan</th>
                 <th>Trial hasta</th>
                 <th>Suscripcion hasta</th>
-                <th>Lavadas</th>
+                <th>Servicios</th>
                 <th>7d</th>
                 <th>Clientes</th>
                 <th>Ultima actividad</th>

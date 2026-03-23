@@ -1150,7 +1150,7 @@ export default function Reportes() {
             <div className="dash-v2-col">
               {/* Lavadas */}
               <div className={`dash-v2-card ${expanded === 'lavadas' ? 'expanded' : ''}`} onClick={() => toggle('lavadas')}>
-                <span className="dash-v2-card-title">Lavadas</span>
+                <span className="dash-v2-card-title">Servicios</span>
                 <span className="dash-v2-big-number">{data.kpiStats.totalLavadas}</span>
                 {expanded === 'lavadas' && (
                   <div className="dash-v2-expand">
@@ -1179,7 +1179,7 @@ export default function Reportes() {
                   </div>
                   <div className="dash-v2-tiempo-divider" />
                   <div className="dash-v2-tiempo-item">
-                    <span className="dash-v2-tiempo-label">Lavado</span>
+                    <span className="dash-v2-tiempo-label">En proceso</span>
                     <span className="dash-v2-tiempo-val">{formatSeg(data.kpiStats.tiempoLavado.promedio)}</span>
                   </div>
                 </div>
@@ -1324,7 +1324,7 @@ export default function Reportes() {
               <div className="chart-card">
                 <h4 className="chart-title">Rendimiento por lavador</h4>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={data.rendLavadores}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="nombre" stroke={CHART_THEME.axis} fontSize={11} /><YAxis stroke={CHART_THEME.axis} fontSize={12} /><Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload; return <div className="chart-tooltip"><p><strong>{d.nombre}</strong></p><p>Lavadas: {d.cantidad}</p><p>Total: {fmt(d.total)}</p></div> }} /><Bar dataKey="cantidad" name="Lavadas" radius={[4,4,0,0]}>{data.rendLavadores.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]} />)}</Bar></BarChart>
+                  <BarChart data={data.rendLavadores}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="nombre" stroke={CHART_THEME.axis} fontSize={11} /><YAxis stroke={CHART_THEME.axis} fontSize={12} /><Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload; return <div className="chart-tooltip"><p><strong>{d.nombre}</strong></p><p>Servicios: {d.cantidad}</p><p>Total: {fmt(d.total)}</p></div> }} /><Bar dataKey="cantidad" name="Servicios" radius={[4,4,0,0]}>{data.rendLavadores.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]} />)}</Bar></BarChart>
                 </ResponsiveContainer>
               </div>
               <div className="chart-card">
@@ -1451,7 +1451,7 @@ export default function Reportes() {
               </div>
               <div className="chart-card">
                 <h4 className="chart-title">Ranking lavadores por ingresos</h4>
-                {data.rankLavadores.length > 0 ? <ResponsiveContainer width="100%" height={300}><BarChart data={data.rankLavadores}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="nombre" stroke={CHART_THEME.axis} fontSize={11} /><YAxis stroke={CHART_THEME.axis} fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload; return <div className="chart-tooltip"><p><strong>{d.nombre}</strong></p><p>Ingresos: {fmt(d.total)}</p><p>Lavadas: {d.cantidad}</p></div> }} /><Bar dataKey="total" name="Ingresos" radius={[4,4,0,0]}>{data.rankLavadores.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]} />)}</Bar></BarChart></ResponsiveContainer> : <div className="chart-empty">Sin datos</div>}
+                {data.rankLavadores.length > 0 ? <ResponsiveContainer width="100%" height={300}><BarChart data={data.rankLavadores}><CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} /><XAxis dataKey="nombre" stroke={CHART_THEME.axis} fontSize={11} /><YAxis stroke={CHART_THEME.axis} fontSize={12} tickFormatter={fmtCorto} /><Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload; return <div className="chart-tooltip"><p><strong>{d.nombre}</strong></p><p>Ingresos: {fmt(d.total)}</p><p>Servicios: {d.cantidad}</p></div> }} /><Bar dataKey="total" name="Ingresos" radius={[4,4,0,0]}>{data.rankLavadores.map((_,i)=><Cell key={i} fill={COLORES[i%COLORES.length]} />)}</Bar></BarChart></ResponsiveContainer> : <div className="chart-empty">Sin datos</div>}
               </div>
             </div>
 

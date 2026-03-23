@@ -7070,7 +7070,7 @@ input:checked + .slider:before {
   margin: -1.5rem 0 1.2rem;
   justify-content: flex-start;
   position: relative;
-  z-index: 999;
+  z-index: 10;
 }
 .home-mobile-filters .glass-calendar-dropdown {
   position: fixed;
@@ -8282,7 +8282,7 @@ input:checked + .slider:before {
   margin: auto;
   width: fit-content;
   height: fit-content;
-  z-index: 1000;
+  z-index: 1101;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 14px;
@@ -8296,7 +8296,7 @@ input:checked + .slider:before {
 .quick-filter-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 999;
+  z-index: 1100;
   background: rgba(0, 0, 0, 0.3);
   animation: quickFilterBgIn 0.2s ease-out;
 }

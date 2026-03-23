@@ -929,8 +929,9 @@ export default function Clientes({ externalSearch } = {}) {
         return
       }
       const mensajeTexto = resolverPlantillaCliente(plantilla.texto, cliente)
+      // Open WhatsApp first (must be sync to avoid browser popup blocking)
       window.open(`https://api.whatsapp.com/send?phone=${phoneForWa}&text=${encodeURIComponent(mensajeTexto)}`, '_blank')
-      // Fire-and-forget: registrar mensaje enviado
+      // Track message — backend enforces free plan limit (10/month)
       supabase.from('mensajes_enviados').insert([{
         cliente_id: cliente.id,
         plantilla_id: plantilla.id,
@@ -939,7 +940,11 @@ export default function Clientes({ externalSearch } = {}) {
         enviado_por: userEmail || null,
         origen: 'clientes',
         negocio_id: negocioId,
-      }]).then(() => {})
+      }]).then(({ error }) => {
+        if (error?.message?.includes('PLAN_LIMIT_REACHED')) {
+          toast.error('Límite de 10 mensajes/mes alcanzado. Actualiza a PRO.')
+        }
+      })
       return
     }
     // Fallback: contacto directo
@@ -1905,7 +1910,7 @@ export default function Clientes({ externalSearch } = {}) {
                     {importResult.lavadas > 0 && (
                       <div className="import-stat stat-green">
                         <span className="import-stat-value">{importResult.lavadas}</span>
-                        <span className="import-stat-label">Lavadas</span>
+                        <span className="import-stat-label">Servicios</span>
                       </div>
                     )}
                     <div className="import-stat stat-red">

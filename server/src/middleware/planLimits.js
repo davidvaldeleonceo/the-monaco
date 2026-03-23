@@ -7,6 +7,15 @@ function computeIsPro(negocio) {
   return false
 }
 
+// Free plan limits
+const LIMITS = {
+  lavadas:            { max: 50, monthly: true },
+  clientes:           { max: 40, monthly: false },
+  pago_trabajadores:  { max: 10, monthly: true },
+  productos:          { max: 5,  monthly: false },
+  mensajes_enviados:  { max: 10, monthly: true },
+}
+
 export default async function planLimits(req, res, next) {
   try {
     if (req.method !== 'POST') return next()
@@ -17,7 +26,8 @@ export default async function planLimits(req, res, next) {
     const negocioId = req.negocioId
     if (!negocioId) return next()
 
-    if (table !== 'lavadas' && table !== 'clientes') return next()
+    const limit = LIMITS[table]
+    if (!limit) return next()
 
     const { rows } = await pool.query(
       'SELECT plan, trial_ends_at, subscription_expires_at FROM negocios WHERE id = $1',
@@ -28,34 +38,18 @@ export default async function planLimits(req, res, next) {
 
     if (computeIsPro(negocio)) return next()
 
-    if (table === 'lavadas') {
-      const { rows: countRows } = await pool.query(
-        `SELECT COUNT(*) FROM lavadas
-         WHERE negocio_id = $1
-         AND fecha >= date_trunc('month', now())`,
-        [negocioId]
-      )
-      if (parseInt(countRows[0].count) >= 5) {
-        return res.status(403).json({
-          error: 'PLAN_LIMIT_REACHED',
-          limit: 5,
-          resource: 'lavadas'
-        })
-      }
-    }
+    const dateCol = table === 'lavadas' ? 'fecha' : 'created_at'
+    const countQuery = limit.monthly
+      ? `SELECT COUNT(*) FROM "${table}" WHERE negocio_id = $1 AND ${dateCol} >= date_trunc('month', now())`
+      : `SELECT COUNT(*) FROM "${table}" WHERE negocio_id = $1`
 
-    if (table === 'clientes') {
-      const { rows: countRows } = await pool.query(
-        'SELECT COUNT(*) FROM clientes WHERE negocio_id = $1',
-        [negocioId]
-      )
-      if (parseInt(countRows[0].count) >= 10) {
-        return res.status(403).json({
-          error: 'PLAN_LIMIT_REACHED',
-          limit: 10,
-          resource: 'clientes'
-        })
-      }
+    const { rows: countRows } = await pool.query(countQuery, [negocioId])
+    if (parseInt(countRows[0].count) >= limit.max) {
+      return res.status(403).json({
+        error: 'PLAN_LIMIT_REACHED',
+        limit: limit.max,
+        resource: table
+      })
     }
 
     next()

@@ -191,8 +191,8 @@ export default function ServiceCard({
     if (!pagosOk || !allMetodosSet) errs.pagos = true
     onSetValidationErrors(errs)
     if (onValidationToast) {
-      const msg = !tipoOk ? 'Falta seleccionar tipo de lavado'
-        : !lavadorOk ? 'Falta asignar un lavador'
+      const msg = !tipoOk ? 'Falta seleccionar tipo de servicio'
+        : !lavadorOk ? 'Falta asignar un trabajador'
         : 'Revisa los pagos del servicio'
       onValidationToast(msg)
     }
@@ -201,7 +201,7 @@ export default function ServiceCard({
 
   const estadosConfig = [
     { key: 'EN ESPERA', timer: 'espera', icon: Clock, label: 'Espera' },
-    { key: 'EN LAVADO', timer: 'lavado', icon: Droplets, label: 'Lavado' },
+    { key: 'EN LAVADO', timer: 'lavado', icon: Droplets, label: 'En proceso' },
     { key: 'TERMINADO', timer: 'terminado', icon: CircleCheck, label: 'Terminado' },
     { key: 'ENTREGADO', timer: null, icon: HandCoins, label: 'Entregado' },
   ]
@@ -467,7 +467,7 @@ export default function ServiceCard({
                     title={
                       (est === 'TERMINADO' || isEntregado) && !lavadorOk ? 'Falta asignar lavador' :
                       isEntregado && !canComplete && !yaEntregado ? (
-                        !tipoOk ? 'Falta tipo de lavado' :
+                        !tipoOk ? 'Falta tipo de servicio' :
                           activePagos.length === 0 ? 'Agrega al menos un pago' :
                             !allMetodosSet ? 'Todos los pagos necesitan método' :
                               !pagosOk ? (diff > 0 ? `Pagos exceden ${formatMoney(diff)}` : `Faltan ${formatMoney(Math.abs(diff))}`) : ''
@@ -503,7 +503,7 @@ export default function ServiceCard({
 
             <div className="lavada-card-tipo-adic">
               <div className="lavada-card-field">
-                <label style={{ margin: '0.5rem 1rem 1.2rem' }}>Tipo de lavado</label>
+                <label style={{ margin: '0.5rem 1rem 1.2rem' }}>Tipo de servicio</label>
                 <select
                   value={lavada.tipo_lavado_id || ''}
                   onChange={(e) => onTipoLavadoChange(lavada.id, e.target.value)}
@@ -543,7 +543,7 @@ export default function ServiceCard({
 
             <div className="lavada-card-row">
               <div className="lavada-card-field full">
-                <label style={{ margin: '0.5rem 1rem' }}>Lavador</label>
+                <label style={{ margin: '0.5rem 1rem' }}>Trabajador</label>
                 <select
                   ref={lavadorSelectRef}
                   value={lavada.lavador_id || ''}

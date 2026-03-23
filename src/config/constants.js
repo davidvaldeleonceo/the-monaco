@@ -32,7 +32,7 @@ export const CHART_THEME = {
 
 export const ESTADO_LABELS = {
   'EN ESPERA': 'Espera',
-  'EN LAVADO': 'Lavando',
+  'EN LAVADO': 'En proceso',
   'TERMINADO': 'Terminado',
   'ENTREGADO': 'Entregado',
 }

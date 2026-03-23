@@ -227,16 +227,28 @@ router.get('/status', auth, async (req, res) => {
 
     // Include limits if free
     if (!isPro) {
-      const [lavadaCount, clienteCount] = await Promise.all([
+      const [lavadaCount, clienteCount, pagoTrabCount, productoCount, mensajeCount] = await Promise.all([
         pool.query(
           `SELECT COUNT(*) FROM lavadas WHERE negocio_id = $1 AND fecha >= date_trunc('month', now())`,
           [negocioId]
         ),
         pool.query('SELECT COUNT(*) FROM clientes WHERE negocio_id = $1', [negocioId]),
+        pool.query(
+          `SELECT COUNT(*) FROM pago_trabajadores WHERE negocio_id = $1 AND created_at >= date_trunc('month', now())`,
+          [negocioId]
+        ),
+        pool.query('SELECT COUNT(*) FROM productos WHERE negocio_id = $1', [negocioId]),
+        pool.query(
+          `SELECT COUNT(*) FROM mensajes_enviados WHERE negocio_id = $1 AND created_at >= date_trunc('month', now())`,
+          [negocioId]
+        ),
       ])
       result.limits = {
-        lavadas: { used: parseInt(lavadaCount.rows[0].count), max: 5 },
-        clientes: { used: parseInt(clienteCount.rows[0].count), max: 10 },
+        lavadas: { used: parseInt(lavadaCount.rows[0].count), max: 50 },
+        clientes: { used: parseInt(clienteCount.rows[0].count), max: 40 },
+        pago_trabajadores: { used: parseInt(pagoTrabCount.rows[0].count), max: 10 },
+        productos: { used: parseInt(productoCount.rows[0].count), max: 5 },
+        mensajes_enviados: { used: parseInt(mensajeCount.rows[0].count), max: 10 },
       }
     }
 

@@ -69,7 +69,7 @@ export default function Onboarding() {
               type="text"
               value={nombreNegocio}
               onChange={(e) => setNombreNegocio(e.target.value)}
-              placeholder="Mi Lavadero"
+              placeholder="Mi Negocio"
               autoComplete="off"
               required
             />

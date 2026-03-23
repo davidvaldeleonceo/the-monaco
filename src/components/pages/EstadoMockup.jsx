@@ -3,7 +3,7 @@ import { Clock, Droplets, CircleCheck, HandCoins } from 'lucide-react'
 
 const estados = [
   { label: 'Espera', icon: Clock, timer: '00:12', className: 'espera' },
-  { label: 'Lavando', icon: Droplets, timer: '05:34', className: 'lavando' },
+  { label: 'En proceso', icon: Droplets, timer: '05:34', className: 'lavando' },
   { label: 'Terminado', icon: CircleCheck, timer: '08:21', className: 'terminado' },
   { label: 'Entregado', icon: HandCoins, timer: null, className: 'entregado' },
 ]

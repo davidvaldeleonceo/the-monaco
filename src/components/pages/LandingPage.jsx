@@ -21,8 +21,8 @@ const steps = [
   {
     icon: ClipboardList,
     number: '1',
-    title: 'Registra lavadas',
-    desc: 'Tu trabajador registra cada moto con un tap. Tú ves todo en tiempo real desde cualquier lugar.',
+    title: 'Registra servicios',
+    desc: 'Tu trabajador registra cada servicio con un tap. Tú ves todo en tiempo real desde cualquier lugar.',
   },
   {
     icon: Eye,
@@ -42,9 +42,9 @@ const features = [
   {
     icon: Timer,
     title: 'Turnos en tiempo real',
-    desc: 'Ve qué motos están en espera, lavándose o listas para entregar. Desde tu celular, donde estés.',
-    details: ['Estado de cada moto en vivo', 'Historial completo de turnos', 'Acceso desde cualquier dispositivo'],
-    placeholder: 'Screenshot del Home mostrando turnos activos con estados: en espera (amarillo), lavando (azul), lista (verde)',
+    desc: 'Ve qué vehículos están en espera, en proceso o listos para entregar. Desde tu celular, donde estés.',
+    details: ['Estado de cada servicio en vivo', 'Historial completo de turnos', 'Acceso desde cualquier dispositivo'],
+    placeholder: 'Screenshot del Home mostrando turnos activos con estados: en espera (amarillo), en proceso (azul), lista (verde)',
   },
   {
     icon: DollarSign,
@@ -74,7 +74,7 @@ const planFeatures = [
 
 const testimonials = [
   {
-    quote: 'Antes si no iba al lavadero un día, nadie sabía qué cobrar ni a quién. Ahora todo queda registrado solo.',
+    quote: 'Antes si no iba al negocio un día, nadie sabía qué cobrar ni a quién. Ahora todo queda registrado solo.',
     name: 'Carlos M.',
     city: 'Medellín',
     rating: 5,
@@ -98,7 +98,7 @@ const testimonials = [
     rating: 5,
   },
   {
-    quote: 'Mis clientes con membresía vuelven solos. El lavadero se paga solo desde que uso Monaco.',
+    quote: 'Mis clientes con membresía vuelven solos. El negocio se paga solo desde que uso Monaco.',
     name: 'Sofía T.',
     city: 'Bucaramanga',
     rating: 5,
@@ -207,7 +207,7 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="landing-hero">
         <div className="landing-hero-content">
-          <h1>Tu lavadero funcionando bien, estés o no estés</h1>
+          <h1>Tu negocio funcionando bien, estés o no estés</h1>
           <p className="landing-hero-desc">Controla turnos, pagos y clientes desde el celular. Deja de ser el único que sabe cómo funciona tu negocio.</p>
           <img src="/img/hero-phone-mobile.png" alt="Monaco PRO en acción" className="landing-hero-img-mobile" />
           <div className="landing-hero-buttons">
@@ -229,7 +229,7 @@ export default function LandingPage() {
       <section className="landing-proof">
         <div className="landing-proof-item">
           <TrendingUp size={20} />
-          <span><strong>50+</strong> lavaderos en Colombia</span>
+          <span><strong>50+</strong> negocios en Colombia</span>
         </div>
         <div className="landing-proof-divider" />
         <div className="landing-proof-item">
@@ -246,7 +246,7 @@ export default function LandingPage() {
       {/* How it Works */}
       <section className="landing-steps" id="como-funciona">
         <h2>Cómo funciona</h2>
-        <p className="landing-section-subtitle">En 3 pasos tu lavadero queda organizado</p>
+        <p className="landing-section-subtitle">En 3 pasos tu negocio queda organizado</p>
         <div className="landing-steps-grid">
           <div className="landing-step-card landing-step-card--carousel">
             <div className="landing-step-carousel landing-step-carousel--5">
@@ -283,7 +283,7 @@ export default function LandingPage() {
 
       {/* Features Showcase */}
       <section className="landing-showcases" id="funciones">
-        <h2>Todo lo que necesita tu lavadero</h2>
+        <h2>Todo lo que necesita tu negocio</h2>
         <p className="landing-section-subtitle">Las herramientas que te permiten manejar tu negocio sin estar ahí</p>
         {features.map((f, i) => (
           <div key={f.title} className={`landing-showcase ${i % 2 === 1 ? 'landing-showcase-reverse' : ''}`}>
@@ -351,8 +351,8 @@ export default function LandingPage() {
 
       {/* Testimonials */}
       <section className="landing-testimonials" id="testimonios">
-        <h2>Lavaderos que ya usan Monaco PRO</h2>
-        <p className="landing-section-subtitle">Dueños de lavaderos en Colombia que dejaron el cuaderno y las llamadas</p>
+        <h2>Negocios que ya usan Monaco PRO</h2>
+        <p className="landing-section-subtitle">Dueños de negocios en Colombia que dejaron el cuaderno y las llamadas</p>
         <div className="landing-testimonials-grid">
           {testimonials.map((t) => (
             <div key={t.name} className="landing-testimonial-card">
@@ -370,7 +370,7 @@ export default function LandingPage() {
 
       {/* CTA Final */}
       <section className="landing-cta-final">
-        <h2>Empieza a controlar tu lavadero hoy</h2>
+        <h2>Empieza a controlar tu negocio hoy</h2>
         <p>Registra tu negocio en menos de 2 minutos. Sin tarjeta de crédito.</p>
         <div className="landing-hero-buttons">
           <Link to="/registro" className="landing-cta-primary">
@@ -390,7 +390,7 @@ export default function LandingPage() {
               <span className="landing-logo-text">monaco</span>
               <span className="landing-logo-badge">PRO</span>
             </div>
-            <p>El sistema para lavaderos que funciona sin ti.</p>
+            <p>El sistema para tu negocio que funciona sin ti.</p>
           </div>
           <div className="landing-footer-links">
             <a href="https://wa.me/573144016349" target="_blank" rel="noopener noreferrer">

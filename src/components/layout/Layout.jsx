@@ -23,7 +23,7 @@ import {
 
 const MobileSettings = lazy(() => import('./MobileSettings'))
 
-const PRO_ROUTES = ['/pagos']
+const PRO_ROUTES = []
 
 const truncName = (name) => {
   if (!name) return 'monaco'
@@ -208,7 +208,7 @@ export default function Layout({ user }) {
         )}
         {planStatus === 'free' && isAdmin && (
           <div className="plan-banner plan-banner--free">
-            Estás en el plan gratuito (50 lavadas/mes, 30 clientes).
+            Estás en el plan gratuito (50 servicios/mes, 40 clientes).
             <button className="plan-banner-btn" onClick={() => setShowUpgradeModal(true)}>Actualizar a PRO</button>
           </div>
         )}

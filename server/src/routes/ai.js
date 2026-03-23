@@ -118,7 +118,7 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
     formData.append('file', new Blob([req.file.buffer], { type: req.file.mimetype }), 'audio.webm')
     formData.append('model', 'whisper-1')
     formData.append('language', 'es')
-    formData.append('prompt', 'Lavadero de motos, lavadas, clientes, placa, sencillo, completo, premium, ingresos, trabajadores.')
+    formData.append('prompt', 'Servicios de vehículos, lavado, taller, clientes, placa, sencillo, completo, premium, ingresos, trabajadores.')
 
     const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',

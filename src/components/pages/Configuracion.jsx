@@ -74,7 +74,7 @@ export default function Configuracion() {
     { id: 'membresias', label: 'Tipos de Cliente', table: 'tipos_membresia' },
     { id: 'lavados', label: 'Tipos de Servicio', table: 'tipos_lavado' },
     { id: 'metodos', label: 'Métodos de Pago', table: 'metodos_pago' },
-    { id: 'lavadores', label: 'Lavadores', table: 'lavadores' },
+    { id: 'lavadores', label: 'Trabajadores', table: 'lavadores' },
     { id: 'productos', label: 'Productos', table: 'productos' },
     { id: 'mensajes', label: 'Mensajes', table: 'plantillas_mensaje' },
     { id: 'cat_ingresos', label: 'Cat. Ingresos', table: 'categorias_transaccion' },
@@ -950,7 +950,7 @@ export default function Configuracion() {
                     </div>
                   )}
                   <div className="cliente-card-row">
-                    <span className="cliente-card-label">Lavada Base</span>
+                    <span className="cliente-card-label">Servicio Base</span>
                     <label className="switch" onClick={e => e.stopPropagation()}>
                       <input type="checkbox" checked={!!item.es_base} onChange={() => handleToggleBase(item)} />
                       <span className="slider"></span>
@@ -1155,7 +1155,7 @@ export default function Configuracion() {
             <input type="number" value={numVal(formObj.pago_sueldo_base)} onChange={changeHandler('pago_sueldo_base')} />
           </div>
           <div className="form-group">
-            <label>Pago por Lavada</label>
+            <label>Pago por Servicio</label>
             <input type="number" value={numVal(formObj.pago_por_lavada)} onChange={changeHandler('pago_por_lavada')} />
           </div>
           <div className="form-group">
@@ -1370,7 +1370,7 @@ export default function Configuracion() {
               <label><input type="checkbox" checked={formData.activo} onChange={(e) => setFormData({ ...formData, activo: e.target.checked })} /> Activo</label>
             </div>
             <div className="form-group checkbox-group">
-              <label><input type="checkbox" checked={!!formData.es_base} onChange={(e) => setFormData({ ...formData, es_base: e.target.checked })} /> Lavada base (para cálculo de pago %)</label>
+              <label><input type="checkbox" checked={!!formData.es_base} onChange={(e) => setFormData({ ...formData, es_base: e.target.checked })} /> Servicio base (para cálculo de pago %)</label>
             </div>
           </>
         )
@@ -1836,7 +1836,7 @@ export default function Configuracion() {
     ]
 
     const proFeatures = [
-      { label: 'Lavadas ilimitadas', included: true },
+      { label: 'Servicios ilimitados', included: true },
       { label: 'Clientes ilimitados', included: true },
       { label: 'Pago de trabajadores ilimitado', included: true },
       { label: 'Productos ilimitados', included: true },

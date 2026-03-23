@@ -528,7 +528,7 @@ export default function CheckoutModal({ period, onClose, initialCheckoutId, clai
                   type="text"
                   value={regNombreNegocio}
                   onChange={e => setRegNombreNegocio(e.target.value)}
-                  placeholder="Mi Lavadero"
+                  placeholder="Mi Negocio"
                   required
                 />
               </div>

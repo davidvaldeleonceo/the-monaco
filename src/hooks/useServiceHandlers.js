@@ -349,7 +349,7 @@ export function useServiceHandlers() {
     return texto.replace(/\{(\w+)\}/g, (match, key) => variables[key] ?? match)
   }
 
-  const enviarWhatsApp = async (lavada, { plantillaId, negocioNombre, userEmail, origen } = {}) => {
+  const enviarWhatsApp = (lavada, { plantillaId, negocioNombre, userEmail, origen } = {}) => {
     const cliente = clientes.find(c => c.id == lavada.cliente_id)
     if (!cliente?.telefono) {
       toast.info('El cliente no tiene número de teléfono registrado')
@@ -371,8 +371,11 @@ export function useServiceHandlers() {
 
     const mensajeTexto = resolverPlantilla(plantilla.texto, cliente, lavada, negocioNombre)
 
-    // Try to register first — backend enforces free plan limit (10/month)
-    const { error } = await supabase.from('mensajes_enviados').insert([{
+    // Open WhatsApp first (must be sync to avoid browser popup blocking)
+    window.open(`https://api.whatsapp.com/send?phone=${phoneCode}${telefono}&text=${encodeURIComponent(mensajeTexto)}`, '_blank')
+
+    // Track message — backend enforces free plan limit (10/month)
+    supabase.from('mensajes_enviados').insert([{
       cliente_id: cliente.id,
       plantilla_id: plantilla.id,
       plantilla_nombre: plantilla.nombre,
@@ -380,14 +383,11 @@ export function useServiceHandlers() {
       enviado_por: userEmail || null,
       origen: origen || 'servicios',
       negocio_id: negocioId,
-    }])
-
-    if (error?.message?.includes('PLAN_LIMIT_REACHED')) {
-      toast.error('Has alcanzado el límite de 10 mensajes este mes. Actualiza a PRO para enviar más.')
-      return
-    }
-
-    window.open(`https://api.whatsapp.com/send?phone=${phoneCode}${telefono}&text=${encodeURIComponent(mensajeTexto)}`, '_blank')
+    }]).then(({ error }) => {
+      if (error?.message?.includes('PLAN_LIMIT_REACHED')) {
+        toast.error('Has alcanzado el límite de 10 mensajes este mes. Actualiza a PRO para enviar más.')
+      }
+    })
   }
 
   return {

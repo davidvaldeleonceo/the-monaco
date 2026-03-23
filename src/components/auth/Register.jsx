@@ -137,7 +137,7 @@ export default function Register() {
               type="text"
               value={nombreNegocio}
               onChange={(e) => setNombreNegocio(e.target.value)}
-              placeholder="Mi Lavadero"
+              placeholder="Mi Negocio"
               required
             />
           </div>

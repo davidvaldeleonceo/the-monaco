@@ -9,7 +9,7 @@ import { ThemeProvider } from './components/context/ThemeContext'
 import { MoneyVisibilityProvider } from './components/context/MoneyVisibilityContext'
 import { ToastProvider } from './components/layout/Toast'
 import RoleGuard from './components/guards/RoleGuard'
-import PlanGuard from './components/guards/PlanGuard'
+// PlanGuard removed — free plan now uses backend limits instead of full-page blocks
 import { TourProvider } from './components/layout/AppTour'
 import './App.css'
 
@@ -74,7 +74,7 @@ function AuthenticatedApp({ session }) {
           <Route path="/reportes" element={<Navigate to="/dashboard" replace />} />
           <Route path="/lavadas" element={<RoleGuard path="/lavadas"><Lavadas /></RoleGuard>} />
           <Route path="/clientes" element={<RoleGuard path="/clientes"><MobileRedirect to="/home?tab=clientes"><Clientes /></MobileRedirect></RoleGuard>} />
-          <Route path="/pagos" element={<RoleGuard path="/pagos"><PlanGuard feature="Pago de Trabajadores"><MobileRedirect to="/home?tab=trabajadores"><PagoTrabajadores /></MobileRedirect></PlanGuard></RoleGuard>} />
+          <Route path="/pagos" element={<RoleGuard path="/pagos"><MobileRedirect to="/home?tab=trabajadores"><PagoTrabajadores /></MobileRedirect></RoleGuard>} />
           <Route path="/cuenta" element={<RoleGuard path="/cuenta"><Configuracion /></RoleGuard>} />
           <Route path="/admin" element={<RoleGuard path="/admin"><AdminDashboard /></RoleGuard>} />
         </Route>

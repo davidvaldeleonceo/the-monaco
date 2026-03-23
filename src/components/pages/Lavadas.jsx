@@ -317,7 +317,7 @@ export default function Lavadas() {
         if (!tipo) {
           errors.push({
             fila,
-            problema: `Tipo de lavado "${tipoNombre}" no existe`,
+            problema: `Tipo de servicio "${tipoNombre}" no existe`,
             solucion: `Usa uno de: ${tiposLavado.map(t => t.nombre).join(', ')}`
           })
           return
@@ -630,7 +630,7 @@ export default function Lavadas() {
             onChange={(opt) => setFiltroLavador(opt ? opt.value : '')}
             options={lavadores.map(l => ({ value: l.id, label: l.nombre, activo: l.activo }))}
             isClearable
-            placeholder="Lavador"
+            placeholder="Trabajador"
             formatOptionLabel={(opt) => (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: opt.activo !== false ? '#006048' : '#8090A8', flexShrink: 0 }} />

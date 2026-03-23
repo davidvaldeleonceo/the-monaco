@@ -599,7 +599,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
             </div>
 
             <div className="form-group">
-              <label>Tipo de Lavado</label>
+              <label>Tipo de Servicio</label>
               <select
                 value={formData.tipo_lavado_id}
                 onChange={(e) => handleTipoLavadoChange(e.target.value)}
@@ -612,7 +612,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
             </div>
 
             <div className="form-group">
-              <label>Lavador</label>
+              <label>Trabajador</label>
               <select
                 value={formData.lavador_id}
                 onChange={(e) => setFormData({ ...formData, lavador_id: e.target.value })}

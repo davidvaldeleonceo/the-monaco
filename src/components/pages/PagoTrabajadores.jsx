@@ -43,7 +43,7 @@ function generarRangoDias(desdeStr, hastaStr) {
   return dias
 }
 
-export default function PagoTrabajadores({ externalSearch } = {}) {
+export default function PagoTrabajadores({ externalSearch, externalDesde, externalHasta } = {}) {
   const { metodosPago, negocioId, tiposLavado } = useData()
   const { userEmail } = useTenant()
   const toast = useToast()
@@ -95,11 +95,13 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
     el.scrollBy({ left: dir * 240, behavior: 'smooth' })
   }
 
-  // Filtros de fecha (igual que Balance)
+  // Filtros de fecha — use external filters from Home when embedded
   const hoyInit = new Date()
   hoyInit.setHours(0, 0, 0, 0)
-  const [filtroDesde, setFiltroDesde] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth(), 1))
-  const [filtroHasta, setFiltroHasta] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth() + 1, 0))
+  const [_filtroDesde, setFiltroDesde] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth(), 1))
+  const [_filtroHasta, setFiltroHasta] = useState(new Date(hoyInit.getFullYear(), hoyInit.getMonth() + 1, 0))
+  const filtroDesde = externalDesde !== undefined ? externalDesde : _filtroDesde
+  const filtroHasta = externalHasta !== undefined ? externalHasta : _filtroHasta
   const [filtroRapido, setFiltroRapido] = useState('mes')
   const [searchQuery, setSearchQuery] = useState('')
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
@@ -351,11 +353,19 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       detalleInfo.suma_valor_lavadas = sumaValor
       detalleInfo.porcentaje = lavador.pago_porcentaje
     } else if (tipo === 'sueldo_fijo') {
-      const sueldo = hayDiasNuevos ? Number(lavador.pago_sueldo_base || 0) : 0
+      // Count unique days worked from lavadas
+      const diasTrabajados = new Set(lavadas.map(l => {
+        if (!l.fecha) return null
+        const f = typeof l.fecha === 'string' ? l.fecha : new Date(l.fecha).toISOString()
+        return f.split('T')[0]
+      }).filter(Boolean)).size
+      const sueldoBase = Number(lavador.pago_sueldo_base || 0)
+      const sueldo = diasTrabajados * sueldoBase
       const porLavada = numLavadas * Number(lavador.pago_por_lavada || 0)
       const porAdicional = numAdicionales * Number(lavador.pago_por_adicional || 0)
       total = sueldo + porLavada + porAdicional
-      detalleInfo.sueldo_base = hayDiasNuevos ? lavador.pago_sueldo_base : 0
+      detalleInfo.dias_trabajados = diasTrabajados
+      detalleInfo.sueldo_base = lavador.pago_sueldo_base
       detalleInfo.pago_por_lavada = lavador.pago_por_lavada
       detalleInfo.pago_por_adicional = lavador.pago_por_adicional
     } else if (tipo === 'porcentaje_lavada') {
@@ -849,7 +859,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
     fetchData()
   }
 
-  // Derive worker cards: earnings from real lavadas, payments from pago_trabajadores
+  // Derive worker cards: earnings ALWAYS from real lavadas, payments from pago records
   const workerCards = useMemo(() => {
     const porTrabajador = {}
 
@@ -865,7 +875,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       }
     })
 
-    // Calculate real earnings from lavadas per worker
+    // Calculate real earnings from lavadas per worker (always source of truth)
     const lavadasPorWorker = {}
     lavadasAll.forEach(l => {
       const lid = l.lavador_id
@@ -891,7 +901,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       porTrabajador[lid].total_ganado = result.total
     })
 
-    // Sum payments
+    // Sum payments from pago records
     pagosActivos.forEach(p => {
       const lid = p.lavador_id
       if (!porTrabajador[lid]) {
@@ -931,9 +941,9 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
     return pagos.filter(p => (p.lavador?.nombre || '').toLowerCase().includes(effectiveSearch))
   }, [pagos, effectiveSearch])
 
-  // Fetch ALL pagos for a worker (no date filter) and open detail modal
+  // Fetch pagos for a worker (with date filter) and open detail modal
   const handleWorkerClick = async (workerCard) => {
-    const { data: allPagos } = await supabase
+    let query = supabase
       .from('pago_trabajadores')
       .select(`
         *,
@@ -942,35 +952,34 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
       .eq('lavador_id', workerCard.lavador_id)
       .order('fecha', { ascending: true })
 
+    if (filtroDesde) {
+      query = query.gte('fecha', fechaLocalStr(filtroDesde))
+    }
+    if (filtroHasta) {
+      const hasta = new Date(filtroHasta)
+      hasta.setDate(hasta.getDate() + 1)
+      query = query.lt('fecha', fechaLocalStr(hasta))
+    }
+
+    const { data: allPagos } = await query
+
     const pagosData = allPagos || []
     const activos = pagosData.filter(p => !p.anulado)
     const anulados = pagosData.filter(p => p.anulado)
 
-    let total_pagado = 0
-    let total_descuentos = 0
-
-    activos.forEach(p => {
-      const valorPagado = p.valor_pagado != null && Number(p.valor_pagado) !== 0 ? Number(p.valor_pagado) : Number(p.total_pagar || 0)
-      total_pagado += valorPagado
-      total_descuentos += Number(p.descuentos || 0)
-    })
-
-    // Use earnings from real lavadas (workerCard) instead of summing pago records
-    const total_ganado = workerCard.total_ganado || 0
-    const total_a_pagar = total_ganado - total_descuentos
-
+    // Use workerCard values (already calculated from real lavadas + filtered pagos)
     setSelectedWorker({
       lavador_id: workerCard.lavador_id,
       nombre: workerCard.nombre,
-      tipo_pago: pagosData[0]?.lavador?.tipo_pago || '',
-      telefono: pagosData[0]?.lavador?.telefono || '',
+      tipo_pago: pagosData[0]?.lavador?.tipo_pago || lavadores.find(l => l.id === workerCard.lavador_id)?.tipo_pago || '',
+      telefono: pagosData[0]?.lavador?.telefono || lavadores.find(l => l.id === workerCard.lavador_id)?.telefono || '',
       pagos: activos,
       pagos_anulados: anulados,
-      total_pagado,
-      total_ganado,
-      total_a_pagar,
-      total_descuentos,
-      saldo: total_pagado - total_a_pagar
+      total_pagado: workerCard.total_pagado,
+      total_ganado: workerCard.total_ganado,
+      total_a_pagar: workerCard.total_a_pagar,
+      total_descuentos: workerCard.total_descuentos,
+      saldo: workerCard.saldo
     })
   }
 
@@ -1208,7 +1217,7 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
             )}
             {lavador?.tipo_pago === 'sueldo_fijo' && (
               <>
-                <p className="pago-resumen-linea">Sueldo base: <strong>{formatMoney(lavador.pago_sueldo_base || 0)}</strong></p>
+                <p className="pago-resumen-linea">Sueldo base: {formData.detalle?.dias_trabajados || 1} día{(formData.detalle?.dias_trabajados || 1) > 1 ? 's' : ''} x <strong>{formatMoney(lavador.pago_sueldo_base || 0)}</strong></p>
                 <p className="pago-resumen-linea">+ {formData.lavadas_cantidad} servicios x {formatMoney(lavador.pago_por_lavada || 0)}</p>
                 <p className="pago-resumen-linea">+ {formData.adicionales_cantidad} adicionales x {formatMoney(lavador.pago_por_adicional || 0)}</p>
               </>
@@ -1595,17 +1604,17 @@ export default function PagoTrabajadores({ externalSearch } = {}) {
                     <span className="historial-stat-value" style={{ color: w.por_pagar > 0 ? 'var(--accent-red)' : undefined }}>{formatMoney(w.por_pagar)}</span>
                   </div>
                 </div>
-                {w.total_pagado > 0 && w.saldo > 0 && (
-                  <div className="historial-worker-saldo saldo-favor">
-                    <span>De más: </span><strong>{formatMoney(w.saldo)}</strong>
+                {w.por_pagar > 0 && w.total_pagado > 0 && (
+                  <div className="historial-worker-saldo saldo-pendiente">
+                    <span>Pagado: </span><strong>{formatMoney(w.total_pagado)}</strong>
                   </div>
                 )}
-                {w.total_pagado > 0 && w.saldo <= 0 && w.por_pagar === 0 && (
+                {w.por_pagar === 0 && w.total_ganado > 0 && (
                   <div className="historial-worker-saldo saldo-favor">
                     <span>Al día</span>
                   </div>
                 )}
-                {w.total_pagado === 0 && w.por_pagar === 0 && w.total_ganado === 0 && (
+                {w.total_ganado === 0 && w.total_pagado === 0 && (
                   <div className="historial-worker-saldo saldo-favor">
                     <span>Sin servicios</span>
                   </div>

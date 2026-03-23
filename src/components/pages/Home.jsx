@@ -17,7 +17,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, C
 import { ESTADO_LABELS, ESTADO_CLASSES } from '../../config/constants'
 import { Plus, Droplets, DollarSign, X, Search, SlidersHorizontal, CheckSquare, Trash2, Upload, Download, ChevronDown, Pencil, Check, Eye, EyeOff, TrendingUp, TrendingDown, UserPlus, Calendar, Flag, CreditCard, User, ArrowUpDown, Wallet, Tag, ShoppingBag, ArrowLeftRight, ArrowLeft, Users, Wrench } from 'lucide-react'
 import useIsMobile from '../../hooks/useIsMobile'
-import PlanGuard from '../guards/PlanGuard'
+// PlanGuard removed — free plan now uses backend limits
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
 import UpgradeModal from '../payment/UpgradeModal'
 import DatePicker, { registerLocale } from 'react-datepicker'
@@ -568,7 +568,7 @@ export default function Home() {
   }
   const FILTER_CARD_LABELS = {
     fechas: 'Fechas', estado: 'Estado', estadoPago: 'Estado de pago',
-    tipoLavado: 'Tipo de lavado', adicionales: 'Adicionales', lavador: 'Lavador',
+    tipoLavado: 'Tipo de servicio', adicionales: 'Adicionales', lavador: 'Trabajador',
     tipo: 'Tipo', metodoPago: 'Método de pago', categoria: 'Categoría',
   }
   const FILTER_CARD_ICONS = {
@@ -2885,9 +2885,9 @@ export default function Home() {
               tabIndex={0}
             >
               <div className="quick-filter-circle">{(tab === 'servicios' ? allServicios : tab === 'productos' ? allProductos : allMovimientos).length}</div>
-              <span className="quick-filter-text">{filtroEstado.length === 0 && !filtroPago ? 'Lavadas' : filtroEstado.length === 1 ? ESTADO_LABELS[filtroEstado[0]] : filtroEstado.length > 1 ? `${filtroEstado.length} estados` : filtroPago === 'pagado' ? 'Pagado' : 'No pagado'} ({(tab === 'servicios' ? allServicios : tab === 'productos' ? allProductos : allMovimientos).length})</span>
+              <span className="quick-filter-text">{filtroEstado.length === 0 && !filtroPago ? 'Servicios' : filtroEstado.length === 1 ? ESTADO_LABELS[filtroEstado[0]] : filtroEstado.length > 1 ? `${filtroEstado.length} estados` : filtroPago === 'pagado' ? 'Pagado' : 'No pagado'} ({(tab === 'servicios' ? allServicios : tab === 'productos' ? allProductos : allMovimientos).length})</span>
             </div>
-            {showQuickFilter && (
+            {showQuickFilter && createPortal(
               <>
                 <div className={`quick-filter-backdrop ${quickFilterClosing ? 'closing' : ''}`} onClick={closeQuickFilter} />
                 <div className={`quick-filter-popup ${quickFilterClosing ? 'closing' : ''}`}>
@@ -2896,7 +2896,7 @@ export default function Home() {
                     <div className="quick-filter-chips">
                       {[
                         { key: 'EN ESPERA', emoji: '🕐', label: 'Espera' },
-                        { key: 'EN LAVADO', emoji: '🫧', label: 'Lavando' },
+                        { key: 'EN LAVADO', emoji: '🫧', label: 'En proceso' },
                         { key: 'TERMINADO', emoji: '✅', label: 'Terminado' },
                         { key: 'ENTREGADO', emoji: '🚗', label: 'Entregado' },
                       ].map(item => (
@@ -2966,7 +2966,8 @@ export default function Home() {
                     </button>
                   )}
                 </div>
-              </>
+              </>,
+              document.body
             )}
           </div>
           <div className="home-desktop-add-wrapper">
@@ -3022,9 +3023,7 @@ export default function Home() {
       {tab === 'trabajadores' && isMobile && (
         <Suspense fallback={<div className="loading-screen">Cargando...</div>}>
           <div className="embedded-tab-content">
-            <PlanGuard feature="Pago de Trabajadores">
-              <PagoTrabajadores externalSearch={searchQuery} />
-            </PlanGuard>
+            <PagoTrabajadores externalSearch={searchQuery} externalDesde={fechaDesde} externalHasta={fechaHasta} />
           </div>
         </Suspense>
       )}
@@ -3566,7 +3565,11 @@ export default function Home() {
                           enviado_por: userEmail || null,
                           origen: 'info_cliente',
                           negocio_id: negocioId,
-                        }]).then(() => {})
+                        }]).then(({ error }) => {
+                          if (error?.message?.includes('PLAN_LIMIT_REACHED')) {
+                            toast.error('Límite de 10 mensajes/mes alcanzado. Actualiza a PRO.')
+                          }
+                        })
                       }}
                     >
                       {p.nombre}
