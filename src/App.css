@@ -15716,14 +15716,15 @@ input:checked + .slider:before {
   z-index: 9999;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.65rem 1rem;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
   background: var(--accent-green);
   color: #fff;
   border-radius: 10px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 600;
+  white-space: nowrap;
   animation: reload-slide-up 0.3s ease-out;
 }
 .reload-prompt button {
@@ -15731,10 +15732,11 @@ input:checked + .slider:before {
   color: var(--accent-green);
   border: none;
   border-radius: 6px;
-  padding: 0.3rem 0.75rem;
+  padding: 0.25rem 0.6rem;
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   cursor: pointer;
+  white-space: nowrap;
 }
 @keyframes reload-slide-up {
   from { opacity: 0; transform: translateX(-50%) translateY(1rem); }
