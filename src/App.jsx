@@ -11,6 +11,7 @@ import { ToastProvider } from './components/layout/Toast'
 import RoleGuard from './components/guards/RoleGuard'
 // PlanGuard removed — free plan now uses backend limits instead of full-page blocks
 import { TourProvider } from './components/layout/AppTour'
+import ReloadPrompt from './components/layout/ReloadPrompt'
 import './App.css'
 
 // Lazy: pages (loaded on demand)
@@ -115,6 +116,7 @@ function App() {
     <ThemeProvider>
       <MoneyVisibilityProvider>
       <ToastProvider>
+      <ReloadPrompt />
       <BrowserRouter>
         <Routes>
           {!session ? (

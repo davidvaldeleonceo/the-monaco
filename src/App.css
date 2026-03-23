@@ -15706,3 +15706,37 @@ input:checked + .slider:before {
 .grupo-header-mobile:active {
   background: var(--bg-hover);
 }
+
+/* PWA Update Prompt */
+.reload-prompt {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  background: var(--accent-green);
+  color: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  font-size: 0.85rem;
+  font-weight: 600;
+  animation: reload-slide-up 0.3s ease-out;
+}
+.reload-prompt button {
+  background: #fff;
+  color: var(--accent-green);
+  border: none;
+  border-radius: 6px;
+  padding: 0.3rem 0.75rem;
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+@keyframes reload-slide-up {
+  from { opacity: 0; transform: translateX(-50%) translateY(1rem); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
