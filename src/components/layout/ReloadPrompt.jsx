@@ -9,11 +9,20 @@ export default function ReloadPrompt() {
 
   if (!needRefresh) return null
 
+  const handleUpdate = async () => {
+    try {
+      await updateServiceWorker(true)
+    } catch {
+      // fallback
+    }
+    window.location.reload()
+  }
+
   return (
     <div className="reload-prompt">
       <RefreshCw size={16} />
       <span>Nueva versión disponible</span>
-      <button onClick={() => updateServiceWorker(true)}>Actualizar</button>
+      <button onClick={handleUpdate}>Actualizar</button>
     </div>
   )
 }
