@@ -20,7 +20,7 @@ import * as XLSX from 'xlsx'
 
 registerLocale('es', es)
 
-export default function Clientes({ externalSearch } = {}) {
+export default function Clientes({ externalSearch, externalImportTrigger, externalFiltroMembresia, externalFiltroEstado, externalFiltroNuevos } = {}) {
   const { clientes, lavadas, loadAllLavadas, lavadasAllLoaded, tiposMembresia, tiposLavado, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, refreshLavadas, negocioId, plantillasMensaje } = useData()
   const { userEmail, negocioNombre, pais } = useTenant()
   const phoneCode = getPhoneCode(pais)
@@ -120,6 +120,11 @@ export default function Clientes({ externalSearch } = {}) {
       loadAllLavadas()
     }
   }, [agrupadorActivo, lavadasAllLoaded])
+
+  // Open import modal from parent (Home FAB)
+  useEffect(() => {
+    if (externalImportTrigger) setShowImportModal(true)
+  }, [externalImportTrigger])
 
   // Import CSV states
   const [showImportModal, setShowImportModal] = useState(false)
@@ -958,14 +963,17 @@ export default function Clientes({ externalSearch } = {}) {
   }
 
   const effectiveSearch = (externalSearch || search).toLowerCase()
+  const activeFiltroTipo = externalFiltroMembresia || filtroTipoCliente
+  const activeFiltroEstado = externalFiltroEstado || filtroEstado
+  const activeFiltroNuevos = externalFiltroNuevos || filtroNuevos
   const clientesFiltrados = useMemo(() => clientes.filter(c => {
     const matchSearch = !effectiveSearch ||
       c.nombre?.toLowerCase().includes(effectiveSearch) ||
       c.placa?.toLowerCase().includes(effectiveSearch) ||
       c.cedula?.includes(effectiveSearch) ||
       c.telefono?.includes(effectiveSearch)
-    const matchTipo = !filtroTipoCliente || (filtroTipoCliente === '__sin__' ? !c.membresia_id : c.membresia_id === filtroTipoCliente)
-    const matchEstado = !filtroEstado || getEstadoCliente(c) === filtroEstado
+    const matchTipo = !activeFiltroTipo || (activeFiltroTipo === '__sin__' ? !c.membresia_id : c.membresia_id === activeFiltroTipo)
+    const matchEstado = !activeFiltroEstado || getEstadoCliente(c) === activeFiltroEstado
 
     let matchFechaDesde = true
     let matchFechaHasta = true
@@ -992,10 +1000,10 @@ export default function Clientes({ externalSearch } = {}) {
       }
     }
 
-    const matchNuevos = !filtroNuevos || isClienteNuevo(c)
+    const matchNuevos = !activeFiltroNuevos || isClienteNuevo(c)
 
     return matchSearch && matchTipo && matchEstado && matchFechaDesde && matchFechaHasta && matchNuevos
-  }), [clientes, effectiveSearch, filtroTipoCliente, filtroEstado, fechaDesde, fechaHasta, filtroNuevos])
+  }), [clientes, effectiveSearch, activeFiltroTipo, activeFiltroEstado, fechaDesde, fechaHasta, activeFiltroNuevos])
 
   const clientesOrdenados = useMemo(() => [...clientesFiltrados].sort((a, b) => {
     if (sortBy === 'nombre-asc') return (a.nombre || '').localeCompare(b.nombre || '')

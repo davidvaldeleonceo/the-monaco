@@ -183,6 +183,10 @@ export default function Home() {
   const [highlightId, setHighlightId] = useState(null)
   const [clienteInfoModal, setClienteInfoModal] = useState(null)
   const [showNuevoClienteModal, setShowNuevoClienteModal] = useState(false)
+  const [clienteImportTrigger, setClienteImportTrigger] = useState(0)
+  const [clienteFiltroMembresia, setClienteFiltroMembresia] = useState('')
+  const [clienteFiltroEstado, setClienteFiltroEstado] = useState('')
+  const [clienteFiltroNuevos, setClienteFiltroNuevos] = useState(false)
   const [nuevoClienteData, setNuevoClienteData] = useState({
     nombre: '', cedula: '', telefono: '', correo: '', placa: '', moto: '',
     membresia_id: '', fecha_inicio_membresia: null, fecha_fin_membresia: null
@@ -3010,13 +3014,149 @@ export default function Home() {
           </div>
         </div>
         </>)}
+        {tab === 'clientes' && !isMobile && (<>
+          <div className="home-tab-actions">
+            <div className="quick-filter-wrapper">
+              <div
+                className={`quick-filter-trigger ${clienteFiltroMembresia || clienteFiltroEstado || clienteFiltroNuevos ? 'has-filters' : ''}`}
+                onClick={() => setShowQuickFilter(prev => !prev)}
+                role="button"
+                tabIndex={0}
+              >
+                <div className="quick-filter-circle">{clientes.length}</div>
+                <span className="quick-filter-text">
+                  {!clienteFiltroMembresia && !clienteFiltroEstado && !clienteFiltroNuevos
+                    ? `Clientes (${clientes.length})`
+                    : clienteFiltroMembresia
+                      ? (clienteFiltroMembresia === '__sin__'
+                        ? 'Sin membresía'
+                        : tiposMembresia.find(t => t.id === clienteFiltroMembresia)?.nombre || 'Filtrado')
+                      : clienteFiltroEstado
+                        ? clienteFiltroEstado
+                        : 'Nuevos hoy'
+                  }
+                </span>
+              </div>
+              {showQuickFilter && createPortal(
+                <>
+                  <div className={`quick-filter-backdrop ${quickFilterClosing ? 'closing' : ''}`} onClick={closeQuickFilter} />
+                  <div className={`quick-filter-popup ${quickFilterClosing ? 'closing' : ''}`}>
+                    {tiposMembresia.length > 0 && (
+                      <>
+                        <div className="quick-filter-section">
+                          <span className="quick-filter-label">Membresía</span>
+                          <div className="quick-filter-chips">
+                            {tiposMembresia.map(t => (
+                              <button
+                                key={t.id}
+                                className={`quick-filter-chip ${clienteFiltroMembresia === t.id ? 'active' : ''}`}
+                                onClick={() => {
+                                  setClienteFiltroMembresia(prev => prev === t.id ? '' : t.id)
+                                  setClienteFiltroEstado('')
+                                  setClienteFiltroNuevos(false)
+                                  closeQuickFilter()
+                                }}
+                              >
+                                {t.nombre}
+                              </button>
+                            ))}
+                            <button
+                              className={`quick-filter-chip ${clienteFiltroMembresia === '__sin__' ? 'active' : ''}`}
+                              onClick={() => {
+                                setClienteFiltroMembresia(prev => prev === '__sin__' ? '' : '__sin__')
+                                setClienteFiltroEstado('')
+                                setClienteFiltroNuevos(false)
+                                closeQuickFilter()
+                              }}
+                            >
+                              Sin membresía
+                            </button>
+                          </div>
+                        </div>
+                        <div className="quick-filter-divider" />
+                      </>
+                    )}
+                    <div className="quick-filter-section">
+                      <span className="quick-filter-label">Estado</span>
+                      <div className="quick-filter-chips">
+                        {['Activo', 'Inactivo'].map(e => (
+                          <button
+                            key={e}
+                            className={`quick-filter-chip ${clienteFiltroEstado === e ? 'active' : ''}`}
+                            onClick={() => {
+                              setClienteFiltroEstado(prev => prev === e ? '' : e)
+                              setClienteFiltroMembresia('')
+                              setClienteFiltroNuevos(false)
+                              closeQuickFilter()
+                            }}
+                          >
+                            {e === 'Activo' ? '✅' : '⏸️'} {e}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="quick-filter-divider" />
+                    <div className="quick-filter-section">
+                      <span className="quick-filter-label">Otros</span>
+                      <div className="quick-filter-chips">
+                        <button
+                          className={`quick-filter-chip ${clienteFiltroNuevos ? 'active' : ''}`}
+                          onClick={() => {
+                            setClienteFiltroNuevos(prev => !prev)
+                            setClienteFiltroMembresia('')
+                            setClienteFiltroEstado('')
+                            closeQuickFilter()
+                          }}
+                        >
+                          ✨ Nuevos hoy
+                        </button>
+                      </div>
+                    </div>
+                    {(clienteFiltroMembresia || clienteFiltroEstado || clienteFiltroNuevos) && (
+                      <button className="quick-filter-clear" onClick={() => {
+                        setClienteFiltroMembresia('')
+                        setClienteFiltroEstado('')
+                        setClienteFiltroNuevos(false)
+                        closeQuickFilter()
+                      }}>
+                        Limpiar filtros
+                      </button>
+                    )}
+                  </div>
+                </>,
+                document.body
+              )}
+            </div>
+            <div className="home-desktop-add-wrapper">
+              <button
+                className={`home-desktop-add-circle ${showFabMenu ? 'open' : ''}`}
+                onClick={() => setShowFabMenu(!showFabMenu)}
+              >
+                <Plus size={22} />
+              </button>
+              {showFabMenu && (
+                <>
+                  <div className="desktop-fab-overlay" onClick={() => setShowFabMenu(false)} />
+                  <div className="desktop-fab-dropdown">
+                    <button onClick={() => { setShowFabMenu(false); setShowNuevoClienteModal(true) }}>
+                      <UserPlus size={18} /> Nuevo Cliente
+                    </button>
+                    <button onClick={() => { setShowFabMenu(false); setClienteImportTrigger(c => c + 1) }}>
+                      <Upload size={18} /> Importar Clientes
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>)}
       </div>
 
       {/* Embedded mobile tabs */}
       {tab === 'clientes' && (
         <Suspense fallback={<div className="loading-screen">Cargando...</div>}>
           <div className="embedded-tab-content">
-            <Clientes externalSearch={searchQuery} />
+            <Clientes externalSearch={searchQuery} externalImportTrigger={clienteImportTrigger} externalFiltroMembresia={clienteFiltroMembresia} externalFiltroEstado={clienteFiltroEstado} externalFiltroNuevos={clienteFiltroNuevos} />
           </div>
         </Suspense>
       )}
