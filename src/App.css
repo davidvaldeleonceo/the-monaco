@@ -6064,6 +6064,8 @@ body {
 .export-dropdown-menu button { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.75rem 1rem; background: none; border: none; font-size: 0.875rem; font-weight: 500; color: var(--text-primary); cursor: pointer; white-space: nowrap; }
 .export-dropdown-menu button:hover { background: var(--bg-hover); }
 .export-dropdown-menu button:not(:last-child) { border-bottom: 1px solid var(--border-color); }
+.export-dropdown-menu button:disabled { opacity: 0.4; cursor: not-allowed; }
+.export-dropdown-divider { height: 1px; background: var(--border-color); margin: 0.25rem 0; }
 
 /* Config FAB */
 .config-fab { position: fixed; bottom: 5.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--accent-blue); color: #fff; border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.25); cursor: pointer; z-index: var(--z-fab); transition: transform 0.2s, background 0.2s; }

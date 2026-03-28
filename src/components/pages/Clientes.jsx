@@ -1133,29 +1133,32 @@ export default function Clientes({ externalSearch, externalImportTrigger, extern
             <span className="btn-label">{modoSeleccion ? 'Cancelar' : 'Seleccionar'}</span>
           </button>
           <div className="export-dropdown-wrapper">
-            <button className="btn-secondary" onClick={() => setShowExportMenu(!showExportMenu)} disabled={!clientesFiltrados.length}>
-              <Download size={18} />
-              <span className="btn-label">Exportar</span>
+            <button className="btn-secondary" onClick={() => setShowExportMenu(!showExportMenu)}>
+              <SlidersHorizontal size={18} />
+              <span className="btn-label">Opciones</span>
               <ChevronDown size={14} />
             </button>
             {showExportMenu && (
               <>
                 <div className="export-dropdown-overlay" onClick={() => setShowExportMenu(false)} />
                 <div className="export-dropdown-menu">
-                  <button onClick={() => { setShowExportMenu(false); exportarCSV() }}>
+                  <button onClick={() => { setShowExportMenu(false); exportarCSV() }} disabled={!clientesFiltrados.length}>
                     <Download size={16} /> Exportar CSV
                   </button>
-                  <button onClick={() => { setShowExportMenu(false); exportarManyChat() }}>
+                  <button onClick={() => { setShowExportMenu(false); exportarManyChat() }} disabled={!clientesFiltrados.length}>
                     <MessageCircle size={16} /> Exportar para ManyChat
+                  </button>
+                  <div className="export-dropdown-divider" />
+                  <button onClick={() => { setShowExportMenu(false); setShowImportModal(true) }}>
+                    <Upload size={16} /> Importar Clientes
+                  </button>
+                  <button onClick={() => { setShowExportMenu(false); descargarPlantilla() }}>
+                    <Download size={16} /> Descargar Plantilla
                   </button>
                 </div>
               </>
             )}
           </div>
-          <button className="btn-secondary" onClick={() => setShowImportModal(true)}>
-            <Upload size={18} />
-            <span className="btn-label">Importar</span>
-          </button>
           <button className="btn-primary" onClick={() => setShowModal(true)}>
             <Plus size={20} />
             <span className="btn-label">Nuevo Cliente</span>
