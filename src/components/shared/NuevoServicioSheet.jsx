@@ -71,6 +71,12 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
     return nombre !== 'cliente' && nombre !== 'cliente frecuente' && nombre !== 'sin membresia' && nombre !== 'sin membresía'
   }
 
+  const esTipoLavadoMembresia = (tipo) => {
+    const nombre = (tipo?.nombre || '').toLowerCase()
+    return (nombre.includes('membresía') || nombre.includes('membresia')) &&
+           !nombre.includes('sin membresía') && !nombre.includes('sin membresia')
+  }
+
   const handleClienteChange = (clienteId) => {
     const cliente = clientes.find(c => c.id == clienteId)
     if (cliente) {
@@ -205,7 +211,7 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
     const adicionales = autoAddIncluidos(tipo, formData.adicionales)
     let valor = calcularValor(tipoId, adicionales)
     const cliente = clientes.find(c => c.id == formData.cliente_id)
-    if (cliente && clienteTieneMembresia(cliente)) {
+    if (cliente && clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo)) {
       valor = valor - Number(tipo?.precio || 0)
       if (valor < 0) valor = 0
     }
@@ -228,8 +234,8 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       }
       let valor = calcularValor(prev.tipo_lavado_id, nuevosAdicionales)
       const cliente = clientes.find(c => c.id == prev.cliente_id)
-      if (cliente && clienteTieneMembresia(cliente) && !membresiaOverride) {
-        const tipo = tiposLavado.find(t => t.id == prev.tipo_lavado_id)
+      const tipo = tiposLavado.find(t => t.id == prev.tipo_lavado_id)
+      if (cliente && clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo) && !membresiaOverride) {
         valor = valor - Number(tipo?.precio || 0)
         if (valor < 0) valor = 0
       }
@@ -641,7 +647,8 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
               />
               {(() => {
                 const cliente = clientes.find(c => c.id == formData.cliente_id)
-                if (cliente && clienteTieneMembresia(cliente)) {
+                const tipoSeleccionado = tiposLavado.find(t => t.id == formData.tipo_lavado_id)
+                if (cliente && clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipoSeleccionado)) {
                   return (
                     <span className="membresia-badge-info">
                       Incluido en membresía {!membresiaOverride && '— Precio $0'}

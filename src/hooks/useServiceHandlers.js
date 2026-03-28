@@ -165,6 +165,12 @@ export function useServiceHandlers() {
     return nombre !== 'cliente' && nombre !== 'cliente frecuente' && nombre !== 'sin membresia' && nombre !== 'sin membresía'
   }
 
+  const esTipoLavadoMembresia = (tipo) => {
+    const nombre = (tipo?.nombre || '').toLowerCase()
+    return (nombre.includes('membresía') || nombre.includes('membresia')) &&
+           !nombre.includes('sin membresía') && !nombre.includes('sin membresia')
+  }
+
   const handleTipoLavadoChangeInline = async (lavadaId, tipoId) => {
     // No withCardUpdate — avoid re-render flash when editing inside expanded popup
     const tipo = tiposLavado.find(t => t.id == tipoId)
@@ -173,9 +179,8 @@ export function useServiceHandlers() {
     let nuevoValor = calcularValor(tipoId, nuevosAdicionales)
 
     const cliente = clientes.find(c => c.id == lavada.cliente_id)
-    if (clienteTieneMembresia(cliente)) {
-      const tipo2 = tiposLavado.find(t => t.id == tipoId)
-      nuevoValor = nuevoValor - Number(tipo2?.precio || 0)
+    if (clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo)) {
+      nuevoValor = nuevoValor - Number(tipo?.precio || 0)
       if (nuevoValor < 0) nuevoValor = 0
     }
 
@@ -268,8 +273,8 @@ export function useServiceHandlers() {
     let nuevoValor = calcularValor(lavada.tipo_lavado_id, nuevosAdicionales)
 
     const cliente = clientes.find(c => c.id == lavada.cliente_id)
-    if (clienteTieneMembresia(cliente)) {
-      const tipo = tiposLavado.find(t => t.id == lavada.tipo_lavado_id)
+    const tipo = tiposLavado.find(t => t.id == lavada.tipo_lavado_id)
+    if (clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo)) {
       nuevoValor = nuevoValor - Number(tipo?.precio || 0)
       if (nuevoValor < 0) nuevoValor = 0
     }
