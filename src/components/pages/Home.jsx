@@ -451,7 +451,7 @@ export default function Home() {
   }, [periodo, filtroFechaDesde, filtroFechaHasta, negocioId, transaccionesVersion])
 
   useEffect(() => {
-    if (periodo === 'a' && !lavadasAllLoaded) {
+    if ((periodo === 'm' || periodo === 'a') && !lavadasAllLoaded) {
       loadAllLavadas()
     }
   }, [periodo])
@@ -507,10 +507,11 @@ export default function Home() {
     }
   }, [showVentaClienteDropdown])
 
-  // Generate virtual entries from lavadas payments (same pattern as Balance.jsx)
+  // Generate virtual entries from lavadas (valor-based, with pendiente)
   const pagosLavadas = lavadas.flatMap(l => {
+    const valor = Number(l.valor || 0)
     const pagos = l.pagos || []
-    if (pagos.length === 0) return []
+    if (valor === 0 && pagos.length === 0) return []
 
     const dateOnlyL = fechaToBogotaDate(l.fecha)
     const fechaLavada = dateOnlyL ? new Date(dateOnlyL + 'T00:00:00') : new Date(l.fecha)
@@ -529,7 +530,9 @@ export default function Home() {
     }
     if (!dentroDeRango) return []
 
-    return pagos.map((p, idx) => ({
+    const sumaPagos = pagos.reduce((s, p) => s + Number(p.valor || 0), 0)
+
+    const entries = pagos.map((p, idx) => ({
       id: `lavada-${l.id}-${idx}`,
       tipo: 'INGRESO',
       categoria: 'SERVICIO',
@@ -541,6 +544,24 @@ export default function Home() {
       fecha: l.fecha,
       _esLavada: true
     }))
+
+    const pendiente = valor - sumaPagos
+    if (pendiente > 0) {
+      entries.push({
+        id: `lavada-${l.id}-pendiente`,
+        tipo: 'INGRESO',
+        categoria: 'SERVICIO',
+        valor: pendiente,
+        metodo_pago_id: null,
+        metodo_pago: { nombre: 'Pendiente' },
+        placa_o_persona: l.placa,
+        descripcion: `${l.cliente?.nombre || ''} - ${l.placa}`,
+        fecha: l.fecha,
+        _esLavada: true
+      })
+    }
+
+    return entries
   })
 
   // Client-side date filter for transacciones (safety net, mirrors lavadasFiltradas pattern)
@@ -994,13 +1015,28 @@ export default function Home() {
   const cobradoTab = tab === 'servicios' ? cobradoServicios : tab === 'productos' ? totalProductos : totalMovimientos
 
   const pagosServicios = allServicios.flatMap(l => {
+    const valor = Number(l.valor || 0)
     const pagos = l.pagos || []
-    return pagos.map(p => ({
+    const sumaPagos = pagos.reduce((s, p) => s + Number(p.valor || 0), 0)
+
+    const entries = pagos.map(p => ({
       tipo: 'INGRESO',
       valor: p.valor || 0,
       categoria: 'SERVICIO',
       metodo_pago: { nombre: p.nombre },
     }))
+
+    const pendiente = valor - sumaPagos
+    if (pendiente > 0) {
+      entries.push({
+        tipo: 'INGRESO',
+        valor: pendiente,
+        categoria: 'SERVICIO',
+        metodo_pago: { nombre: 'Pendiente' },
+      })
+    }
+
+    return entries
   })
   const entradasParaBalance = [...pagosServicios, ...allProductos, ...allMovimientos]
 
@@ -1023,15 +1059,20 @@ export default function Home() {
     if (!prevDesde || !prevHasta) return { prevIngresos: 0, prevEgresos: 0 }
 
     const prevPagosLavadas = lavadas.flatMap(l => {
+      const valor = Number(l.valor || 0)
       const pagos = l.pagos || []
-      if (pagos.length === 0) return []
+      if (valor === 0 && pagos.length === 0) return []
       const dateOnlyL = fechaToBogotaDate(l.fecha)
       const fechaLavada = dateOnlyL ? new Date(dateOnlyL + 'T00:00:00') : new Date(l.fecha)
       if (isNaN(fechaLavada.getTime())) return []
       const d = new Date(prevDesde); d.setHours(0, 0, 0, 0)
       const h = new Date(prevHasta); h.setHours(23, 59, 59, 999)
       if (fechaLavada < d || fechaLavada > h) return []
-      return pagos.map(p => ({ tipo: 'INGRESO', valor: p.valor || 0 }))
+      const sumaPagos = pagos.reduce((s, p) => s + Number(p.valor || 0), 0)
+      const entries = pagos.map(p => ({ tipo: 'INGRESO', valor: p.valor || 0 }))
+      const pendiente = valor - sumaPagos
+      if (pendiente > 0) entries.push({ tipo: 'INGRESO', valor: pendiente })
+      return entries
     })
 
     const prevEntradas = [...prevTransacciones, ...prevPagosLavadas]

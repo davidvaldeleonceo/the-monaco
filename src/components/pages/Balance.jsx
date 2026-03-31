@@ -176,10 +176,11 @@ export default function Balance() {
     }
   }
 
-  // Generar entradas virtuales desde pagos de lavadas
+  // Generar entradas virtuales desde lavadas (valor-based, con pendiente)
   const pagosLavadas = lavadas.flatMap(l => {
+    const valor = Number(l.valor || 0)
     const pagos = l.pagos || []
-    if (pagos.length === 0) return []
+    if (valor === 0 && pagos.length === 0) return []
 
     const dateOnly = fechaToBogotaDate(l.fecha)
     const fechaLavada = dateOnly ? new Date(dateOnly + 'T00:00:00') : new Date(l.fecha)
@@ -198,7 +199,9 @@ export default function Balance() {
     }
     if (!dentroDeRango) return []
 
-    return pagos.map((p, idx) => ({
+    const sumaPagos = pagos.reduce((s, p) => s + Number(p.valor || 0), 0)
+
+    const entries = pagos.map((p, idx) => ({
       id: `lavada-${l.id}-${idx}`,
       tipo: 'INGRESO',
       categoria: 'SERVICIO',
@@ -210,6 +213,24 @@ export default function Balance() {
       fecha: l.fecha,
       _esLavada: true
     }))
+
+    const pendiente = valor - sumaPagos
+    if (pendiente > 0) {
+      entries.push({
+        id: `lavada-${l.id}-pendiente`,
+        tipo: 'INGRESO',
+        categoria: 'SERVICIO',
+        valor: pendiente,
+        metodo_pago_id: null,
+        metodo_pago: { nombre: 'Pendiente' },
+        placa_o_persona: l.placa,
+        descripcion: `${l.cliente?.nombre || ''} - ${l.placa}`,
+        fecha: l.fecha,
+        _esLavada: true
+      })
+    }
+
+    return entries
   })
 
   // Filtrado local

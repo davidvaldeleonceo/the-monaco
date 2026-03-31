@@ -516,7 +516,8 @@ export default function Lavadas() {
     }
 
     if (clientesCreados > 0) await refreshClientes()
-    await refreshLavadas()
+    if (lavadasAllLoaded) await refreshLavadas()
+    else await loadAllLavadas()
     setImportResult({ insertados, clientesCreados, errores, failedRows })
     setImportStep('done')
   }
@@ -564,7 +565,8 @@ export default function Lavadas() {
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await refreshLavadas()
+    if (lavadasAllLoaded) await refreshLavadas()
+    else await loadAllLavadas()
     setRefreshing(false)
   }
 
