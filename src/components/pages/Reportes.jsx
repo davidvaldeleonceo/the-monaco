@@ -421,7 +421,7 @@ export default function Reportes() {
   const descargarPDF = async () => {
     if (!data) return
     const { default: jsPDF } = await import('jspdf')
-    await import('jspdf-autotable')
+    const { default: autoTable } = await import('jspdf-autotable')
     const { saveAs } = await import('file-saver')
     const doc = new jsPDF('p', 'mm', 'a4')
     const W = 210, H = 297, M = 20
