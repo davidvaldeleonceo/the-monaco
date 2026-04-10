@@ -24,7 +24,7 @@ import DatePicker, { registerLocale } from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import es from 'date-fns/locale/es'
 import * as XLSX from 'xlsx'
-import { fechaToBogotaDate, nowBogota, getTimezoneOffset } from '../../utils/date'
+import { fechaToBogotaDate, nowBogota, getTimezoneOffset, todayBogotaStr } from '../../utils/date'
 
 registerLocale('es', es)
 
@@ -184,6 +184,7 @@ export default function Home() {
   const [clienteInfoModal, setClienteInfoModal] = useState(null)
   const [showNuevoClienteModal, setShowNuevoClienteModal] = useState(false)
   const [clienteImportTrigger, setClienteImportTrigger] = useState(0)
+  const [clienteExportTrigger, setClienteExportTrigger] = useState(0)
   const [clienteFiltroMembresia, setClienteFiltroMembresia] = useState('')
   const [clienteFiltroEstado, setClienteFiltroEstado] = useState('')
   const [clienteFiltroNuevos, setClienteFiltroNuevos] = useState(false)
@@ -944,6 +945,32 @@ export default function Home() {
     if (q && !(l.placa || '').toLowerCase().includes(q) && !(l.cliente?.nombre || '').toLowerCase().includes(q)) return false
     return true
   })
+
+  const exportarServicios = () => {
+    try {
+      if (!allServicios.length) return
+      const data = allServicios.map(l => ({
+        Fecha: fechaToBogotaDate(l.fecha) || l.fecha || '',
+        Placa: l.placa || '',
+        Cliente: l.cliente?.nombre || '',
+        'Tipo de Lavado': l.tipo_lavado?.nombre || '',
+        Trabajador: l.lavador?.nombre || '',
+        Estado: l.estado || '',
+        Valor: l.valor || 0,
+        Adicionales: (l.adicionales || []).map(a => a.nombre).join(', '),
+        'Método de Pago': (l.pagos || []).map(p => p.nombre).filter(Boolean).join(', '),
+        Notas: l.notas || '',
+      }))
+      const ws = XLSX.utils.json_to_sheet(data)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Servicios')
+      XLSX.writeFile(wb, `servicios_${todayBogotaStr()}.csv`, { bookType: 'csv' })
+      toast.success(`Se exportaron ${data.length} servicios`)
+    } catch (err) {
+      toast.error('Error al exportar servicios')
+    }
+  }
+
   const allProductos = transaccionesFiltradas
     .filter(t => t.categoria === 'MEMBRESIA' || t.categoria === 'PRODUCTO')
     .filter(t => {
@@ -3038,6 +3065,11 @@ export default function Home() {
                   <button onClick={() => { setShowFabMenu(false); setShowVentaModal(true) }}>
                     <DollarSign size={18} /> Nueva Venta
                   </button>
+                  {tab === 'servicios' && (
+                    <button onClick={() => { setShowFabMenu(false); exportarServicios() }} disabled={!allServicios.length}>
+                      <Download size={18} /> Exportar Servicios
+                    </button>
+                  )}
                   <button onClick={() => {
                     setShowFabMenu(false)
                     if (tab === 'servicios') {
@@ -3182,6 +3214,9 @@ export default function Home() {
                     <button onClick={() => { setShowFabMenu(false); setShowNuevoClienteModal(true) }}>
                       <UserPlus size={18} /> Nuevo Cliente
                     </button>
+                    <button onClick={() => { setShowFabMenu(false); setClienteExportTrigger(c => c + 1) }}>
+                      <Download size={18} /> Exportar Clientes
+                    </button>
                     <button onClick={() => { setShowFabMenu(false); setClienteImportTrigger(c => c + 1) }}>
                       <Upload size={18} /> Importar Clientes
                     </button>
@@ -3197,7 +3232,7 @@ export default function Home() {
       {tab === 'clientes' && (
         <Suspense fallback={<div className="loading-screen">Cargando...</div>}>
           <div className="embedded-tab-content">
-            <Clientes externalSearch={searchQuery} externalImportTrigger={clienteImportTrigger} externalFiltroMembresia={clienteFiltroMembresia} externalFiltroEstado={clienteFiltroEstado} externalFiltroNuevos={clienteFiltroNuevos} />
+            <Clientes externalSearch={searchQuery} externalImportTrigger={clienteImportTrigger} externalExportTrigger={clienteExportTrigger} externalFiltroMembresia={clienteFiltroMembresia} externalFiltroEstado={clienteFiltroEstado} externalFiltroNuevos={clienteFiltroNuevos} />
           </div>
         </Suspense>
       )}
@@ -4103,6 +4138,16 @@ export default function Home() {
             <button onClick={() => { setShowFabMenu(false); setShowNuevoClienteModal(true) }}>
               <UserPlus size={18} /> Nuevo Cliente
             </button>
+            {tab === 'servicios' && (
+              <button onClick={() => { setShowFabMenu(false); exportarServicios() }} disabled={!allServicios.length}>
+                <Download size={18} /> Exportar Servicios
+              </button>
+            )}
+            {tab === 'clientes' && (
+              <button onClick={() => { setShowFabMenu(false); setClienteExportTrigger(c => c + 1) }}>
+                <Download size={18} /> Exportar Clientes
+              </button>
+            )}
             <button onClick={() => {
               setShowFabMenu(false)
               if (tab === 'servicios') {

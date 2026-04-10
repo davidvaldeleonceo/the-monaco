@@ -20,7 +20,7 @@ import * as XLSX from 'xlsx'
 
 registerLocale('es', es)
 
-export default function Clientes({ externalSearch, externalImportTrigger, externalFiltroMembresia, externalFiltroEstado, externalFiltroNuevos } = {}) {
+export default function Clientes({ externalSearch, externalImportTrigger, externalExportTrigger, externalFiltroMembresia, externalFiltroEstado, externalFiltroNuevos } = {}) {
   const { clientes, lavadas, loadAllLavadas, lavadasAllLoaded, tiposMembresia, tiposLavado, loading, addClienteLocal, updateClienteLocal, deleteClienteLocal, refreshClientes, refreshLavadas, negocioId, plantillasMensaje } = useData()
   const { userEmail, negocioNombre, pais } = useTenant()
   const phoneCode = getPhoneCode(pais)
@@ -125,6 +125,11 @@ export default function Clientes({ externalSearch, externalImportTrigger, extern
   useEffect(() => {
     if (externalImportTrigger) setShowImportModal(true)
   }, [externalImportTrigger])
+
+  // Export CSV from parent (Home FAB)
+  useEffect(() => {
+    if (externalExportTrigger) exportarCSV()
+  }, [externalExportTrigger])
 
   // Import CSV states
   const [showImportModal, setShowImportModal] = useState(false)
