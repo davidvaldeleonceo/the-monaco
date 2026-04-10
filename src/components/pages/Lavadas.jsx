@@ -8,12 +8,12 @@ import { useServiceHandlers } from '../../hooks/useServiceHandlers'
 import ServiceCard from '../shared/ServiceCard'
 import NuevoServicioSheet from '../shared/NuevoServicioSheet'
 import { formatMoney } from '../../utils/money'
-import { Plus, Search, X, Trash2, SlidersHorizontal, Upload, Download, CheckSquare, RefreshCw } from 'lucide-react'
+import { Plus, Search, X, Trash2, SlidersHorizontal, Upload, Download, CheckSquare, RefreshCw, ChevronDown } from 'lucide-react'
 import Select from 'react-select'
 import * as XLSX from 'xlsx'
 import ConfirmDeleteModal from '../shared/ConfirmDeleteModal'
 import { useToast } from '../layout/Toast'
-import { fechaToBogotaDate, nowBogota } from '../../utils/date'
+import { fechaToBogotaDate, nowBogota, todayBogotaStr } from '../../utils/date'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { registerLocale } from 'react-datepicker'
@@ -105,6 +105,7 @@ export default function Lavadas() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
 
   const {
     expandedCards, setExpandedCards,
@@ -570,6 +571,31 @@ export default function Lavadas() {
     setRefreshing(false)
   }
 
+  const exportarCSV = () => {
+    try {
+      if (!lavadasFiltradas.length) return
+      const data = lavadasFiltradas.map(l => ({
+        Fecha: fechaToBogotaDate(l.fecha) || l.fecha || '',
+        Placa: l.placa || '',
+        Cliente: l.cliente?.nombre || '',
+        'Tipo de Lavado': l.tipo_lavado?.nombre || '',
+        Trabajador: l.lavador?.nombre || '',
+        Estado: l.estado || '',
+        Valor: l.valor || 0,
+        Adicionales: (l.adicionales || []).map(a => a.nombre).join(', '),
+        'Método de Pago': (l.pagos || []).map(p => p.nombre).filter(Boolean).join(', '),
+        Notas: l.notas || '',
+      }))
+      const ws = XLSX.utils.json_to_sheet(data)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Servicios')
+      XLSX.writeFile(wb, `servicios_${todayBogotaStr()}.csv`, { bookType: 'csv' })
+      toast.success(`Se exportaron ${data.length} servicios`)
+    } catch (err) {
+      toast.error('Error al exportar servicios')
+    }
+  }
+
   if (loading) {
     return <div className="loading">Cargando...</div>
   }
@@ -594,10 +620,30 @@ export default function Lavadas() {
             <CheckSquare size={18} />
             <span className="btn-label">{modoSeleccion ? 'Cancelar' : 'Seleccionar'}</span>
           </button>
-          <button className="btn-secondary" onClick={() => setShowImportModal(true)}>
-            <Upload size={18} />
-            <span className="btn-label">Importar</span>
-          </button>
+          <div className="export-dropdown-wrapper">
+            <button className="btn-secondary" onClick={() => setShowExportMenu(!showExportMenu)}>
+              <SlidersHorizontal size={18} />
+              <span className="btn-label">Opciones</span>
+              <ChevronDown size={14} />
+            </button>
+            {showExportMenu && (
+              <>
+                <div className="export-dropdown-overlay" onClick={() => setShowExportMenu(false)} />
+                <div className="export-dropdown-menu">
+                  <button onClick={() => { setShowExportMenu(false); exportarCSV() }} disabled={!lavadasFiltradas.length}>
+                    <Download size={16} /> Exportar CSV
+                  </button>
+                  <div className="export-dropdown-divider" />
+                  <button onClick={() => { setShowExportMenu(false); setShowImportModal(true) }}>
+                    <Upload size={16} /> Importar Servicios
+                  </button>
+                  <button onClick={() => { setShowExportMenu(false); descargarPlantilla() }}>
+                    <Download size={16} /> Descargar Plantilla
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button className="btn-primary" onClick={() => setShowModal(true)}>
             <Plus size={20} />
             <span className="btn-label">Nuevo Servicio</span>
