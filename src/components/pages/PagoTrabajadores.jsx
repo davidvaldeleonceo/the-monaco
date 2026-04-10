@@ -735,7 +735,11 @@ export default function PagoTrabajadores({ externalSearch, externalDesde, extern
         .ilike('descripcion', `%${descripcionAbonoAnterior}%`)
 
       // Insert new transactions (one per abono)
-      await supabase.from('transacciones').insert(transacciones)
+      const { error: txEditError } = await supabase.from('transacciones').insert(transacciones)
+      if (txEditError) {
+        console.error('Error inserting transacciones (edit):', txEditError)
+        toast.error('Pago guardado pero hubo un error registrando el egreso. Contacta soporte.')
+      }
 
     } else {
       if (formData.fecha_desde && formData.fecha_hasta) {
@@ -779,7 +783,11 @@ export default function PagoTrabajadores({ externalSearch, externalDesde, extern
       }
 
       // Insert transactions (one per abono)
-      await supabase.from('transacciones').insert(transacciones)
+      const { error: txError } = await supabase.from('transacciones').insert(transacciones)
+      if (txError) {
+        console.error('Error inserting transacciones:', txError)
+        toast.error('Pago guardado pero hubo un error registrando el egreso. Contacta soporte.')
+      }
     }
 
     setShowModal(false)
@@ -1286,6 +1294,14 @@ export default function PagoTrabajadores({ externalSearch, externalDesde, extern
             <strong>{formatMoney(formData.total_pagar)}</strong>
           </div>
           {renderAbonosSection()}
+          <div className="fecha-pago-section">
+            <label>Fecha de pago</label>
+            <input
+              type="date"
+              value={formData.fecha}
+              onChange={(e) => handleChange('fecha', e.target.value)}
+            />
+          </div>
           {formData.valor_pagado !== formData.total_pagar && formData.valor_pagado > 0 && (
             <div className="pago-linea-total pago-linea-saldo">
               <span>{saldo > 0 ? 'Pendiente' : 'Pagado de más'}</span>

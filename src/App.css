@@ -3636,6 +3636,28 @@ body {
   vertical-align: middle;
 }
 
+.fecha-pago-section {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 0 0.25rem;
+}
+.fecha-pago-section label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.fecha-pago-section input[type="date"] {
+  flex: 1;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
 /* Floating resume button for minimized modal */
 .floating-resume-btn {
   position: fixed;
