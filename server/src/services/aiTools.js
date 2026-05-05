@@ -760,7 +760,7 @@ async function crearLavada(args, negocioId, io, fmt, tz) {
   // 5. Calculate valor
   const precioBase = Number(tipoLavado.precio)
   const subtotal = precioBase + totalAdicionales
-  const descuento = Math.round(subtotal * (descuentoMembresia / 100))
+  const descuento = Math.round(subtotal * descuentoMembresia)
   const valor = Math.max(0, subtotal - descuento)
 
   // 6. Plan limit check (free plan = 50 lavadas/month)

@@ -4,6 +4,7 @@ import { useData } from '../context/DataContext'
 import { useServiceHandlers } from '../../hooks/useServiceHandlers'
 import { formatMoney } from '../../utils/money'
 import { nowBogotaISO } from '../../utils/date'
+import { getDescuentoMembresia, aplicarDescuento } from '../../utils/membresia'
 import { Plus, X } from 'lucide-react'
 import UpgradeModal from '../payment/UpgradeModal'
 import { useToast } from '../layout/Toast'
@@ -211,7 +212,10 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
     const adicionales = autoAddIncluidos(tipo, formData.adicionales)
     let valor = calcularValor(tipoId, adicionales)
     const cliente = clientes.find(c => c.id == formData.cliente_id)
-    if (cliente && clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo)) {
+    const descuento = getDescuentoMembresia(cliente, tiposMembresia)
+    if (descuento > 0) {
+      valor = aplicarDescuento(valor, descuento)
+    } else if (cliente && clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo)) {
       valor = valor - Number(tipo?.precio || 0)
       if (valor < 0) valor = 0
     }
@@ -235,7 +239,10 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
       let valor = calcularValor(prev.tipo_lavado_id, nuevosAdicionales)
       const cliente = clientes.find(c => c.id == prev.cliente_id)
       const tipo = tiposLavado.find(t => t.id == prev.tipo_lavado_id)
-      if (cliente && clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo) && !membresiaOverride) {
+      const descuento = getDescuentoMembresia(cliente, tiposMembresia)
+      if (descuento > 0 && !membresiaOverride) {
+        valor = aplicarDescuento(valor, descuento)
+      } else if (cliente && clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo) && !membresiaOverride) {
         valor = valor - Number(tipo?.precio || 0)
         if (valor < 0) valor = 0
       }
@@ -648,6 +655,14 @@ export default function NuevoServicioSheet({ isOpen, onClose, onSuccess }) {
               {(() => {
                 const cliente = clientes.find(c => c.id == formData.cliente_id)
                 const tipoSeleccionado = tiposLavado.find(t => t.id == formData.tipo_lavado_id)
+                const descuento = getDescuentoMembresia(cliente, tiposMembresia)
+                if (descuento > 0) {
+                  return (
+                    <span className="membresia-badge-info">
+                      Descuento {Math.round(descuento * 100)}% por membresía {membresiaOverride && '— editado manualmente'}
+                    </span>
+                  )
+                }
                 if (cliente && clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipoSeleccionado)) {
                   return (
                     <span className="membresia-badge-info">

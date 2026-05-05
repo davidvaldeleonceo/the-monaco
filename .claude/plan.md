@@ -1,231 +1,493 @@
-# Plan: Landing Page Premium para monacomotodetailing.com
+# Plan de Reorganización del Proyecto Monaco PRO
 
-## Contexto
-Crear una web estilo Apple/Tesla (light theme, premium, animaciones suaves) para **monacomotodetailing.com** que aloje las 2 ramas del negocio:
-1. **Lavadero de motos** — Monaco Moto Detailing, Soacha León XIII
-2. **Curso online** — "Guía completa para abrir un lavadero de motos exitoso" ($772.000 COP en Hotmart)
+## Diagnóstico: Estado Actual
 
-## Arquitectura: Proyecto separado
-
-Crear un **nuevo proyecto** independiente (`monaco-landing/`) en lugar de meterlo dentro de `the-monaco`. Razones:
-- `the-monaco` es una SPA (React + PWA + backend Express) — mezclar una landing estática ahí complica el routing y el SEO
-- La landing necesita SSR/SSG para SEO (meta tags, structured data, prerenderizado)
-- Deploy independiente = más simple de mantener
-- Usaremos **Vite + React** (mismo stack que ya conoces) con `vite-plugin-ssr` o simplemente prerenderizado estático
-
-### Estructura del proyecto
 ```
-monaco-landing/
-├── index.html
-├── vite.config.js
+the-monaco/                         ← RAÍZ (37 items — mucho ruido)
+├── .agent/                          ⚠️ Metadata de Claude skills (symlinks)
+├── .agents/                         ⚠️ Metadata de Claude skills
+├── .claude/                         ✅ Config Claude Code
+├── .cursor/                         ✅ Config Cursor IDE
+├── .git/                            ✅ Git
+├── .vercel/                         ⚠️ Legacy Vercel (ya no se usa, deploy es VPS)
+├── .vscode/                         ✅ VS Code (no trackeado en git)
+├── deploy/                          ✅ Infra (nginx, setup VPS)
+├── dist/                            ✅ Build output (gitignored)
+├── landingpage/imagenes/            ⚠️ 22 imágenes duplicadas con public/img/
+├── node_modules/                    ✅ Deps
+├── public/                          ✅ Assets PWA
+│   └── img/                         ⚠️ 19 imágenes de landing page duplicadas
+├── scripts/                         ✅ Deploy scripts
+├── server/                          ✅ Backend Express
+│   └── src/db/exported/             ⚠️ 13 JSONs legacy de migración Supabase
+├── skills/                          ⚠️ Symlinks de Claude skills
+├── src/                             ⚠️ Frontend — FLAT, 28 componentes en 1 carpeta
+│   ├── Copia de components          ❌ Archivo vacío basura (0 bytes)
+│   ├── components/                  ⚠️ Todo plano: pages, contexts, modals, guards mezclados
+│   │   ├── Admin/                   ✅ Única subcarpeta
+│   │   └── common/                  ✅ 3 componentes comunes
+│   ├── App.css                      ⚠️ 12,823 líneas — MONOLÍTICO
+│   └── supabaseClient.js            ⚠️ Nombre legacy (ya no usa Supabase)
+├── supabase/                        ❌ Legacy Supabase migration (obsoleto)
+├── .dockerignore                    ✅
+├── .gitignore                       ✅ (ya ignora ssh_tunnel*.log, exported/, etc.)
+├── .vercelignore                    ⚠️ Legacy
+├── ARCHITECTURE.md                  ✅ Documentación del sistema
+├── Dockerfile                       ✅
+├── README.md                        ✅
+├── docker-compose.yml               ✅
+├── eslint.config.js                 ✅
+├── index.html                       ✅
+├── package.json                     ✅
+├── package-lock.json                ✅
+├── plan.md                          ⚠️ Plan viejo del tour (obsoleto)
+├── skills-lock.json                 ⚠️ Claude skills metadata
+├── ssh_tunnel.log                   ❌ Log suelto (ya en gitignore)
+├── ssh_tunnel_prod.log              ❌ Log suelto (ya en gitignore)
+├── test-db.js                       ⚠️ Utility suelto en raíz
+├── vercel.json                      ⚠️ Legacy Vercel
+└── vite.config.js                   ✅
+```
+
+### Problemas Identificados
+
+| # | Problema | Impacto |
+|---|----------|---------|
+| 1 | **`src/components/` es PLANO** — 28 .jsx mezclados (páginas, contextos, modals, guards) | Difícil encontrar archivos, no hay jerarquía visual |
+| 2 | **`App.css` tiene 12,823 líneas** en un solo archivo | Imposible mantener, merge conflicts constantes |
+| 3 | **Archivos legacy** — `supabase/`, `.vercel/`, `vercel.json`, `.vercelignore`, `plan.md` | Confusión, no se usan |
+| 4 | **Basura** — `Copia de components` (0 bytes), `ssh_tunnel*.log`, `test-db.js` en raíz | Ruido visual |
+| 5 | **Imágenes duplicadas** — `landingpage/imagenes/` y `public/img/` tienen las mismas fotos | 6.2MB desperdiciados |
+| 6 | **`supabaseClient.js`** — nombre legacy cuando ya no usa Supabase | Confusión para nuevos devs |
+| 7 | **`server/src/db/exported/`** — 13 JSONs de migración Supabase (one-time use) | 450KB de datos innecesarios |
+| 8 | **Componentes gigantes** — Home (3,960 loc), Configuracion (2,134), Clientes (1,754) | Mantenibilidad difícil |
+
+---
+
+## Plan de Reorganización
+
+### FASE 1: Limpieza — Eliminar basura y legacy (5 min, riesgo: NULO)
+
+**Archivos a eliminar:**
+
+```bash
+# Archivo vacío basura
+rm "src/Copia de components"
+
+# Logs sueltos (ya en gitignore pero aún existen)
+rm ssh_tunnel.log ssh_tunnel_prod.log
+
+# Legacy Supabase (ya migraste a PostgreSQL propio)
+rm -rf supabase/
+
+# Legacy Vercel (deploy es VPS con rsync, no Vercel)
+rm -rf .vercel/
+rm vercel.json
+rm .vercelignore
+
+# Plan viejo que ya no aplica
+rm plan.md
+
+# Test utility que debería estar en server/
+mv test-db.js server/test-db.js
+```
+
+**Resultado:** La raíz pasa de 37 items a ~25.
+
+---
+
+### FASE 2: Reorganizar `src/components/` en subcarpetas (15 min, riesgo: BAJO)
+
+**Estado actual (plano, 28 archivos mezclados):**
+```
+src/components/
+├── Admin/AdminDashboard.jsx    ← única subcarpeta existente
+├── common/                     ← 3 componentes
+├── AiChat.jsx                  ← ¿IA? ¿modal? ¿page?
+├── AppTour.jsx                 ← ¿flow? ¿layout?
+├── Balance.jsx                 ← PÁGINA
+├── CheckoutModal.jsx           ← MODAL de pago
+├── Clientes.jsx                ← PÁGINA
+├── Configuracion.jsx           ← PÁGINA
+├── DataContext.jsx              ← CONTEXT
+├── Home.jsx                    ← PÁGINA
+├── LandingPage.jsx             ← PÁGINA
+├── Lavadas.jsx                 ← PÁGINA
+├── Layout.jsx                  ← LAYOUT
+├── Login.jsx                   ← AUTH
+├── Membresias.jsx              ← FEATURE
+├── MoneyVisibilityContext.jsx   ← CONTEXT
+├── NuevoServicioSheet.jsx       ← MODAL shared
+├── Onboarding.jsx               ← AUTH FLOW
+├── PagoTrabajadores.jsx         ← PÁGINA
+├── PlanGuard.jsx                ← GUARD
+├── Register.jsx                 ← AUTH
+├── Reportes.jsx                 ← PÁGINA
+├── RoleGuard.jsx                ← GUARD
+├── ServiceCard.jsx              ← SHARED
+├── SetupWizard.jsx              ← AUTH FLOW
+├── Tareas.jsx                   ← FEATURE
+├── TenantContext.jsx            ← CONTEXT
+├── ThemeContext.jsx              ← CONTEXT
+├── Toast.jsx                    ← LAYOUT/UI
+├── UpgradeModal.jsx             ← MODAL pago
+└── WompiWidget.jsx              ← PAYMENT
+```
+
+**Estructura propuesta (categorizada):**
+
+```
+src/components/
+│
+├── pages/                      ← Componentes de ruta (1 por ruta del router)
+│   ├── Home.jsx                   3,960 líneas — dashboard principal
+│   ├── Lavadas.jsx                  999 líneas — CRUD lavadas
+│   ├── Clientes.jsx               1,754 líneas — gestión clientes
+│   ├── Reportes.jsx               1,535 líneas — analytics/charts
+│   ├── PagoTrabajadores.jsx       1,713 líneas — nómina
+│   ├── Configuracion.jsx          2,134 líneas — settings
+│   ├── Balance.jsx                  884 líneas — balance financiero
+│   └── LandingPage.jsx             428 líneas — marketing page
+│
+├── auth/                       ← Login, registro, onboarding
+│   ├── Login.jsx
+│   ├── Register.jsx
+│   ├── Onboarding.jsx
+│   └── SetupWizard.jsx
+│
+├── context/                    ← React Contexts (providers globales)
+│   ├── DataContext.jsx
+│   ├── TenantContext.jsx
+│   ├── ThemeContext.jsx
+│   └── MoneyVisibilityContext.jsx
+│
+├── guards/                     ← Route/feature protection
+│   ├── RoleGuard.jsx
+│   └── PlanGuard.jsx
+│
+├── payment/                    ← Todo lo de Wompi/suscripciones
+│   ├── CheckoutModal.jsx
+│   ├── WompiWidget.jsx
+│   └── UpgradeModal.jsx
+│
+├── ai/                         ← IA Monaco
+│   └── AiChat.jsx
+│
+├── layout/                     ← Estructura visual de la app
+│   ├── Layout.jsx
+│   ├── Toast.jsx
+│   └── AppTour.jsx
+│
+├── shared/                     ← Componentes reutilizables (renombrar common/)
+│   ├── ConfirmDeleteModal.jsx     (de common/)
+│   ├── PasswordInput.jsx          (de common/)
+│   ├── Timer.jsx                  (de common/)
+│   ├── ServiceCard.jsx
+│   └── NuevoServicioSheet.jsx
+│
+├── features/                   ← Módulos de features específicas
+│   ├── Membresias.jsx
+│   └── Tareas.jsx
+│
+└── Admin/                      ← Panel superadmin (ya existe)
+    └── AdminDashboard.jsx
+```
+
+**Imports a actualizar:** ~50 imports en App.jsx y entre componentes.
+
+Ejemplo:
+```js
+// ANTES
+import Home from './components/Home'
+import { DataProvider } from './components/DataContext'
+import RoleGuard from './components/RoleGuard'
+
+// DESPUÉS
+import Home from './components/pages/Home'
+import { DataProvider } from './components/context/DataContext'
+import RoleGuard from './components/guards/RoleGuard'
+```
+
+---
+
+### FASE 3: Renombrar `supabaseClient.js` (5 min, riesgo: BAJO)
+
+```
+src/supabaseClient.js → src/apiClient.js
+```
+
+Actualizar todos los imports (el export `supabase` se mantiene para no cambiar código interno):
+```js
+// ANTES
+import { supabase } from './supabaseClient'
+import { supabase } from '../supabaseClient'
+
+// DESPUÉS
+import { supabase } from './apiClient'
+import { supabase } from '../apiClient'
+```
+
+---
+
+### FASE 4: Consolidar imágenes de landing page (5 min, riesgo: NULO)
+
+**Situación:** Las imágenes están duplicadas:
+- `landingpage/imagenes/` — 22 archivos: `3.png`, `4.png`... + `imagen 1.png`, `imagen 2.png`
+- `public/img/` — 19 archivos: `step-3.png`, `step-4.png`... + `hero-phone.png`
+
+`LandingPage.jsx` referencia las de `public/img/` (las rutas `/img/step-3.png`).
+
+**Acción:**
+```bash
+# Eliminar carpeta duplicada — public/img/ es la que se usa
+rm -rf landingpage/
+```
+
+---
+
+### FASE 5: Organizar CSS (30-60 min, riesgo: MEDIO)
+
+`App.css` = **12,823 líneas**. Dos opciones:
+
+#### Opción A — Split por categoría (recomendada, menor riesgo)
+
+```
+src/styles/
+├── variables.css      ← Variables CSS, colores, dark mode tokens
+├── base.css           ← Reset, tipografía, scrollbar, animations
+├── layout.css         ← Sidebar, navbar, bottom bar, grid, responsive
+├── pages.css          ← Estilos específicos de páginas (home, lavadas, etc.)
+├── components.css     ← Cards, modals, forms, buttons, badges
+├── landing.css        ← Landing page
+└── utilities.css      ← Helpers (.hidden, .flex-center, .text-truncate, etc.)
+```
+
+En `main.jsx`:
+```js
+import './styles/variables.css'
+import './styles/base.css'
+import './styles/layout.css'
+import './styles/pages.css'
+import './styles/components.css'
+import './styles/landing.css'
+```
+
+#### Opción B — CSS Modules por componente (más trabajo, mejor a largo plazo)
+
+```
+src/components/pages/Home.jsx     → src/components/pages/Home.module.css
+src/components/pages/Lavadas.jsx  → src/components/pages/Lavadas.module.css
+```
+
+> **Recomendación:** Opción A como primer paso. Es mecánica (cortar y pegar secciones del CSS) y no cambia clases.
+
+---
+
+### FASE 6: Limpiar server legacy (5 min, riesgo: NULO)
+
+```bash
+# Scripts de migración one-time desde Supabase (ya completados)
+rm server/src/db/export-supabase.js
+rm server/src/db/import-via-api.js
+rm -rf server/src/db/exported/     # 13 JSONs de datos exportados
+```
+
+Mantener `import-data.js` si aún lo usas para importar datos.
+
+---
+
+## Estructura Final Propuesta
+
+```
+the-monaco/
+│
+│  ── Configuración ──────────────────
+├── .gitignore
+├── .dockerignore
+├── eslint.config.js
 ├── package.json
+├── package-lock.json
+├── vite.config.js
+├── index.html
+│
+│  ── Docker ──────────────────────────
 ├── Dockerfile
+├── docker-compose.yml
+│
+│  ── Documentación ───────────────────
+├── ARCHITECTURE.md
+├── README.md
+│
+│  ── Infraestructura ─────────────────
+├── deploy/
+│   ├── nginx-http.conf
+│   ├── nginx-monaco.conf
+│   └── setup-vps.sh
+│
+├── scripts/
+│   ├── db-tunnel.sh
+│   ├── deploy-backend.sh
+│   └── deploy-frontend.sh
+│
+│  ── Assets estáticos ────────────────
 ├── public/
-│   ├── favicon.ico
-│   ├── og-image.jpg          (1200x630 para redes sociales)
-│   ├── logo.svg
+│   ├── img/                  Screenshots de landing
+│   ├── favicon.png
+│   ├── apple-touch-icon.png
+│   ├── icon-192.png
+│   ├── icon-512.png
 │   ├── robots.txt
 │   └── sitemap.xml
-├── src/
-│   ├── main.jsx
-│   ├── App.jsx
-│   ├── styles/
-│   │   └── global.css         (estilo Apple/Tesla light theme)
-│   ├── sections/
-│   │   ├── Navbar.jsx
-│   │   ├── Hero.jsx           (video/foto full-width, headline impactante)
-│   │   ├── Services.jsx       (servicios del lavadero con precios)
-│   │   ├── Gallery.jsx        (fotos antes/después, scroll horizontal)
-│   │   ├── Course.jsx         (sección del curso con módulos)
-│   │   ├── Testimonials.jsx   (reseñas — placeholder por ahora)
-│   │   ├── Location.jsx       (mapa + dirección + horarios)
-│   │   ├── FAQ.jsx            (preguntas frecuentes — clave para SEO + IA)
-│   │   ├── CTA.jsx            (call to action final)
-│   │   └── Footer.jsx
-│   └── components/
-│       └── ScrollReveal.jsx   (animación de aparición al hacer scroll)
+│
+│  ── BACKEND ─────────────────────────
+├── server/
+│   ├── package.json
+│   ├── test-db.js
+│   └── src/
+│       ├── index.js
+│       ├── config/
+│       │   ├── database.js       Pool pg + DATE timezone fix
+│       │   ├── env.js            Validación env vars
+│       │   └── logger.js         Logger producción
+│       ├── middleware/
+│       │   ├── auth.js           JWT verification
+│       │   ├── errorHandler.js   Error handler global
+│       │   ├── planLimits.js     Límites plan free
+│       │   ├── superadmin.js     Verificación superadmin
+│       │   └── tenantScope.js    Aislamiento multi-tenant
+│       ├── routes/
+│       │   ├── admin.js          Panel superadmin
+│       │   ├── ai.js             Chat IA + transcripción
+│       │   ├── auth.js           Login/signup/update
+│       │   ├── crud.js           API CRUD genérica
+│       │   ├── rpc.js            Procedimientos (crear negocio)
+│       │   └── wompi.js          Pagos Wompi
+│       ├── services/
+│       │   ├── aiPrompt.js       System prompt IA
+│       │   ├── aiService.js      Chat loop OpenAI
+│       │   ├── aiTools.js        12 tools + SQL queries
+│       │   ├── authService.js    Hash/JWT/compare
+│       │   ├── joinResolver.js   Resuelve JOINs del select
+│       │   ├── queryBuilder.js   SQL desde query params
+│       │   └── realtimeService.js Socket.io init
+│       └── db/
+│           ├── migrate.js        Ejecuta schema.sql
+│           ├── schema.sql        Schema completo + indexes
+│           ├── seed.js           Datos semilla
+│           └── import-data.js    Import de datos
+│
+│  ── FRONTEND ────────────────────────
+└── src/
+    ├── main.jsx              React entry point
+    ├── App.jsx               Routing + auth flow
+    ├── App.css               Estilos (o src/styles/)
+    ├── index.css             Base CSS
+    ├── apiClient.js          Adaptador API (ex supabaseClient.js)
+    │
+    ├── assets/
+    │   └── react.svg
+    │
+    ├── config/
+    │   ├── constants.js      API_URL, TOKEN_KEY
+    │   └── tourSteps.js      App tour definitions
+    │
+    ├── hooks/
+    │   └── useServiceHandlers.js
+    │
+    ├── utils/
+    │   ├── date.js           Timezone conversion
+    │   └── money.js          Currency formatting
+    │
+    └── components/
+        │
+        ├── pages/            ── Componentes de ruta ──
+        │   ├── Home.jsx             Dashboard principal
+        │   ├── Lavadas.jsx          CRUD lavadas + estados
+        │   ├── Clientes.jsx         Gestión de clientes
+        │   ├── Reportes.jsx         Charts y analytics
+        │   ├── PagoTrabajadores.jsx Nómina trabajadores
+        │   ├── Configuracion.jsx    Settings del negocio
+        │   ├── Balance.jsx          Balance financiero
+        │   └── LandingPage.jsx      Marketing page
+        │
+        ├── auth/             ── Login + registro ──
+        │   ├── Login.jsx
+        │   ├── Register.jsx
+        │   ├── Onboarding.jsx       Crear negocio
+        │   └── SetupWizard.jsx      Config inicial
+        │
+        ├── context/          ── React Contexts ──
+        │   ├── DataContext.jsx          Fetching + realtime
+        │   ├── TenantContext.jsx        Negocio/perfil/plan
+        │   ├── ThemeContext.jsx         Dark mode
+        │   └── MoneyVisibilityContext.jsx  Blur montos
+        │
+        ├── guards/           ── Protección de rutas ──
+        │   ├── RoleGuard.jsx        Por rol
+        │   └── PlanGuard.jsx        Por plan (PRO)
+        │
+        ├── payment/          ── Wompi + suscripciones ──
+        │   ├── CheckoutModal.jsx    Modal de pago
+        │   ├── WompiWidget.jsx      Widget checkout
+        │   └── UpgradeModal.jsx     Upsell a PRO
+        │
+        ├── ai/               ── Asistente IA ──
+        │   └── AiChat.jsx           Chat texto + voz
+        │
+        ├── layout/           ── Estructura visual ──
+        │   ├── Layout.jsx           Sidebar + navbar
+        │   ├── Toast.jsx            Notificaciones
+        │   └── AppTour.jsx          Tour onboarding
+        │
+        ├── shared/           ── Reutilizables ──
+        │   ├── ConfirmDeleteModal.jsx
+        │   ├── PasswordInput.jsx
+        │   ├── Timer.jsx
+        │   ├── ServiceCard.jsx
+        │   └── NuevoServicioSheet.jsx
+        │
+        ├── features/         ── Módulos de features ──
+        │   ├── Membresias.jsx
+        │   └── Tareas.jsx
+        │
+        └── Admin/            ── Panel superadmin ──
+            └── AdminDashboard.jsx
 ```
 
-## Secciones de la Landing (orden de scroll)
+---
 
-### 1. Navbar (sticky, transparente → sólido al scroll)
-- Logo Monaco Moto Detailing
-- Links: Servicios | Curso | Ubicación | Contacto
-- CTA: "Agenda tu cita" → WhatsApp
+## Resumen de Esfuerzo
 
-### 2. Hero (full viewport, estilo Tesla)
-- Foto/video de fondo del lavadero (placeholder con gradient si no hay foto HD)
-- H1: **"Detailing premium para tu moto en Soacha"**
-- Subtítulo: "Lavado profesional, polichada y restauración. Resultados que hablan solos."
-- 2 botones: "Agendar cita" (WhatsApp) | "Ver servicios" (scroll)
+| Fase | Descripción | Tiempo | Riesgo | Impacto |
+|------|------------|--------|--------|---------|
+| **1** | Limpiar basura y legacy | 5 min | Nulo | Raíz limpia |
+| **2** | Reorganizar components/ en subcarpetas | 15 min | Bajo | **ALTO — principal mejora** |
+| **3** | Renombrar supabaseClient → apiClient | 5 min | Bajo | Claridad |
+| **4** | Consolidar imágenes landing | 5 min | Nulo | -6.2MB |
+| **5** | Split CSS monolítico (opcional) | 30-60 min | Medio | Mantenibilidad |
+| **6** | Limpiar server legacy | 5 min | Nulo | Menos ruido |
 
-### 3. Servicios (grid cards, estilo Apple)
-- Cards grandes con icono + nombre + precio + descripción corta
-- Servicios a mostrar (los de la app — se hardcodean con los datos reales):
-  - Lavado General
-  - Lavado Premium
-  - Polichada
-  - Cera y Restaurador
-  - Kit de Arrastre
-  - (los que tenga configurados)
-- CTA: "Agenda tu lavada" → WhatsApp
+**Total: ~35 min** (fases 1-4 + 6) o **~90 min** (con CSS split)
 
-### 4. Galería (scroll horizontal, estilo Apple productos)
-- Fotos del trabajo (antes/después)
-- Placeholder con cards si aún no hay fotos HD
+---
 
-### 5. Curso — "Monta tu propio lavadero"
-- H2: **"¿Quieres montar tu propio lavadero de motos?"**
-- Subtítulo: "El 80% de los lavaderos quiebran en los primeros 6 meses. Este curso te enseña cómo ser del 20% que sobrevive."
-- Módulos del curso (de Hotmart):
-  - Ingeniería del local (drenaje, iluminación, zonas)
-  - Maquinaria correcta (hidrofoamer, compresor, marcas)
-  - Legalización (permisos, trampas de grasa)
-  - Marketing premium (atraer clientes con poder adquisitivo)
-  - Proveedores verificados
-- Precio: $772.000 COP
-- CTA: "Comprar curso" → link Hotmart
+## Orden de Ejecución
 
-### 6. Ubicación + Contacto
-- Google Maps embed (Carrera 8 #41a - 31, León XIII, Soacha)
-- Horarios: Lunes a Domingo 9am - 6pm
-- WhatsApp: 3022269608
-- Instagram: @monaco_motodetailing
+1. **Hacer commit** del estado actual (backup)
+2. **Fase 1** → commit: `chore: remove legacy and cleanup files`
+3. **Fase 4** → commit: `chore: consolidate landing page images`
+4. **Fase 6** → commit: `chore: remove legacy migration scripts`
+5. **Fase 2** → commit: `refactor: organize components into categories`
+6. **Fase 3** → commit: `refactor: rename supabaseClient to apiClient`
+7. **Fase 5** (si decides) → commit: `refactor: split monolithic CSS`
 
-### 7. FAQ (CLAVE para SEO + IA)
-Preguntas optimizadas para búsquedas reales:
-- "¿Cuánto cuesta lavar una moto en Soacha?"
-- "¿Qué incluye el lavado premium de motos?"
-- "¿Cuánto cuesta montar un lavadero de motos?"
-- "¿Qué se necesita para abrir un lavadero de motos?"
-- "¿Dónde queda Monaco Moto Detailing?"
-- "¿El curso incluye soporte?"
+> Fases 1, 4, 6 son seguras (no rompen nada). Fase 2 requiere actualizar imports pero es mecánica. Fase 5 es la más delicada.
 
-### 8. Footer
-- Logo + redes sociales (Instagram, TikTok)
-- Links rápidos
-- © 2026 Monaco Moto Detailing
+---
 
-## SEO Técnico
+## Notas
 
-### Meta tags en index.html
-```html
-<title>Monaco Moto Detailing | Lavadero Premium de Motos en Soacha</title>
-<meta name="description" content="Lavadero profesional de motos en Soacha, León XIII. Lavado premium, polichada, cera y restauración. Abierto L-D 9am-6pm. Agenda tu cita por WhatsApp.">
-<meta name="keywords" content="lavadero de motos soacha, lavado de motos leon xiii, detailing motos, polichada motos soacha, lavadero de motos cerca">
-<link rel="canonical" href="https://monacomotodetailing.com">
-
-<!-- Open Graph -->
-<meta property="og:title" content="Monaco Moto Detailing | Lavadero Premium de Motos">
-<meta property="og:description" content="Detailing profesional para tu moto en Soacha. Resultados premium, precios justos.">
-<meta property="og:image" content="https://monacomotodetailing.com/og-image.jpg">
-<meta property="og:url" content="https://monacomotodetailing.com">
-<meta property="og:type" content="website">
-```
-
-### Structured Data (JSON-LD) — CLAVE para IA
-```json
-// LocalBusiness — para Google Maps y búsquedas locales
-{
-  "@context": "https://schema.org",
-  "@type": "AutoWash",
-  "name": "Monaco Moto Detailing",
-  "description": "Lavadero premium de motos en Soacha, León XIII",
-  "address": {
-    "@type": "PostalAddress",
-    "streetAddress": "Carrera 8 #41a - 31",
-    "addressLocality": "Soacha",
-    "addressRegion": "Cundinamarca",
-    "addressCountry": "CO"
-  },
-  "telephone": "+573022269608",
-  "openingHours": "Mo-Su 09:00-18:00",
-  "priceRange": "$$",
-  "url": "https://monacomotodetailing.com",
-  "sameAs": [
-    "https://www.instagram.com/monaco_motodetailing/"
-  ]
-}
-
-// Course — para que la IA recomiende el curso
-{
-  "@context": "https://schema.org",
-  "@type": "Course",
-  "name": "Guía completa para abrir un lavadero de motos exitoso",
-  "description": "Curso online que enseña ingeniería, maquinaria, legalización y marketing para montar un lavadero de motos rentable.",
-  "provider": {
-    "@type": "Organization",
-    "name": "Monaco Moto Detailing"
-  },
-  "offers": {
-    "@type": "Offer",
-    "price": "772000",
-    "priceCurrency": "COP"
-  }
-}
-
-// FAQPage — para aparecer en snippets de Google y respuestas de IA
-{
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  "mainEntity": [...]
-}
-```
-
-### robots.txt + sitemap.xml
-- Generados automáticamente
-- Sitemap con la URL canónica
-
-## Estilo Visual (Apple/Tesla Light Theme)
-
-### Paleta
-- **Fondo**: #FFFFFF (blanco puro)
-- **Texto principal**: #1d1d1f (casi negro, como Apple)
-- **Texto secundario**: #6e6e73
-- **Acento**: #0071e3 (azul Apple) o color de marca Monaco
-- **Cards**: #f5f5f7 (gris muy claro)
-
-### Tipografía
-- Font: Inter o SF Pro Display (Google Fonts: Inter)
-- H1: 56px bold, line-height 1.07 (como Apple)
-- H2: 40px semibold
-- Body: 17px, line-height 1.47
-
-### Animaciones
-- Scroll reveal (fade-up al entrar en viewport) usando IntersectionObserver
-- Navbar blur al scroll
-- Hover suaves en cards y botones
-- Sin librerías pesadas — CSS transitions + JS vanilla
-
-## Deploy
-- Dockerfile multi-stage (build con Node → serve con nginx)
-- Se puede deployar en el mismo servidor Docker
-- Configurar DNS de monacomotodetailing.com → IP del servidor
-- SSL con Let's Encrypt / certbot
-
-## Tareas pendientes del usuario (NO son parte del código)
-1. **Crear Google Business Profile** — esto es CRÍTICO para SEO local
-2. **Subir fotos HD** del lavadero y trabajos terminados
-3. **Pedir reseñas** a clientes en Google Maps
-4. **Crear imagen OG** (1200x630px) para redes sociales
-
-## Archivos a crear
-1. `monaco-landing/package.json`
-2. `monaco-landing/vite.config.js`
-3. `monaco-landing/index.html` (con meta tags + structured data)
-4. `monaco-landing/src/main.jsx`
-5. `monaco-landing/src/App.jsx`
-6. `monaco-landing/src/styles/global.css`
-7. `monaco-landing/src/sections/Navbar.jsx`
-8. `monaco-landing/src/sections/Hero.jsx`
-9. `monaco-landing/src/sections/Services.jsx`
-10. `monaco-landing/src/sections/Gallery.jsx`
-11. `monaco-landing/src/sections/Course.jsx`
-12. `monaco-landing/src/sections/Testimonials.jsx`
-13. `monaco-landing/src/sections/Location.jsx`
-14. `monaco-landing/src/sections/FAQ.jsx`
-15. `monaco-landing/src/sections/Footer.jsx`
-16. `monaco-landing/src/components/ScrollReveal.jsx`
-17. `monaco-landing/public/robots.txt`
-18. `monaco-landing/public/sitemap.xml`
-19. `monaco-landing/Dockerfile`
+- **El backend (`server/src/`) ya está bien organizado** — no necesita cambios
+- **No mover archivos config de la raíz** (vite.config.js, Dockerfile, etc.)
+- **Actualizar ARCHITECTURE.md** después de reorganizar
+- **Probar `npm run build` y `npm run dev`** después de cada fase para verificar que nada se rompió

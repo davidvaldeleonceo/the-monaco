@@ -6,11 +6,12 @@ import { useToast } from '../components/layout/Toast'
 import { ESTADO_CLASSES } from '../config/constants'
 import { getPhoneCode } from '../config/currencies'
 import { formatMoney } from '../utils/money'
+import { getDescuentoMembresia, aplicarDescuento } from '../utils/membresia'
 
 export function useServiceHandlers() {
   const {
     lavadas, clientes, tiposLavado, lavadores, metodosPago, serviciosAdicionales,
-    updateLavadaLocal, deleteLavadaLocal, plantillasMensaje, negocioId
+    updateLavadaLocal, deleteLavadaLocal, plantillasMensaje, negocioId, tiposMembresia
   } = useData()
   const { pais } = useTenant()
   const toast = useToast()
@@ -179,7 +180,10 @@ export function useServiceHandlers() {
     let nuevoValor = calcularValor(tipoId, nuevosAdicionales)
 
     const cliente = clientes.find(c => c.id == lavada.cliente_id)
-    if (clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo)) {
+    const descuento = getDescuentoMembresia(cliente, tiposMembresia)
+    if (descuento > 0) {
+      nuevoValor = aplicarDescuento(nuevoValor, descuento)
+    } else if (clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo)) {
       nuevoValor = nuevoValor - Number(tipo?.precio || 0)
       if (nuevoValor < 0) nuevoValor = 0
     }
@@ -274,7 +278,10 @@ export function useServiceHandlers() {
 
     const cliente = clientes.find(c => c.id == lavada.cliente_id)
     const tipo = tiposLavado.find(t => t.id == lavada.tipo_lavado_id)
-    if (clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo)) {
+    const descuento = getDescuentoMembresia(cliente, tiposMembresia)
+    if (descuento > 0) {
+      nuevoValor = aplicarDescuento(nuevoValor, descuento)
+    } else if (clienteTieneMembresia(cliente) && esTipoLavadoMembresia(tipo)) {
       nuevoValor = nuevoValor - Number(tipo?.precio || 0)
       if (nuevoValor < 0) nuevoValor = 0
     }

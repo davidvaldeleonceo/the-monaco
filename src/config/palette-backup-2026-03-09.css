@@ -1,0 +1,49 @@
+/*
+ * Monaco PRO — Light Mode Palette Backup (2026-03-09)
+ * Original [data-theme="light"] block from App.css lines 54-78
+ * Restore this if you want to revert the oklch palette changes.
+ */
+
+[data-theme="light"] {
+  --popover-bg: #fff;
+  --bg-primary: #F8FAFC;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #F1F5F9;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --accent-green: #4F56F6;
+  --accent-blue: #3B82F6;
+  --accent-yellow: #F59E0B;
+  --accent-red: #EF4444;
+  --accent-purple: #7C3AED;
+  --border-color: #E2E8F0;
+  --text-muted: #94A3B8;
+  --bg-tertiary: #F1F5F9;
+  --bg-selected: rgba(79, 86, 246, 0.08);
+  --hover-bg: #F1F5F9;
+  --accent-primary: #4F56F6;
+  --overlay-dark: rgba(0, 0, 0, 0.4);
+  --shadow-green: rgba(79, 86, 246, 0.12);
+  --shadow-red: rgba(239, 68, 68, 0.12);
+  --shadow-blue: rgba(59, 130, 246, 0.12);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/*
+ * Hardcoded Color Mapping (original → purpose):
+ *
+ * rgba(79, 86, 246, ...)  → #4F56F6 → Primary indigo (--accent-green, --accent-primary)
+ * rgba(59, 130, 246, ...)  → #3B82F6 → Info blue (--accent-blue)
+ * rgba(239, 68, 68, ...)   → #EF4444 → Danger red (--accent-red)
+ * rgba(245, 158, 11, ...)  → #F59E0B → Warning amber (--accent-yellow)
+ * rgba(16, 185, 129, ...)  → #10B981 → Success green (entregado, success states)
+ * rgba(148, 163, 184, ...) → #94A3B8 → Muted gray (--text-muted, terminado)
+ * rgba(139, 92, 246, ...)  → #8B5CF6 → Purple (--accent-purple, frecuencia semanal)
+ *
+ * Estado Colors:
+ *   EN ESPERA  → #F59E0B (amber)
+ *   EN LAVADO  → #4F56F6 (indigo)
+ *   TERMINADO  → #94A3B8 (gray)
+ *   ENTREGADO  → #10B981 (green)
+ */
