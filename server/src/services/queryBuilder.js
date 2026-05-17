@@ -34,10 +34,10 @@ export function isAllowedTable(table) {
  * Parse filter operators from query params.
  * Format: column=op.value  (e.g. activo=eq.true, fecha=gte.2024-01-01)
  */
-function parseFilters(query, table) {
+function parseFilters(query, table, startIdx = 1, { strict = false } = {}) {
   const filters = []
   const values = []
-  let paramIdx = 1
+  let paramIdx = startIdx
 
   for (const [key, rawValue] of Object.entries(query)) {
     // Skip meta params
@@ -51,7 +51,10 @@ function parseFilters(query, table) {
     for (const rv of rawValues) {
       const val = String(rv)
       const dotIdx = val.indexOf('.')
-      if (dotIdx === -1) continue
+      if (dotIdx === -1) {
+        if (strict) throw new Error(`Filter value missing operator for column "${key}": ${val}`)
+        continue
+      }
 
       const op = val.substring(0, dotIdx)
       const operand = val.substring(dotIdx + 1)
@@ -104,16 +107,29 @@ function parseFilters(query, table) {
             filters.push(`"${table}"."${key}" IS TRUE`)
           } else if (operand === 'false') {
             filters.push(`"${table}"."${key}" IS FALSE`)
+          } else if (strict) {
+            throw new Error(`Unsupported "is" operand for column "${key}": ${operand}`)
           }
           break
         case 'in': {
           // Format: in.(val1,val2,val3)
           const inValues = operand.replace(/^\(/, '').replace(/\)$/, '').split(',')
+          if (inValues.length === 0 || (inValues.length === 1 && inValues[0] === '')) {
+            // Empty IN list — match nothing instead of producing invalid SQL
+            filters.push('FALSE')
+            break
+          }
           const placeholders = inValues.map(() => `$${paramIdx++}`)
           filters.push(`"${table}"."${key}" IN (${placeholders.join(',')})`)
           values.push(...inValues)
           break
         }
+        default:
+          if (strict) {
+            throw new Error(`Unsupported filter operator "${op}" for column "${key}"`)
+          }
+          // Non-strict: silently skip unknown ops (legacy permissive behavior for SELECT)
+          break
       }
     }
   }
@@ -282,6 +298,8 @@ export function buildInsertQuery(table, body, negocioId, isScoped, selectStr) {
 
 /**
  * Build an UPDATE query.
+ * Uses strict filter parsing so unknown operators throw instead of silently
+ * widening the WHERE clause (which would touch unintended rows).
  */
 export function buildUpdateQuery(table, body, filters, negocioId, isScoped) {
   // Strip undefined values and convert empty strings to null for FK columns
@@ -302,31 +320,24 @@ export function buildUpdateQuery(table, body, filters, negocioId, isScoped) {
 
   keys.forEach(k => validateColumnName(k))
   const setClauses = keys.map((k, i) => `"${k}" = $${i + 1}`)
-  let paramIdx = keys.length + 1
+  const setParamCount = keys.length
 
-  const whereClauses = []
-  for (const [key, rawValue] of Object.entries(filters)) {
-    validateColumnName(key)
-    const val = String(rawValue)
-    const dotIdx = val.indexOf('.')
-    if (dotIdx === -1) continue
-    const op = val.substring(0, dotIdx)
-    const operand = val.substring(dotIdx + 1)
-    if (op === 'eq') {
-      whereClauses.push(`"${key}" = $${paramIdx++}`)
-      values.push(operand)
-    }
-  }
+  const { filters: whereClauses, values: filterValues, paramIdx: nextIdx } =
+    parseFilters(filters, table, setParamCount + 1, { strict: true })
+  values.push(...filterValues)
+  let paramIdx = nextIdx
 
   if (isScoped && negocioId) {
-    whereClauses.push(`"negocio_id" = $${paramIdx++}`)
+    whereClauses.push(`"${table}"."negocio_id" = $${paramIdx++}`)
     values.push(negocioId)
   }
 
-  let sql = `UPDATE "${table}" SET ${setClauses.join(', ')}`
-  if (whereClauses.length > 0) {
-    sql += ' WHERE ' + whereClauses.join(' AND ')
+  if (whereClauses.length === 0) {
+    throw new Error('UPDATE requires at least one WHERE filter')
   }
+
+  let sql = `UPDATE "${table}" SET ${setClauses.join(', ')}`
+  sql += ' WHERE ' + whereClauses.join(' AND ')
   sql += ' RETURNING *'
 
   return { sql, values }
@@ -334,34 +345,25 @@ export function buildUpdateQuery(table, body, filters, negocioId, isScoped) {
 
 /**
  * Build a DELETE query.
+ * Uses strict filter parsing so unknown operators throw instead of silently
+ * widening the WHERE clause (which would delete unintended rows).
  */
 export function buildDeleteQuery(table, filters, negocioId, isScoped) {
-  const values = []
-  const whereClauses = []
-  let paramIdx = 1
-
-  for (const [key, rawValue] of Object.entries(filters)) {
-    validateColumnName(key)
-    const val = String(rawValue)
-    const dotIdx = val.indexOf('.')
-    if (dotIdx === -1) continue
-    const op = val.substring(0, dotIdx)
-    const operand = val.substring(dotIdx + 1)
-    if (op === 'eq') {
-      whereClauses.push(`"${key}" = $${paramIdx++}`)
-      values.push(operand)
-    }
-  }
+  const { filters: whereClauses, values, paramIdx: nextIdx } =
+    parseFilters(filters, table, 1, { strict: true })
+  let paramIdx = nextIdx
 
   if (isScoped && negocioId) {
-    whereClauses.push(`"negocio_id" = $${paramIdx++}`)
+    whereClauses.push(`"${table}"."negocio_id" = $${paramIdx++}`)
     values.push(negocioId)
   }
 
-  let sql = `DELETE FROM "${table}"`
-  if (whereClauses.length > 0) {
-    sql += ' WHERE ' + whereClauses.join(' AND ')
+  if (whereClauses.length === 0) {
+    throw new Error('DELETE requires at least one WHERE filter')
   }
+
+  let sql = `DELETE FROM "${table}"`
+  sql += ' WHERE ' + whereClauses.join(' AND ')
   sql += ' RETURNING *'
 
   return { sql, values }
